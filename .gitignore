@@ -36,4 +36,7 @@ Thumbs.db
 
 # Logs / runtime artifacts
 *.log
-data/
+# Runtime caches/exports go under data/cache/ or data/exports/, both
+# excluded. Source-of-truth files (e.g. data/watchlist.yaml) stay tracked.
+data/cache/
+data/exports/

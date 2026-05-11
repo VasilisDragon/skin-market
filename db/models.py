@@ -112,6 +112,8 @@ class Insight(Base):
     )
     insight_type: Mapped[str] = mapped_column(Text, nullable=False)
     value: Mapped[Decimal | None] = mapped_column(Numeric)
-    # ``metadata`` is a reserved attribute name on DeclarativeBase, so the
-    # Python attribute is ``meta`` while the DB column stays ``metadata``.
-    meta: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB)
+    # Named ``meta_info`` rather than ``metadata`` because the latter is a
+    # reserved attribute name on SQLAlchemy's DeclarativeBase — anyone who
+    # writes ``insight.metadata = {...}`` would silently reassign the
+    # registry instead of setting a column value.
+    meta_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

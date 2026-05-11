@@ -1,117 +1,37 @@
-"""Seed the watchlist with ~50 popular CS2 items and the two v1 source rows.
+"""Seed the ``items`` and ``sources`` tables from ``data/watchlist.yaml``.
 
-Idempotent: re-running is a no-op for rows that already exist (ON CONFLICT
-DO NOTHING on the unique constraints).
+Idempotent: re-running with the same YAML is a no-op for rows that already
+exist (ON CONFLICT DO NOTHING on the unique constraints). It does NOT delete
+rows that exist in the DB but no longer appear in the YAML — handle removals
+manually or via a migration.
 
 Usage:
     uv run python -m scripts.seed_watchlist
+    uv run python -m scripts.seed_watchlist --watchlist /path/to/watchlist.yaml
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
-from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+import yaml
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db.connection import get_engine
 from db.naming import normalize_name, slugify
 
+# Default location. Resolved relative to the repo root so the script works
+# from any cwd as long as the repo layout is intact.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "data" / "watchlist.yaml"
 
-@dataclass(frozen=True)
-class SeedItem:
-    market_hash_name: str
-    item_type: str
-    weapon_name: str
-    skin_name: str
-    wear: str
-    is_stattrak: bool = False
-    is_souvenir: bool = False
-
-
-# Roughly 50 items split across the categories the bot will get asked about.
-# market_hash_name strings use the exact form Steam returns (★ = U+2605,
-# ™ = U+2122) so the Steam collector can fetch them without translation.
-ITEMS: list[SeedItem] = [
-    # --- Rifles (15) ---
-    SeedItem("AK-47 | Redline (Field-Tested)", "rifle", "AK-47", "Redline", "Field-Tested"),
-    SeedItem("AK-47 | Redline (Minimal Wear)", "rifle", "AK-47", "Redline", "Minimal Wear"),
-    SeedItem("AK-47 | Asiimov (Battle-Scarred)", "rifle", "AK-47", "Asiimov", "Battle-Scarred"),
-    SeedItem("AK-47 | Vulcan (Factory New)", "rifle", "AK-47", "Vulcan", "Factory New"),
-    SeedItem("AK-47 | Fire Serpent (Field-Tested)", "rifle", "AK-47", "Fire Serpent", "Field-Tested"),
-    SeedItem("M4A1-S | Hyper Beast (Field-Tested)", "rifle", "M4A1-S", "Hyper Beast", "Field-Tested"),
-    SeedItem("M4A1-S | Cyrex (Field-Tested)", "rifle", "M4A1-S", "Cyrex", "Field-Tested"),
-    SeedItem("M4A1-S | Decimator (Field-Tested)", "rifle", "M4A1-S", "Decimator", "Field-Tested"),
-    SeedItem("M4A4 | Howl (Factory New)", "rifle", "M4A4", "Howl", "Factory New"),
-    SeedItem("M4A4 | Asiimov (Field-Tested)", "rifle", "M4A4", "Asiimov", "Field-Tested"),
-    SeedItem("M4A4 | Neo-Noir (Factory New)", "rifle", "M4A4", "Neo-Noir", "Factory New"),
-    SeedItem("AUG | Akihabara Accept (Factory New)", "rifle", "AUG", "Akihabara Accept", "Factory New"),
-    SeedItem("FAMAS | Roll Cage (Minimal Wear)", "rifle", "FAMAS", "Roll Cage", "Minimal Wear"),
-    SeedItem("Galil AR | Eco (Field-Tested)", "rifle", "Galil AR", "Eco", "Field-Tested"),
-    SeedItem("SG 553 | Pulse (Factory New)", "rifle", "SG 553", "Pulse", "Factory New"),
-    # --- AWPs (10) ---
-    SeedItem("AWP | Asiimov (Field-Tested)", "awp", "AWP", "Asiimov", "Field-Tested"),
-    SeedItem("AWP | Hyper Beast (Field-Tested)", "awp", "AWP", "Hyper Beast", "Field-Tested"),
-    SeedItem("AWP | Dragon Lore (Field-Tested)", "awp", "AWP", "Dragon Lore", "Field-Tested"),
-    SeedItem("AWP | Lightning Strike (Factory New)", "awp", "AWP", "Lightning Strike", "Factory New"),
-    SeedItem("AWP | Wildfire (Factory New)", "awp", "AWP", "Wildfire", "Factory New"),
-    SeedItem("AWP | Neo-Noir (Field-Tested)", "awp", "AWP", "Neo-Noir", "Field-Tested"),
-    SeedItem("AWP | Containment Breach (Field-Tested)", "awp", "AWP", "Containment Breach", "Field-Tested"),
-    SeedItem("AWP | Atheris (Minimal Wear)", "awp", "AWP", "Atheris", "Minimal Wear"),
-    SeedItem("AWP | Redline (Field-Tested)", "awp", "AWP", "Redline", "Field-Tested"),
-    SeedItem("AWP | Man-o'-war (Field-Tested)", "awp", "AWP", "Man-o'-war", "Field-Tested"),
-    # --- Pistols (6) ---
-    SeedItem("Glock-18 | Fade (Factory New)", "pistol", "Glock-18", "Fade", "Factory New"),
-    SeedItem("Glock-18 | Water Elemental (Factory New)", "pistol", "Glock-18", "Water Elemental", "Factory New"),
-    SeedItem("Desert Eagle | Blaze (Factory New)", "pistol", "Desert Eagle", "Blaze", "Factory New"),
-    SeedItem("Desert Eagle | Printstream (Factory New)", "pistol", "Desert Eagle", "Printstream", "Factory New"),
-    SeedItem("USP-S | Kill Confirmed (Field-Tested)", "pistol", "USP-S", "Kill Confirmed", "Field-Tested"),
-    SeedItem("USP-S | Neo-Noir (Factory New)", "pistol", "USP-S", "Neo-Noir", "Factory New"),
-    # --- Knives (10, all "★" prefixed) ---
-    SeedItem("★ Karambit | Doppler (Factory New)", "knife", "Karambit", "Doppler", "Factory New"),
-    SeedItem("★ Karambit | Fade (Factory New)", "knife", "Karambit", "Fade", "Factory New"),
-    SeedItem("★ Karambit | Tiger Tooth (Factory New)", "knife", "Karambit", "Tiger Tooth", "Factory New"),
-    SeedItem("★ M9 Bayonet | Doppler (Factory New)", "knife", "M9 Bayonet", "Doppler", "Factory New"),
-    SeedItem("★ M9 Bayonet | Crimson Web (Field-Tested)", "knife", "M9 Bayonet", "Crimson Web", "Field-Tested"),
-    SeedItem("★ Butterfly Knife | Tiger Tooth (Factory New)", "knife", "Butterfly Knife", "Tiger Tooth", "Factory New"),
-    SeedItem("★ Butterfly Knife | Fade (Factory New)", "knife", "Butterfly Knife", "Fade", "Factory New"),
-    SeedItem("★ Bayonet | Marble Fade (Factory New)", "knife", "Bayonet", "Marble Fade", "Factory New"),
-    SeedItem("★ Flip Knife | Doppler (Factory New)", "knife", "Flip Knife", "Doppler", "Factory New"),
-    SeedItem("★ Huntsman Knife | Fade (Factory New)", "knife", "Huntsman Knife", "Fade", "Factory New"),
-    # --- Gloves (5, all "★" prefixed) ---
-    SeedItem("★ Sport Gloves | Pandora's Box (Field-Tested)", "glove", "Sport Gloves", "Pandora's Box", "Field-Tested"),
-    SeedItem("★ Sport Gloves | Vice (Field-Tested)", "glove", "Sport Gloves", "Vice", "Field-Tested"),
-    SeedItem("★ Specialist Gloves | Crimson Kimono (Field-Tested)", "glove", "Specialist Gloves", "Crimson Kimono", "Field-Tested"),
-    SeedItem("★ Driver Gloves | King Snake (Field-Tested)", "glove", "Driver Gloves", "King Snake", "Field-Tested"),
-    SeedItem("★ Hand Wraps | Cobalt Skulls (Field-Tested)", "glove", "Hand Wraps", "Cobalt Skulls", "Field-Tested"),
-    # --- StatTrak (2, exercise the ™ glyph) ---
-    SeedItem("StatTrak™ AK-47 | Redline (Field-Tested)", "rifle", "AK-47", "Redline", "Field-Tested", is_stattrak=True),
-    SeedItem("StatTrak™ AWP | Asiimov (Field-Tested)", "awp", "AWP", "Asiimov", "Field-Tested", is_stattrak=True),
-    # --- Souvenir (1) ---
-    SeedItem("Souvenir AWP | Dragon Lore (Battle-Scarred)", "awp", "AWP", "Dragon Lore", "Battle-Scarred", is_souvenir=True),
-    # --- SMG (2) ---
-    SeedItem("P90 | Death by Kitty (Field-Tested)", "smg", "P90", "Death by Kitty", "Field-Tested"),
-    SeedItem("MP9 | Hot Rod (Factory New)", "smg", "MP9", "Hot Rod", "Factory New"),
-]
-
-
-# The two upstream APIs v1 polls. rate_limit_per_minute is advisory — actual
-# enforcement happens in the collector module.
-SOURCES: list[dict] = [
-    {
-        "name": "steam_market",
-        "base_url": "https://steamcommunity.com/market/",
-        "rate_limit_per_minute": 12,
-        "enabled": True,
-    },
-    {
-        "name": "skinport",
-        "base_url": "https://api.skinport.com/v1/",
-        "rate_limit_per_minute": 60,
-        "enabled": True,
-    },
-]
+# Bump this if seed_watchlist.py's expectations of the YAML schema change
+# incompatibly. The YAML file declares its own ``schema_version`` we check.
+_SUPPORTED_SCHEMA_VERSION = 1
 
 
 _INSERT_SOURCE_SQL = text(
@@ -137,34 +57,55 @@ _INSERT_ITEM_SQL = text(
 )
 
 
-def seed() -> tuple[int, int]:
+def load_watchlist(path: Path) -> dict[str, Any]:
+    """Parse the watchlist YAML and verify its schema_version."""
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: top level must be a mapping")
+    version = data.get("schema_version")
+    if version != _SUPPORTED_SCHEMA_VERSION:
+        raise ValueError(
+            f"{path}: schema_version is {version!r}, expected "
+            f"{_SUPPORTED_SCHEMA_VERSION}. Update seed_watchlist.py or the YAML."
+        )
+    if "sources" not in data or "items" not in data:
+        raise ValueError(f"{path}: missing required top-level keys 'sources' and 'items'")
+    return data
+
+
+def seed(watchlist_path: Path = DEFAULT_WATCHLIST_PATH) -> tuple[int, int]:
     """Run the seed. Returns (items_in_db, sources_in_db) after the upsert."""
+    data = load_watchlist(watchlist_path)
+
     engine = get_engine()
     with Session(engine) as session:
-        for src in SOURCES:
+        for src in data["sources"]:
             session.execute(
                 _INSERT_SOURCE_SQL,
                 {
                     "name": src["name"],
-                    "base_url": src["base_url"],
-                    "rlim": src["rate_limit_per_minute"],
-                    "enabled": src["enabled"],
+                    "base_url": src.get("base_url"),
+                    "rlim": src.get("rate_limit_per_minute"),
+                    "enabled": src.get("enabled", True),
                 },
             )
-        for it in ITEMS:
-            mhn = normalize_name(it.market_hash_name)
+        for it in data["items"]:
+            mhn = normalize_name(it["market_hash_name"])
             session.execute(
                 _INSERT_ITEM_SQL,
                 {
                     "mhn": mhn,
-                    "disp": mhn,  # v1: display_name == market_hash_name
+                    # v1: display_name == market_hash_name. The schema keeps
+                    # them separate so v2+ can prettify (e.g. drop "StatTrak™").
+                    "disp": it.get("display_name", mhn),
                     "slug": slugify(mhn),
-                    "it": it.item_type,
-                    "wpn": it.weapon_name,
-                    "skn": it.skin_name,
-                    "wear": it.wear,
-                    "stt": it.is_stattrak,
-                    "sv": it.is_souvenir,
+                    "it": it.get("item_type"),
+                    "wpn": it.get("weapon_name"),
+                    "skn": it.get("skin_name"),
+                    "wear": it.get("wear"),
+                    "stt": bool(it.get("is_stattrak", False)),
+                    "sv": bool(it.get("is_souvenir", False)),
                 },
             )
         session.commit()
@@ -175,8 +116,17 @@ def seed() -> tuple[int, int]:
     return int(items_count), int(sources_count)
 
 
-def main() -> int:
-    items_count, sources_count = seed()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--watchlist",
+        type=Path,
+        default=DEFAULT_WATCHLIST_PATH,
+        help=f"Path to watchlist YAML (default: {DEFAULT_WATCHLIST_PATH})",
+    )
+    args = parser.parse_args(argv)
+
+    items_count, sources_count = seed(args.watchlist)
     print(f"Seed complete: {items_count} items, {sources_count} sources.")
     return 0
 

@@ -1,0 +1,92 @@
+# skin-market v1 watchlist
+#
+# This file is the single source of truth for the items the collectors poll.
+# scripts/seed_watchlist.py reads it and writes to the `items` and `sources`
+# tables.
+#
+# Mix targets (CS2-liquidity-weighted, not equal):
+#   ~25% rifles, ~20% snipers, ~25% knives, ~15% gloves, ~10% pistols, ~5% other
+#
+# Taxonomy decision: AWPs/SSGs are item_type = "sniper" (not their own type
+# and not lumped into "rifle"). Specific AWP filters use weapon_name = "AWP".
+# Knives and gloves are always "★"-prefixed in market_hash_name (U+2605).
+# StatTrak™ items use the real U+2122 character.
+#
+# Schema version 1. If field names/structure change incompatibly, bump
+# `schema_version` and update the loader.
+
+schema_version: 1
+
+sources:
+  - name: steam_market
+    base_url: https://steamcommunity.com/market/
+    rate_limit_per_minute: 12
+    enabled: true
+  - name: skinport
+    base_url: https://api.skinport.com/v1/
+    rate_limit_per_minute: 60
+    enabled: true
+
+# 50 items total. Re-ordered by item_type so the mix is visually obvious.
+items:
+  # --- Rifles: 12 ---
+  - { market_hash_name: "AK-47 | Redline (Field-Tested)",     item_type: rifle, weapon_name: "AK-47",   skin_name: "Redline",       wear: "Field-Tested" }
+  - { market_hash_name: "AK-47 | Redline (Minimal Wear)",     item_type: rifle, weapon_name: "AK-47",   skin_name: "Redline",       wear: "Minimal Wear" }
+  - { market_hash_name: "AK-47 | Asiimov (Battle-Scarred)",   item_type: rifle, weapon_name: "AK-47",   skin_name: "Asiimov",       wear: "Battle-Scarred" }
+  - { market_hash_name: "AK-47 | Vulcan (Factory New)",       item_type: rifle, weapon_name: "AK-47",   skin_name: "Vulcan",        wear: "Factory New" }
+  - { market_hash_name: "AK-47 | Fire Serpent (Field-Tested)", item_type: rifle, weapon_name: "AK-47",  skin_name: "Fire Serpent",  wear: "Field-Tested" }
+  - { market_hash_name: "AK-47 | Slate (Field-Tested)",       item_type: rifle, weapon_name: "AK-47",   skin_name: "Slate",         wear: "Field-Tested" }
+  - { market_hash_name: "M4A1-S | Hyper Beast (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Hyper Beast",   wear: "Field-Tested" }
+  - { market_hash_name: "M4A1-S | Cyrex (Field-Tested)",      item_type: rifle, weapon_name: "M4A1-S",  skin_name: "Cyrex",         wear: "Field-Tested" }
+  - { market_hash_name: "M4A1-S | Printstream (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Printstream",   wear: "Field-Tested" }
+  - { market_hash_name: "M4A4 | Howl (Factory New)",          item_type: rifle, weapon_name: "M4A4",    skin_name: "Howl",          wear: "Factory New" }
+  - { market_hash_name: "M4A4 | Asiimov (Field-Tested)",      item_type: rifle, weapon_name: "M4A4",    skin_name: "Asiimov",       wear: "Field-Tested" }
+  # Test fixture: exercises the U+2122 ™ glyph in the market_hash_name.
+  - { market_hash_name: "StatTrak™ AK-47 | Redline (Field-Tested)", item_type: rifle, weapon_name: "AK-47", skin_name: "Redline", wear: "Field-Tested", is_stattrak: true }
+
+  # --- Snipers (AWP + SSG): 10 ---
+  - { market_hash_name: "AWP | Asiimov (Field-Tested)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Asiimov",       wear: "Field-Tested" }
+  - { market_hash_name: "AWP | Hyper Beast (Field-Tested)",   item_type: sniper, weapon_name: "AWP",    skin_name: "Hyper Beast",   wear: "Field-Tested" }
+  - { market_hash_name: "AWP | Dragon Lore (Field-Tested)",   item_type: sniper, weapon_name: "AWP",    skin_name: "Dragon Lore",   wear: "Field-Tested" }
+  - { market_hash_name: "AWP | Lightning Strike (Factory New)", item_type: sniper, weapon_name: "AWP",  skin_name: "Lightning Strike", wear: "Factory New" }
+  - { market_hash_name: "AWP | Wildfire (Factory New)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Wildfire",      wear: "Factory New" }
+  - { market_hash_name: "AWP | Neo-Noir (Field-Tested)",      item_type: sniper, weapon_name: "AWP",    skin_name: "Neo-Noir",      wear: "Field-Tested" }
+  - { market_hash_name: "AWP | Containment Breach (Field-Tested)", item_type: sniper, weapon_name: "AWP", skin_name: "Containment Breach", wear: "Field-Tested" }
+  - { market_hash_name: "AWP | Redline (Field-Tested)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Redline",       wear: "Field-Tested" }
+  - { market_hash_name: "SSG 08 | Death Strike (Factory New)", item_type: sniper, weapon_name: "SSG 08", skin_name: "Death Strike", wear: "Factory New" }
+  # Test fixture: exercises the Souvenir prefix.
+  - { market_hash_name: "Souvenir AWP | Dragon Lore (Battle-Scarred)", item_type: sniper, weapon_name: "AWP", skin_name: "Dragon Lore", wear: "Battle-Scarred", is_souvenir: true }
+
+  # --- Knives: 12 (all ★-prefixed, exercises U+2605) ---
+  - { market_hash_name: "★ Karambit | Doppler (Factory New)",          item_type: knife, weapon_name: "Karambit",         skin_name: "Doppler",      wear: "Factory New" }
+  - { market_hash_name: "★ Karambit | Fade (Factory New)",             item_type: knife, weapon_name: "Karambit",         skin_name: "Fade",         wear: "Factory New" }
+  - { market_hash_name: "★ Karambit | Tiger Tooth (Factory New)",      item_type: knife, weapon_name: "Karambit",         skin_name: "Tiger Tooth",  wear: "Factory New" }
+  - { market_hash_name: "★ Karambit | Marble Fade (Factory New)",      item_type: knife, weapon_name: "Karambit",         skin_name: "Marble Fade",  wear: "Factory New" }
+  - { market_hash_name: "★ M9 Bayonet | Doppler (Factory New)",        item_type: knife, weapon_name: "M9 Bayonet",       skin_name: "Doppler",      wear: "Factory New" }
+  - { market_hash_name: "★ M9 Bayonet | Crimson Web (Field-Tested)",   item_type: knife, weapon_name: "M9 Bayonet",       skin_name: "Crimson Web",  wear: "Field-Tested" }
+  - { market_hash_name: "★ Butterfly Knife | Tiger Tooth (Factory New)", item_type: knife, weapon_name: "Butterfly Knife", skin_name: "Tiger Tooth", wear: "Factory New" }
+  - { market_hash_name: "★ Butterfly Knife | Fade (Factory New)",      item_type: knife, weapon_name: "Butterfly Knife",  skin_name: "Fade",         wear: "Factory New" }
+  - { market_hash_name: "★ Butterfly Knife | Marble Fade (Factory New)", item_type: knife, weapon_name: "Butterfly Knife", skin_name: "Marble Fade", wear: "Factory New" }
+  - { market_hash_name: "★ Bayonet | Marble Fade (Factory New)",       item_type: knife, weapon_name: "Bayonet",          skin_name: "Marble Fade",  wear: "Factory New" }
+  - { market_hash_name: "★ Flip Knife | Doppler (Factory New)",        item_type: knife, weapon_name: "Flip Knife",       skin_name: "Doppler",      wear: "Factory New" }
+  - { market_hash_name: "★ Huntsman Knife | Fade (Factory New)",       item_type: knife, weapon_name: "Huntsman Knife",   skin_name: "Fade",         wear: "Factory New" }
+
+  # --- Gloves: 7 (all ★-prefixed) ---
+  - { market_hash_name: "★ Sport Gloves | Pandora's Box (Field-Tested)",    item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Pandora's Box",  wear: "Field-Tested" }
+  - { market_hash_name: "★ Sport Gloves | Vice (Field-Tested)",             item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Vice",           wear: "Field-Tested" }
+  - { market_hash_name: "★ Sport Gloves | Hedge Maze (Field-Tested)",       item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Hedge Maze",     wear: "Field-Tested" }
+  - { market_hash_name: "★ Specialist Gloves | Crimson Kimono (Field-Tested)", item_type: glove, weapon_name: "Specialist Gloves", skin_name: "Crimson Kimono", wear: "Field-Tested" }
+  - { market_hash_name: "★ Driver Gloves | King Snake (Field-Tested)",      item_type: glove, weapon_name: "Driver Gloves",     skin_name: "King Snake",     wear: "Field-Tested" }
+  - { market_hash_name: "★ Hand Wraps | Cobalt Skulls (Field-Tested)",      item_type: glove, weapon_name: "Hand Wraps",        skin_name: "Cobalt Skulls",  wear: "Field-Tested" }
+  - { market_hash_name: "★ Moto Gloves | Spearmint (Field-Tested)",         item_type: glove, weapon_name: "Moto Gloves",       skin_name: "Spearmint",      wear: "Field-Tested" }
+
+  # --- Pistols: 5 ---
+  - { market_hash_name: "Glock-18 | Fade (Factory New)",            item_type: pistol, weapon_name: "Glock-18",     skin_name: "Fade",            wear: "Factory New" }
+  - { market_hash_name: "Desert Eagle | Blaze (Factory New)",       item_type: pistol, weapon_name: "Desert Eagle", skin_name: "Blaze",           wear: "Factory New" }
+  - { market_hash_name: "Desert Eagle | Printstream (Factory New)", item_type: pistol, weapon_name: "Desert Eagle", skin_name: "Printstream",     wear: "Factory New" }
+  - { market_hash_name: "USP-S | Kill Confirmed (Field-Tested)",    item_type: pistol, weapon_name: "USP-S",        skin_name: "Kill Confirmed",  wear: "Field-Tested" }
+  - { market_hash_name: "USP-S | Neo-Noir (Factory New)",           item_type: pistol, weapon_name: "USP-S",        skin_name: "Neo-Noir",        wear: "Factory New" }
+
+  # --- Other (SMGs): 2 ---
+  - { market_hash_name: "P90 | Death by Kitty (Field-Tested)",      item_type: smg,    weapon_name: "P90",          skin_name: "Death by Kitty",  wear: "Field-Tested" }
+  - { market_hash_name: "MP9 | Hot Rod (Factory New)",              item_type: smg,    weapon_name: "MP9",          skin_name: "Hot Rod",         wear: "Factory New" }

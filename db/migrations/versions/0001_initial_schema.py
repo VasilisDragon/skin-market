@@ -131,7 +131,7 @@ def upgrade() -> None:
         ),
         sa.Column("insight_type", sa.Text, nullable=False),
         sa.Column("value", sa.Numeric),
-        sa.Column("metadata", JSONB),
+        sa.Column("meta_info", JSONB),
     )
 
     # Common query: "latest insight of type X for item Y". DESC index
@@ -149,4 +149,7 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS prices CASCADE")
     op.drop_table("sources")
     op.drop_table("items")
-    op.execute("DROP EXTENSION IF EXISTS timescaledb")
+    # NOTE: We deliberately do NOT drop the timescaledb extension. Extensions
+    # are operator-managed bootstrap state — other databases in the same
+    # cluster (or other apps) may rely on it. The CREATE EXTENSION IF NOT
+    # EXISTS in upgrade() is defensive and idempotent.
