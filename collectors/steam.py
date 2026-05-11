@@ -45,17 +45,15 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from collectors.base import (
     Collector,
     PriceObservation,
     full_jitter_backoff,
+    persist_observation,
 )
 from db.connection import get_engine
-from db.models import Item, Price, Source
 from db.naming import normalize_name
 
 logger = logging.getLogger(__name__)
@@ -115,7 +113,11 @@ class SteamCollector(Collector):
     """Collector for the Steam Community Market priceoverview endpoint."""
 
     source_name = "steam_market"
-    base_delay: float = 5.0  # seconds; used as ``base`` for backoff
+    # 5 seconds between successive item fetches when ``collect_cycle`` is
+    # used by the scheduler. Conservative; Steam tolerates this indefinitely.
+    inter_request_delay: float = 5.0
+    # Same value used as the base for full-jitter backoff on 429/5xx.
+    base_delay: float = 5.0
     max_retries: int = 5
 
     def collect_one(
@@ -234,61 +236,6 @@ class SteamCollector(Collector):
         delay = full_jitter_backoff(attempt, base=self.base_delay)
         logger.info("Backoff %.2fs before retry", delay)
         time.sleep(delay)
-
-
-def persist_observation(session: Session, obs: PriceObservation) -> bool:
-    """Insert a PriceObservation into ``prices``.
-
-    Looks up ``item_id`` by ``market_hash_name`` (NFC-normalized) and
-    ``source_id`` by ``source_name``. Returns True if a row was written
-    (or already existed at the same PK); False if the item or source is
-    unknown.
-
-    Skips writes for observations with ``price is None`` — those are
-    "no listings" signals that don't belong in the time-series.
-    """
-    if obs.price is None:
-        logger.info(
-            "Skipping persist for %r — price is None", obs.market_hash_name
-        )
-        return False
-
-    canonical_name = normalize_name(obs.market_hash_name)
-    item_id = session.execute(
-        select(Item.id).where(Item.market_hash_name == canonical_name)
-    ).scalar_one_or_none()
-    if item_id is None:
-        logger.warning(
-            "Item %r not in watchlist — not persisting", obs.market_hash_name
-        )
-        return False
-
-    source_id = session.execute(
-        select(Source.id).where(Source.name == obs.source_name)
-    ).scalar_one_or_none()
-    if source_id is None:
-        logger.error(
-            "Source %r not seeded — not persisting", obs.source_name
-        )
-        return False
-
-    stmt = (
-        pg_insert(Price)
-        .values(
-            item_id=item_id,
-            source_id=source_id,
-            timestamp=obs.timestamp,
-            price=obs.price,
-            volume=obs.volume,
-            currency=obs.currency,
-            raw_response=obs.raw_response,
-        )
-        .on_conflict_do_nothing(
-            index_elements=["item_id", "source_id", "timestamp"]
-        )
-    )
-    session.execute(stmt)
-    return True
 
 
 def main(argv: list[str] | None = None) -> int:

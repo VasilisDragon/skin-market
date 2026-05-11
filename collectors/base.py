@@ -1,41 +1,51 @@
 """Base building blocks shared by all marketplace collectors.
 
 A collector's job is to fetch raw price data from one upstream API, normalize
-it into a ``PriceObservation``, and hand it to ``persist_observation`` (or its
-analog). The base layer provides:
+it into a ``PriceObservation``, and hand it to ``persist_observation``. The
+base layer provides:
 
 - ``PriceObservation``: the dataclass that crosses the collector/DB boundary.
 - ``full_jitter_backoff``: an AWS-style backoff helper for 429/5xx retries.
 - ``DEFAULT_USER_AGENT``: the shared Chrome-flavored UA. Steam blocks
-  Python's default UA almost immediately; override per-collector if you need
-  a different one.
-- ``Collector``: an abstract base with one method, ``collect_one``. Phase 2
-  has the Steam implementation; Phase 3 will add Skinport.
+  Python's default UA almost immediately; override per-collector if needed.
+- ``Collector``: abstract base. The primary method is ``collect_cycle``,
+  which fetches a list of items in one logical pass. The default
+  implementation loops ``collect_one`` with ``inter_request_delay`` between
+  items — this fits per-item APIs like Steam. ``SkinportCollector``
+  overrides ``collect_cycle`` for its one-fetch-many-items pattern.
+- ``persist_observation``: inserts a PriceObservation into the ``prices``
+  table via PG ``ON CONFLICT DO NOTHING``. Shared by all collectors.
 
 Resilience strategy (full rationale: docs/adr/006-collector-resilience.md):
 
-- Per-request pacing is the responsibility of the scheduler, not the
-  collector. The collector itself only inserts backoff *between retries* of
-  a failing call.
+- The collector itself only inserts backoff *between retries* of a failing
+  call. Cycle-level pacing is the scheduler's job (Phase 4).
 - On 429 / 5xx / network error: full-jitter exponential backoff, max 5
   attempts, then give up and return None.
 - On 4xx other than 429: don't retry, return None.
-- On ``success:false`` from the upstream: that's a normal "no listings"
-  signal, not an error. Return None and let the caller skip the write.
-  See ADR 006 for why we don't write NULL price rows.
+- On a per-item "no listings" signal (Steam ``success:false`` /
+  Skinport ``min_price=null``): return None and skip the DB write.
 """
 
 from __future__ import annotations
 
 import logging
 import random
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
+
+from db.models import Item, Price, Source
+from db.naming import normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +100,10 @@ class Collector(ABC):
 
     source_name: str
     user_agent: str = DEFAULT_USER_AGENT
+    # Delay between successive items in the default ``collect_cycle`` loop.
+    # Subclasses that override ``collect_cycle`` (e.g. Skinport's bulk
+    # fetch) can leave this at 0.
+    inter_request_delay: float = 0.0
 
     @abstractmethod
     def collect_one(
@@ -103,6 +117,27 @@ class Collector(ABC):
         Must not raise on normal failure modes — only on programming
         errors.
         """
+
+    def collect_cycle(
+        self,
+        client: httpx.Client,
+        market_hash_names: Iterable[str],
+    ) -> Iterator[PriceObservation | None]:
+        """Yield one observation per name (or None) for the whole watchlist.
+
+        Default implementation: serial per-item fetch via ``collect_one``,
+        with ``inter_request_delay`` seconds between successive items.
+        Suits APIs that expose a per-item endpoint, e.g. Steam's
+        priceoverview.
+
+        Subclasses with a bulk endpoint (Skinport) override this and yield
+        observations after one HTTP call.
+        """
+        names = list(market_hash_names)
+        for i, name in enumerate(names):
+            if i > 0 and self.inter_request_delay > 0:
+                time.sleep(self.inter_request_delay)
+            yield self.collect_one(client, name)
 
     def make_client(self) -> httpx.Client:
         """Construct the httpx client used for this collector's requests.
@@ -125,3 +160,59 @@ class Collector(ABC):
             ),
             follow_redirects=False,
         )
+
+
+def persist_observation(session: Session, obs: PriceObservation) -> bool:
+    """Insert a PriceObservation into ``prices``.
+
+    Looks up ``item_id`` by NFC-normalized ``market_hash_name`` and
+    ``source_id`` by ``source_name``. Returns True if a row was written
+    (or already existed at the same composite PK); False if the item or
+    source is unknown, or if the observation had no price to write.
+
+    Uses Postgres' ``INSERT ... ON CONFLICT DO NOTHING`` so racing collectors
+    or accidental same-timestamp writes are silent no-ops, not errors.
+    """
+    if obs.price is None:
+        logger.info(
+            "Skipping persist for %r — price is None", obs.market_hash_name
+        )
+        return False
+
+    canonical_name = normalize_name(obs.market_hash_name)
+    item_id = session.execute(
+        select(Item.id).where(Item.market_hash_name == canonical_name)
+    ).scalar_one_or_none()
+    if item_id is None:
+        logger.warning(
+            "Item %r not in watchlist — not persisting",
+            obs.market_hash_name,
+        )
+        return False
+
+    source_id = session.execute(
+        select(Source.id).where(Source.name == obs.source_name)
+    ).scalar_one_or_none()
+    if source_id is None:
+        logger.error(
+            "Source %r not seeded — not persisting", obs.source_name
+        )
+        return False
+
+    stmt = (
+        pg_insert(Price)
+        .values(
+            item_id=item_id,
+            source_id=source_id,
+            timestamp=obs.timestamp,
+            price=obs.price,
+            volume=obs.volume,
+            currency=obs.currency,
+            raw_response=obs.raw_response,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["item_id", "source_id", "timestamp"]
+        )
+    )
+    session.execute(stmt)
+    return True
