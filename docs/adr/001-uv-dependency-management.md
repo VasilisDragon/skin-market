@@ -30,7 +30,7 @@ reproducible installs. `uv sync` reconstructs the virtualenv from the lock.
   metadata. Rejected on speed and standards-compliance grounds.
 - **Hatch / PDM**: viable but smaller communities than uv right now.
 - **Conda / Mamba**: overkill for a project with no native-binary scientific
-  dependencies beyond `psycopg2-binary` and `matplotlib`, both of which
+  dependencies beyond `psycopg[binary]` and `matplotlib`, both of which
   ship wheels.
 
 ## Consequences

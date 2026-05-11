@@ -1,3 +1,9 @@
+# Footgun: POSTGRES_PASSWORD is only consumed by the postgres image on the
+# FIRST initialization of the data volume. If you rotate the password later,
+# either ALTER USER inside the running container, or destroy + recreate the
+# volume with `docker compose down -v` (DESTRUCTIVE — wipes all data).
+# A stale-password container will fail healthchecks and refuse connections
+# until you do one or the other.
 services:
   postgres:
     image: timescale/timescaledb:2.17.2-pg16

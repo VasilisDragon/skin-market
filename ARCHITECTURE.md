@@ -12,7 +12,7 @@ A locally-hosted, eventually-public CS2 skin market data aggregation service wit
 
 **Architecture decisions get committed to ADR files.** When you make a non-obvious choice (library selection, schema shape, API design), drop a one-page `docs/adr/NNN-title.md` explaining what you picked, what you rejected, and why. Future-you will thank present-you.
 
-**No "magic" libraries.** Prefer boring, well-documented tools the user can debug at 2am with a Stack Overflow search: `httpx`, `psycopg2-binary`, `sqlalchemy`, `fastapi`, `apscheduler`, `matplotlib`, `pandas`. Skip exotic frameworks even if they look slicker.
+**No "magic" libraries.** Prefer boring, well-documented tools the user can debug at 2am with a Stack Overflow search: `httpx`, `psycopg` (v3), `sqlalchemy`, `fastapi`, `apscheduler`, `matplotlib`, `pandas`. Skip exotic frameworks even if they look slicker.
 
 **Tests for non-trivial logic.** Pure data-shuffling doesn't need tests. Pricing math, deal evaluation, schema migrations, anything that has a "right answer" — test it. `pytest` is the default.
 
