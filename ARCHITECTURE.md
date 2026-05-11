@@ -155,3 +155,24 @@ A phase is done when:
 - User accounts / auth (v5+)
 - Payment integration (v5+)
 - Real-time websocket pricing (v6+ if ever)
+- **Passive message logging.** The bot does NOT log non-addressed Discord
+  messages to any database. Discord's developer ToS restricts this, and the
+  privacy story doesn't work for a future paid product. The bot stores only
+  messages it was directly addressed in (via @-mention or slash command).
+- **Autonomous prediction generation.** The bot does NOT generate market
+  predictions on its own initiative based on chat content. Predictions,
+  when they exist (post-v1), are explicitly user-triggered (e.g. a
+  `/predict` command).
+- **Self-scheduled prediction validation loops.** No cron jobs that grade
+  past predictions against actual prices in v1. The infrastructure for
+  this is post-v1.
+- **LLM-generated markdown knowledge files.** The bot does NOT write
+  summary `.md` files that it later reads as a poor-man's memory layer.
+  Structured storage (Postgres tables) is the canonical knowledge source;
+  drift between LLM-written summaries and underlying data is a known
+  anti-pattern we're avoiding by construction.
+- **Live external API calls from the bot's reply path.** The bot reads
+  from the local Postgres only. If an item isn't in our DB, the correct
+  response is "I don't track that item — request it be added to the
+  watchlist." Never have the bot scrape Steam/Skinport during a Discord
+  conversation.

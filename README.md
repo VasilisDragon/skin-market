@@ -107,6 +107,7 @@ The skill calls the API at `http://localhost:8000` (when the bot runs on the sam
 - **v3** — News/speculation layer (RSS ingestion, LLM commentary on price moves)
 - **v4** — Multi-game (Dota 2, TF2, Rust)
 - **v5** — Web frontend, user accounts, paid tiers
+- **vN (post-v3, exact phase TBD)** — Autonomous predictor / listener / validation loop. Per-server opt-in, strict per-server data isolation. Paid-tier feature; see PROJECT_SPEC.md "Post-v1 roadmap" for the full picture.
 
 ## License
 

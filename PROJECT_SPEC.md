@@ -145,6 +145,14 @@ uv run python -m collectors.skinport
 - A `docker-compose.yml` service `collector` that runs the scheduler
 - Graceful shutdown on SIGTERM
 - Logs visible via `docker compose logs collector`
+- **Conditional writes.** The scheduler is the right place to implement
+  "skip the write if (price, volume) is unchanged from the most recent row
+  for the same (item, source)." This prevents accumulating thousands of
+  near-identical rows for low-volume items. Implementation: before calling
+  `persist_observation`, query the most recent row for this (item_id,
+  source_id), compare price + volume, skip the write if both match.
+  Document the threshold for "unchanged" — probably exact equality on
+  price, exact equality on volume — in an ADR.
 
 **Acceptance:**
 - `docker compose up -d collector` runs cleanly
@@ -163,6 +171,29 @@ uv run python -m collectors.skinport
 **Acceptance:**
 - After running collection for >24h, running the analytics job produces rows in `insights`
 - A query like `SELECT * FROM insights WHERE item_id = X AND insight_type = 'moving_avg_7d' ORDER BY computed_at DESC LIMIT 1` returns a sensible number
+
+**Narrative insights (LLM-generated, runs in background).** One analytics
+job runs nightly via cron, queries the day's most notable market moves
+(top N price changes, top N volume anomalies, items crossing 7-day or
+30-day MA boundaries), and uses Ollama (the existing local model on the
+Spark — qwen3-coder or gpt-oss:20b, whichever is loaded) to generate a
+one-paragraph English summary of the day. The summary is stored as an
+`insights` row with `insight_type = 'daily_narrative'`, the paragraph in
+the new `text_value` column (see ADR 007), and `meta_info` JSONB holding
+the source data the summary was based on (for citation/audit). The bot's
+reply path reads these rows when answering "anything interesting happen
+today" / "what's the market doing this week" style questions.
+
+Acceptance: after running collection for >24h and the analytics job
+firing once, `SELECT text_value, meta_info FROM insights WHERE
+insight_type = 'daily_narrative' ORDER BY computed_at DESC LIMIT 1`
+returns a row whose `text_value` is a coherent English paragraph and
+whose `meta_info` documents which items + price moves it cited.
+
+Implementation note: the LLM call uses the local Ollama endpoint via the
+same OpenAI-compatible interface the bot uses. The narrative job is the
+only LLM-touching analytics task in v1 — everything else (MAs, anomaly
+detection, etc.) stays pure SQL/Python.
 
 ### Phase 6 — FastAPI service
 
@@ -196,6 +227,23 @@ curl localhost:8000/items/ak47-redline-fn/chart?days=30 > chart.png
 - `bot_skill/tools.py` implementing tools: `query_current_price`, `query_price_history`, `render_chart`, `evaluate_deal`, `list_watchlist`
 - Skill installed into `~/.hermes-discord/skills/skin-market/`
 - Tools make HTTP calls to the FastAPI service (treat it as external)
+
+**Insight enrichment (default-on).** `query_current_price` and
+`query_price_history` must, in addition to returning raw price data,
+include the most recent relevant `insights` rows for the item: latest
+moving averages, volume anomaly flags, and (when available) the latest
+`daily_narrative` if it mentions this item. The bot's reply prompts
+should be structured so the LLM uses these insights to enrich its
+response rather than reciting raw numbers. Example: "AK Redline FN is
+at $42.92, up 8% over the past 7 days. Volume is 12% above its 30-day
+average, which has historically preceded continued price increases in
+this item."
+
+The API surface should make this the default behavior, not opt-in. The
+Phase 6 `GET /items/{slug}/price` response payload (and the analogous
+`history` and `insights` payloads) always includes a `latest_insights`
+array. A bot tool that only wants raw price data can ignore the array,
+but the default is enrichment.
 
 **Acceptance:**
 - In Discord: `@bot what's the current price of AK Redline FN?` → bot replies with price + source breakdown
@@ -234,6 +282,21 @@ If you have to pause partway through, the right stopping points are:
 - After phase 7: end-to-end works in a manual-start state
 
 Phase 8 (Docker compose for full stack) is the polish that makes it deployable; everything before it can run locally with `uv run`.
+
+## Post-v1 roadmap
+
+- **vN (post-v3, exact phase TBD) — Autonomous predictor + listener +
+  validation loop.** A passive listener that reads market-relevant channel
+  discussion, generates time-deferred predictions tagged with a `check_at`
+  timestamp, and a nightly cron that validates due predictions against
+  actual prices, writes outcomes, and uses outcome history to inform
+  future prediction confidence. Gated behind explicit per-server opt-in:
+  server admins must enable it, with disclosure to channel members about
+  logging. Strict per-server data isolation — each Discord server gets
+  its own predictions schema/database; predictions and learning data
+  never cross server boundaries. This is a feature for the eventual paid
+  tier, not v1. See ARCHITECTURE.md "Things explicitly out of scope for v1"
+  for what's intentionally NOT in v1 that this rolls up.
 
 ## What I want you (Claude Code) to do first
 
