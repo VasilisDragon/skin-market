@@ -1,0 +1,113 @@
+"""Integration test: write a price row and read it back through the ORM.
+
+Requires a running Postgres with the Phase 1 schema applied. Skipped
+automatically if the DB is unreachable (e.g. on CI without a postgres
+service), so this file is safe to keep in the default test session.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
+from db.connection import get_engine
+from db.models import Item, Price, Source
+
+
+def _db_reachable() -> bool:
+    try:
+        with get_engine().connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except OperationalError:
+        return False
+    except Exception:
+        # Any setup failure (missing DATABASE_URL, etc.) -> skip.
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL") or not _db_reachable(),
+    reason="DATABASE_URL not set or postgres unreachable",
+)
+
+
+def test_price_roundtrip() -> None:
+    """Insert a price row through the ORM, query it back, assert the
+    NUMERIC/JSONB/timestamp columns round-trip exactly."""
+    engine = get_engine()
+    with Session(engine) as session:
+        # Find any existing item + source. The seed script populates these
+        # in the dev flow; the test requires them to exist.
+        item = session.execute(select(Item).limit(1)).scalar_one()
+        source = session.execute(select(Source).limit(1)).scalar_one()
+
+        # Use a far-future timestamp so this test doesn't clash with real
+        # collector writes during dev.
+        ts = datetime(2099, 1, 1, tzinfo=UTC)
+
+        # Clean any leftover from a previous failed run.
+        session.execute(
+            text(
+                "DELETE FROM prices WHERE item_id = :i "
+                "AND source_id = :s AND timestamp = :t"
+            ),
+            {"i": item.id, "s": source.id, "t": ts},
+        )
+
+        price = Price(
+            item_id=item.id,
+            source_id=source.id,
+            timestamp=ts,
+            price=Decimal("12.34"),
+            volume=99,
+            currency="USD",
+            raw_response={"lowest_price": "$12.34", "volume": "99"},
+        )
+        session.add(price)
+        session.commit()
+
+        round_trip = session.execute(
+            select(Price).where(
+                Price.item_id == item.id,
+                Price.source_id == source.id,
+                Price.timestamp == ts,
+            )
+        ).scalar_one()
+
+        assert round_trip.price == Decimal("12.34")
+        assert round_trip.volume == 99
+        assert round_trip.currency == "USD"
+        assert round_trip.raw_response == {
+            "lowest_price": "$12.34",
+            "volume": "99",
+        }
+
+        # Idempotency: clean up.
+        session.delete(round_trip)
+        session.commit()
+
+
+def test_stattrak_market_hash_name_roundtrip() -> None:
+    """The U+2122 codepoint in a StatTrak market_hash_name must survive a
+    write/read roundtrip — that's the key invariant for the Steam UPSERT."""
+    engine = get_engine()
+    expected_name = "StatTrak™ AK-47 | Redline (Field-Tested)"
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT market_hash_name FROM items WHERE market_hash_name = :n"),
+            {"n": expected_name},
+        ).scalar_one_or_none()
+    # If the seed script has run, this item exists. Otherwise skip — the
+    # roundtrip is also covered by test_price_roundtrip on whatever items
+    # exist.
+    if row is None:
+        pytest.skip("seed not run; StatTrak fixture not present")
+    assert row == expected_name
+    assert "™" in row

@@ -1,0 +1,117 @@
+"""SQLAlchemy ORM models for the skin-market schema.
+
+Four tables:
+
+- ``items``: one row per CS2 item we track. UUID PK so the slug can change
+  without breaking foreign keys.
+- ``sources``: one row per upstream marketplace API. Small lookup table.
+- ``prices``: composite PK (item_id, source_id, timestamp). Converted to a
+  TimescaleDB hypertable in the initial migration. ``raw_response`` keeps
+  the upstream JSON for replay/debugging.
+- ``insights``: derived analytics (moving averages, anomaly flags, etc.).
+  Written by the analytics layer, read by the API.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Item(Base):
+    __tablename__ = "items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    market_hash_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    item_type: Mapped[str | None] = mapped_column(Text)
+    weapon_name: Mapped[str | None] = mapped_column(Text)
+    skin_name: Mapped[str | None] = mapped_column(Text)
+    wear: Mapped[str | None] = mapped_column(Text)
+    is_stattrak: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    is_souvenir: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Source(Base):
+    __tablename__ = "sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    base_url: Mapped[str | None] = mapped_column(Text)
+    rate_limit_per_minute: Mapped[int | None] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+
+
+class Price(Base):
+    __tablename__ = "prices"
+
+    # Composite PK. ``timestamp`` is included so TimescaleDB can use it as
+    # the partitioning column (a unique constraint must contain the
+    # partition key).
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), primary_key=True
+    )
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id"), primary_key=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    volume: Mapped[int | None] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="USD"
+    )
+    raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), nullable=False
+    )
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    insight_type: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(Numeric)
+    # ``metadata`` is a reserved attribute name on DeclarativeBase, so the
+    # Python attribute is ``meta`` while the DB column stays ``metadata``.
+    meta: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB)
