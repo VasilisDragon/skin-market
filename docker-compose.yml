@@ -44,6 +44,41 @@ services:
     # Allow it to drain on SIGTERM before docker SIGKILLs the process.
     stop_grace_period: 5m
 
+  api:
+    # Same image as collector / analytics — only the entrypoint differs.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skinmarket-api
+    command:
+      [
+        "uvicorn", "api.main:app",
+        "--host", "0.0.0.0", "--port", "8000",
+        "--proxy-headers"
+      ]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # Deliberately NO ``ports:`` mapping — the API is reachable from
+    # other compose services at http://api:8000 via the internal
+    # network, but not from the host. Auth is unnecessary while that
+    # holds; if Phase 7 ever deploys the bot outside the compose stack,
+    # add a static-bearer dependency (see ADR 014 §3).
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   analytics:
     # Same image as collector — only the entrypoint differs.
     build:
