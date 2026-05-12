@@ -47,6 +47,7 @@ from collectors.base import (
     persist_observation,
     should_write_observation,
 )
+from collectors.dmarket import DMarketCollector
 from collectors.skinport import SkinportCollector
 from collectors.steam import SteamCollector
 from db.connection import get_engine
@@ -171,6 +172,14 @@ def run_skinport_cycle() -> None:
         logger.exception("Skinport cycle failed with unhandled exception")
 
 
+def run_dmarket_cycle() -> None:
+    """APScheduler job wrapper for the DMarket per-item poll."""
+    try:
+        _run_cycle(DMarketCollector(), "DMarket")
+    except Exception:
+        logger.exception("DMarket cycle failed with unhandled exception")
+
+
 def build_scheduler() -> BlockingScheduler:
     """Build (but don't start) the scheduler. Factored out for testability."""
     scheduler = BlockingScheduler(
@@ -209,6 +218,20 @@ def build_scheduler() -> BlockingScheduler:
         next_run_time=soon,
         id="skinport_cycle",
         name="Skinport bulk poll",
+    )
+    # DMarket: 15 min interval — more aggressive than Steam (30 min,
+    # bot-sensitive endpoint) because DMarket has no anti-bot footgun,
+    # less aggressive than Skinport (5 min, single bulk call) because
+    # DMarket is per-item and a 48-item cycle takes ~2-3 min at 3s
+    # pacing. Per-item commit semantics (collectors/base.py) preserve
+    # mid-cycle progress under SIGKILL.
+    scheduler.add_job(
+        run_dmarket_cycle,
+        trigger="interval",
+        minutes=15,
+        next_run_time=soon,
+        id="dmarket_cycle",
+        name="DMarket per-item poll",
     )
     return scheduler
 

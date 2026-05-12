@@ -31,6 +31,14 @@ sources:
     rate_limit_per_minute: 60
     enabled: true
     denomination: usd
+  # Second real-money source: a Skinport-vs-DMarket divergence is
+  # unambiguous price signal (no wallet-credit denomination artifact).
+  # Per-item endpoint (like Steam), unauthenticated read access, US-leaning.
+  - name: dmarket
+    base_url: https://api.dmarket.com/exchange/v1/
+    rate_limit_per_minute: 20
+    enabled: true
+    denomination: usd
 
 # 50 items total. Re-ordered by item_type so the mix is visually obvious.
 items:

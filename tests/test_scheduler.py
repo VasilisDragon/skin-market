@@ -211,14 +211,15 @@ class TestSchedulerConfig:
     """``build_scheduler`` returns a configured-but-not-started scheduler;
     no thread/resource cleanup is needed in these tests."""
 
-    def test_two_jobs_registered_with_expected_intervals(self) -> None:
+    def test_jobs_registered_with_expected_intervals(self) -> None:
         scheduler = build_scheduler()
         jobs = {job.id: job for job in scheduler.get_jobs()}
-        assert set(jobs) == {"steam_cycle", "skinport_cycle"}
+        assert set(jobs) == {"steam_cycle", "skinport_cycle", "dmarket_cycle"}
         # APScheduler's IntervalTrigger exposes the interval as a
         # timedelta on the trigger object.
         assert jobs["steam_cycle"].trigger.interval == timedelta(minutes=30)
         assert jobs["skinport_cycle"].trigger.interval == timedelta(minutes=5)
+        assert jobs["dmarket_cycle"].trigger.interval == timedelta(minutes=15)
 
     def test_scheduler_has_overlap_defaults(self) -> None:
         """The overlap/coalesce/grace-time policy from ADR 009 must be in
