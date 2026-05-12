@@ -23,6 +23,11 @@ dependencies = [
     "matplotlib>=3.9,<4.0",
     "pandas>=2.2,<3.0",
     "pyyaml>=6.0,<7.0",
+    # ruamel.yaml preserves comments and ordering when rewriting
+    # data/watchlist.yaml from scripts/watchlist_edit.py. PyYAML's
+    # safe_dump would erase the file's header comments and section
+    # markers on every edit.
+    "ruamel.yaml>=0.18,<1.0",
 ]
 
 [dependency-groups]
