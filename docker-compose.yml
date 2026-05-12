@@ -44,5 +44,31 @@ services:
     # Allow it to drain on SIGTERM before docker SIGKILLs the process.
     stop_grace_period: 5m
 
+  analytics:
+    # Same image as collector — only the entrypoint differs.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skinmarket-analytics
+    command: ["python", "-m", "analytics.scheduler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Narrative job calls a local Ollama instance. The Spark host runs
+      # Ollama at 127.0.0.1:11434; host.docker.internal maps to the host
+      # gateway via the extra_hosts entry below.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gpt-oss:20b}
+    extra_hosts:
+      # Required on Linux Docker so the container can reach the host's
+      # Ollama; on Docker Desktop the same name already resolves.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Daily narrative LLM call can run multiple minutes on a 27b model.
+    stop_grace_period: 5m
+
 volumes:
   postgres_data:

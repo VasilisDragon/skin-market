@@ -75,6 +75,10 @@ class Source(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
+    # 'usd' (real-money) vs 'wallet_credit' (Steam Wallet) vs future
+    # 'rmb', 'eth', etc. Used by the analytics + narrative formatters
+    # to label prices honestly. See docs/sources-and-semantics.md.
+    denomination: Mapped[str | None] = mapped_column(Text)
 
 
 class Price(Base):
@@ -112,6 +116,9 @@ class Insight(Base):
     )
     insight_type: Mapped[str] = mapped_column(Text, nullable=False)
     value: Mapped[Decimal | None] = mapped_column(Numeric)
+    # Used by insight_type='daily_narrative' to store an English
+    # paragraph (ADR 007). NULL for all numeric insight types.
+    text_value: Mapped[str | None] = mapped_column(Text)
     # Named ``meta_info`` rather than ``metadata`` because the latter is a
     # reserved attribute name on SQLAlchemy's DeclarativeBase — anyone who
     # writes ``insight.metadata = {...}`` would silently reassign the

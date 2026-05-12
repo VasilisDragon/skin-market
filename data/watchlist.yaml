@@ -22,10 +22,15 @@ sources:
     base_url: https://steamcommunity.com/market/
     rate_limit_per_minute: 12
     enabled: true
+    # Steam Wallet credit, not USD. Carries a ~30-50% structural premium
+    # over USD for normal items because wallet credit can't be withdrawn
+    # to real money. See docs/sources-and-semantics.md.
+    denomination: wallet_credit
   - name: skinport
     base_url: https://api.skinport.com/v1/
     rate_limit_per_minute: 60
     enabled: true
+    denomination: usd
 
 # 50 items total. Re-ordered by item_type so the mix is visually obvious.
 items:

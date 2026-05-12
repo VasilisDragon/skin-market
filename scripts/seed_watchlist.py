@@ -36,9 +36,16 @@ _SUPPORTED_SCHEMA_VERSION = 1
 
 _INSERT_SOURCE_SQL = text(
     """
-    INSERT INTO sources (name, base_url, rate_limit_per_minute, enabled)
-    VALUES (:name, :base_url, :rlim, :enabled)
-    ON CONFLICT (name) DO NOTHING
+    INSERT INTO sources (name, base_url, rate_limit_per_minute, enabled, denomination)
+    VALUES (:name, :base_url, :rlim, :enabled, :denom)
+    ON CONFLICT (name) DO UPDATE SET
+        base_url = EXCLUDED.base_url,
+        rate_limit_per_minute = EXCLUDED.rate_limit_per_minute,
+        enabled = EXCLUDED.enabled,
+        -- COALESCE so a partial seed (e.g. test fixture YAML without
+        -- denomination) leaves the existing value intact rather than
+        -- silently clobbering it to NULL.
+        denomination = COALESCE(EXCLUDED.denomination, sources.denomination)
     """
 )
 
@@ -88,6 +95,7 @@ def seed(watchlist_path: Path = DEFAULT_WATCHLIST_PATH) -> tuple[int, int]:
                     "base_url": src.get("base_url"),
                     "rlim": src.get("rate_limit_per_minute"),
                     "enabled": src.get("enabled", True),
+                    "denom": src.get("denomination"),
                 },
             )
         for it in data["items"]:
