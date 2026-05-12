@@ -157,7 +157,31 @@ Skinport's job ID is unchanged (`skinport_cycle`); only `steam_cycle` → `steam
 
 ## Operator workflow after this phase
 
-1. After commit + verification of tests/migration, the operator runs:
+1. **Rebuild the collector image** so the running container has the new code:
+
+   ```bash
+   docker compose build collector
+   ```
+
+   `docker compose restart` alone is **not sufficient** — it restarts the container against whatever image was previously built. A Task 9 fire-drill on 2026-05-12 hit exactly this: the collector was restarted post-commit but with the pre-commit image, so Steam continued retrying item-by-item past 429-exhaustion (the old code returned None on exhaust; the new code raises RateLimited). Logs showed no `rate-limited`, no `cycle aborted by RateLimited`, no `paused` lines because the new log lines didn't exist in the running binary. The fix was `docker compose build collector` followed by `docker compose up -d collector`. The behavior under the new image, captured live:
+
+   ```
+   21:25:05  Steam 429 (attempt 1/5) for 'AK-47 | Asiimov (Battle-Scarred)' — Retry-After=absent, sleeping 0.11s
+   21:25:14  Steam 429 (attempt 2/5) … sleeping 8.42s
+   …
+   21:25:51  Steam 429 (attempt 5/5) … sleeping 47.65s
+   21:26:39  ERROR  Steam collector exhausted 5 attempts for 'AK-47 | Asiimov (Battle-Scarred)'
+   21:26:39  WARN   Steam cycle aborted by RateLimited after 0 items consumed
+   21:26:39  INFO   Steam cycle complete: 48 attempted, 0 written, 0 unchanged, 0 unavailable, 0 declined, 0 lookup_failed
+   21:26:39  WARN   Steam rate-limited (Retry-After=absent) — pausing job for 300s
+   21:26:39  WARN   steam_market job paused until 2026-05-12T21:31:39+00:00 (in 300s)
+   ```
+
+   Skinport and DMarket cycles ran to completion in parallel during Steam's retry-then-pause sequence, confirming the per-source independence.
+
+   The integration test `test_collect_cycle_aborts_on_first_item_ratelimited` in `tests/test_steam_collector.py` is the in-pytest guard against a real propagation regression — if the bug had been in code, that test would have surfaced it. (It passed against the committed code, which is what flagged the fire-drill as image-not-code.)
+
+2. Re-enable Skinport in the DB:
 
    ```sql
    UPDATE sources SET enabled = TRUE WHERE name = 'skinport';
@@ -165,11 +189,11 @@ Skinport's job ID is unchanged (`skinport_cycle`); only `steam_cycle` → `steam
 
    (No need to update `interval_minutes` or `per_item_delay_seconds` — migration 0003 already set Skinport to 15/0.)
 
-2. `docker compose restart collector` — re-reads `sources` and registers `skinport_cycle` again.
+3. `docker compose up -d collector` — re-reads `sources` and registers `skinport_cycle` again.
 
-3. Watch one cycle complete cleanly: `docker compose logs --tail 100 collector | grep "Skinport cycle complete"` — expect a healthy `N written, M unchanged, 0 declined` line.
+4. Watch one cycle complete cleanly: `docker compose logs --tail 200 collector | grep -E "cycle complete|rate-limited|paused"` — expect a healthy Skinport `N written, M unchanged, 0 declined` line, and (assuming Steam is still IP-banned) a one-time Steam `rate-limited … pausing job for 300s` line followed by no further Steam activity for 5 minutes.
 
-4. Phase 6 (FastAPI read API) is greenlit only after that verification.
+5. Phase 6 (FastAPI read API) is greenlit only after that verification.
 
 ## Consequences
 

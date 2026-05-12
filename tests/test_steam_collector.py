@@ -237,6 +237,51 @@ class TestSteamCollectorHTTP:
         assert "AK-47" in url
         assert "Redline" in url
 
+    def test_collect_cycle_aborts_on_first_item_ratelimited(
+        self, httpx_mock, monkeypatch
+    ) -> None:
+        """Integration-shape test: RateLimited raised in ``collect_one``
+        must propagate through the default ``collect_cycle`` generator
+        AND abort the cycle before any subsequent item is requested.
+
+        Originally caught a fire-drill where the running collector
+        container appeared to ignore RateLimited — turned out to be a
+        stale Docker image (operator workflow lesson, documented in ADR
+        013 §6), but this test now guards the propagation behavior so
+        any actual regression here surfaces in pytest.
+        """
+        # Patch base.time.sleep so the inter_request_delay (5s) doesn't
+        # actually pause the test. If the bug were real and item 2 were
+        # attempted, this is also where we'd want to know the sleep
+        # didn't matter — but the assertion below catches that case
+        # anyway.
+        monkeypatch.setattr("collectors.base.time.sleep", lambda _: None)
+        # Five 429s for item 1; deliberately no response for item 2 —
+        # if the cycle incorrectly continues, pytest-httpx will raise
+        # "no response found" on the item-2 request.
+        for _ in range(SteamCollector.max_retries):
+            httpx_mock.add_response(status_code=429)
+
+        collector = SteamCollector()
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            # Consume the generator fully via list() so any yields are
+            # collected; if RateLimited propagates correctly, list()
+            # raises before getting to item 2.
+            list(
+                collector.collect_cycle(
+                    client, ["item1", "item2", "item3"]
+                )
+            )
+
+        assert excinfo.value.source_name == "steam_market"
+        # Only item 1's 5 retries were issued — items 2 and 3 never
+        # reached the HTTP layer.
+        assert (
+            len(httpx_mock.get_requests()) == SteamCollector.max_retries
+        )
+
     def test_unicode_market_hash_name_in_request(self, httpx_mock) -> None:
         """Make sure ★ and ™ characters reach the wire encoded correctly,
         not mangled by encoding-default surprises."""
