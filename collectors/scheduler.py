@@ -68,6 +68,15 @@ def _load_watchlist(session: Session, limit: int | None = None) -> list[str]:
     ).all()
     names = [row[0] for row in rows]
     if limit is not None and len(names) > limit:
+        # TODO(watchlist-rotation): when watchlist grows past 50, this
+        # naive `names[:limit]` always picks the same first 50 items,
+        # starving the rest. Replace with round-robin: store a
+        # ``last_cycle_offset`` row in a small ``scheduler_state`` table
+        # (or compute the offset from a wall-clock-derived index, e.g.
+        # ``int(time.time() // interval_seconds) % chunk_count``), and
+        # slice ``names[offset:offset+limit]`` with wraparound. Not
+        # implemented because v1 watchlist is 48 < 50; ADR 009 §7 has
+        # the design context.
         names = names[:limit]
     return names
 
