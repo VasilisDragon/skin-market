@@ -79,6 +79,22 @@ class Source(Base):
     # 'rmb', 'eth', etc. Used by the analytics + narrative formatters
     # to label prices honestly. See docs/sources-and-semantics.md.
     denomination: Mapped[str | None] = mapped_column(Text)
+    # Scheduler reads these at startup to register one APScheduler job
+    # per enabled source. Scalar columns rather than a JSONB policy blob
+    # because today's knobs are scalar (ADR 013 §1). Migrate to JSONB if
+    # we ever need structured policy (e.g. per-status-code backoff
+    # curves, conditional rules).
+    #
+    # Server defaults give fresh inserts (seed_watchlist, ad-hoc test
+    # sources) a conservative cadence without forcing every caller to
+    # know about these columns. Production sources have explicit values
+    # set by migration 0003.
+    interval_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("30")
+    )
+    per_item_delay_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("5")
+    )
 
 
 class Price(Base):

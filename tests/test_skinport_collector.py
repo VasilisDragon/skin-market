@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from collectors.base import DECLINED, RateLimited
 from collectors.skinport import (
     SkinportCollector,
     parse_skinport_price,
@@ -205,7 +206,9 @@ class TestSkinportCollectorCycle:
         assert len(results) == 1
         assert results[0].price == Decimal("2.00")
 
-    def test_404_no_retry_yields_nones(self, httpx_mock) -> None:
+    def test_404_no_retry_yields_declineds(self, httpx_mock) -> None:
+        # Bulk fetch returned 4xx non-429 — source declined to answer.
+        # Every requested item in the cycle is recorded as declined.
         httpx_mock.add_response(status_code=404)
 
         collector = SkinportCollector()
@@ -220,27 +223,68 @@ class TestSkinportCollectorCycle:
                 )
             )
 
-        assert results == [None, None]
+        assert results == [DECLINED, DECLINED]
         assert len(httpx_mock.get_requests()) == 1
 
-    def test_retry_exhaustion(self, httpx_mock) -> None:
+    def test_429_retry_exhaustion_raises_ratelimited(
+        self, httpx_mock
+    ) -> None:
         for _ in range(SkinportCollector.max_retries):
             httpx_mock.add_response(status_code=429)
 
         collector = SkinportCollector()
-        with collector.make_client() as client:
-            results = list(
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            list(
                 collector.collect_cycle(
                     client, ["AK-47 | Redline (Field-Tested)"]
                 )
             )
 
-        assert results == [None]
+        assert excinfo.value.source_name == "skinport"
+        assert excinfo.value.retry_after_seconds is None
         assert (
             len(httpx_mock.get_requests()) == SkinportCollector.max_retries
         )
 
-    def test_non_list_body_yields_nones(self, httpx_mock) -> None:
+    def test_429_with_retry_after_header_honored(
+        self, httpx_mock
+    ) -> None:
+        for _ in range(SkinportCollector.max_retries):
+            httpx_mock.add_response(
+                status_code=429, headers={"Retry-After": "120"}
+            )
+        collector = SkinportCollector()
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            list(
+                collector.collect_cycle(
+                    client, ["AK-47 | Redline (Field-Tested)"]
+                )
+            )
+        assert excinfo.value.retry_after_seconds == 120
+
+    def test_5xx_exhaustion_yields_declineds(self, httpx_mock) -> None:
+        # No 429 ever seen — source-side error, not rate limit. All
+        # items in the cycle are declined; no RateLimited raised.
+        for _ in range(SkinportCollector.max_retries):
+            httpx_mock.add_response(status_code=503)
+        collector = SkinportCollector()
+        with collector.make_client() as client:
+            results = list(
+                collector.collect_cycle(
+                    client,
+                    [
+                        "AK-47 | Redline (Field-Tested)",
+                        "M4A4 | Howl (Factory New)",
+                    ],
+                )
+            )
+        assert results == [DECLINED, DECLINED]
+
+    def test_non_list_body_yields_declineds(self, httpx_mock) -> None:
         httpx_mock.add_response(json={"oops": "we changed the shape"})
 
         collector = SkinportCollector()
@@ -255,9 +299,9 @@ class TestSkinportCollectorCycle:
                 )
             )
 
-        assert results == [None, None]
+        assert results == [DECLINED, DECLINED]
 
-    def test_malformed_json_yields_nones(self, httpx_mock) -> None:
+    def test_malformed_json_yields_declineds(self, httpx_mock) -> None:
         httpx_mock.add_response(content=b"<html>maintenance</html>")
 
         collector = SkinportCollector()
@@ -268,7 +312,7 @@ class TestSkinportCollectorCycle:
                 )
             )
 
-        assert results == [None]
+        assert results == [DECLINED]
 
     def test_request_url_carries_app_id_and_currency(
         self, httpx_mock

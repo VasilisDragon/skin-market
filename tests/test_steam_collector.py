@@ -11,7 +11,7 @@ from decimal import Decimal
 
 import pytest
 
-from collectors.base import full_jitter_backoff
+from collectors.base import DECLINED, RateLimited, full_jitter_backoff
 from collectors.steam import (
     SteamCollector,
     parse_steam_price,
@@ -158,23 +158,58 @@ class TestSteamCollectorHTTP:
         assert len(httpx_mock.get_requests()) == 2
 
     def test_404_no_retry(self, httpx_mock) -> None:
+        # 4xx non-429 is a definitive decline (Steam said "bad request"),
+        # not an ambiguous-unavailable.
         httpx_mock.add_response(status_code=404)
         collector = SteamCollector()
         with collector.make_client() as client:
             obs = collector.collect_one(client, "Nonexistent")
 
-        assert obs is None
+        assert obs is DECLINED
         assert len(httpx_mock.get_requests()) == 1
 
-    def test_429_exhausted(self, httpx_mock) -> None:
+    def test_429_exhausted_raises_ratelimited(self, httpx_mock) -> None:
         for _ in range(SteamCollector.max_retries):
             httpx_mock.add_response(status_code=429)
         collector = SteamCollector()
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            collector.collect_one(client, "X")
+
+        assert excinfo.value.source_name == "steam_market"
+        # No Retry-After header in these responses — wrapper-level
+        # fallback ladder will be used by the scheduler.
+        assert excinfo.value.retry_after_seconds is None
+        assert len(httpx_mock.get_requests()) == SteamCollector.max_retries
+
+    def test_429_with_retry_after_header_honored(
+        self, httpx_mock
+    ) -> None:
+        # Header tells us 1 second; we cap in-call sleep at 60s anyway
+        # so the test only needs to assert the value rode through onto
+        # the eventual RateLimited exception.
+        for _ in range(SteamCollector.max_retries):
+            httpx_mock.add_response(
+                status_code=429, headers={"Retry-After": "42"}
+            )
+        collector = SteamCollector()
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            collector.collect_one(client, "X")
+        assert excinfo.value.retry_after_seconds == 42
+
+    def test_5xx_exhausted_returns_declined(self, httpx_mock) -> None:
+        # Pure timeout/5xx exhaustion without any 429 — source is
+        # broken-or-slow, count as declined (something is wrong) rather
+        # than ambiguous.
+        for _ in range(SteamCollector.max_retries):
+            httpx_mock.add_response(status_code=503)
+        collector = SteamCollector()
         with collector.make_client() as client:
             obs = collector.collect_one(client, "X")
-
-        assert obs is None
-        assert len(httpx_mock.get_requests()) == SteamCollector.max_retries
+        assert obs is DECLINED
 
     def test_malformed_json(self, httpx_mock) -> None:
         httpx_mock.add_response(content=b"<html>nope</html>")

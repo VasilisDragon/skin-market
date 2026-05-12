@@ -1,31 +1,51 @@
 """Scheduler service for the v1 collection layer.
 
-Runs as the foreground process of the ``collector`` Docker service. Two
-scheduled jobs:
+Runs as the foreground process of the ``collector`` Docker service.
+DB-driven (ADR 013): on startup the scheduler queries
+``SELECT … FROM sources WHERE enabled = TRUE`` and registers one
+APScheduler job per enabled source, with cadence (``interval_minutes``,
+``per_item_delay_seconds``) read from the same row. ``sources.enabled``
+is the single switch for "do not poll this source" — same flag the
+analytics layer already respects.
 
-- **Steam** — every 30 minutes; up to 50 items per cycle (full watchlist
-  while it fits in 50; rotation logic will kick in if the watchlist grows
-  past 50). Per-item 5-second pacing is enforced by
-  ``Collector.inter_request_delay``.
-- **Skinport** — every 5 minutes; one bulk fetch covering the full
-  watchlist.
+Per-source policy at v1 (set by migration 0003):
 
-Both jobs run under ``BlockingScheduler`` with ``max_instances=1`` and
+- ``steam_market``: 60 min interval, 5s per-item delay. 50 items per
+  cycle (full watchlist while it fits in 50; rotation logic kicks in
+  if the watchlist grows past 50).
+- ``skinport``:     15 min interval, bulk fetch (per-item delay N/A,
+  stored as 0). ``enabled`` is set by the operator after verifying
+  rate-limit recovery — migration leaves the flag as-is.
+- ``dmarket``:      15 min interval, 3s per-item delay.
+
+All jobs run under ``BlockingScheduler`` with ``max_instances=1`` and
 ``coalesce=True``: if a cycle is still running when its next interval
 ticks, the next firing is skipped (and logged) rather than running
-concurrently. See ADR 009 for the full design rationale.
+concurrently. See ADR 009 for the foundational design.
 
 Conditional writes: every observation is compared against the most
 recent row for the same ``(item, source)`` via
-``collectors.base.should_write_observation`` before persistence. Exact
-equality on ``(price, volume)`` — unchanged readings are silently
-skipped. This is the main reason Skinport's ~13.5k-rows/day projection
-will collapse to far less in practice for low-volatility items.
+``collectors.base.should_write_observation`` before persistence.
 
-Shutdown: SIGTERM and SIGINT both trigger ``scheduler.shutdown(wait=True)``.
-APScheduler finishes any in-flight job, then ``start()`` returns and the
-process exits 0. Docker's ``stop_grace_period: 5m`` allows a long Steam
-cycle to drain.
+Rate-limit handling (ADR 013):
+
+- Collectors raise ``RateLimited`` on 429 retry exhaustion, carrying
+  the most recent ``Retry-After`` header value (or None).
+- The cycle wrapper catches it, computes a pause (header value, or a
+  doubling 5min→1h fallback ladder), and reschedules that source's
+  next firing via ``scheduler.modify_job``. Other sources keep running.
+- Soft-degrade (Steam's ``success:true`` with no price for many items
+  at once) is handled by a cycle-level heuristic in ``_run_cycle``:
+  if more than ``AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD`` of a cycle's
+  items came back empty, all ambiguous (None-yielded) outcomes are
+  re-labeled ``declined`` rather than ``unavailable``. The split keeps
+  rate-limit-disguise noise out of the "rare item with no listings"
+  signal the bot will eventually surface.
+
+Shutdown: SIGTERM and SIGINT trigger ``scheduler.shutdown(wait=True)``
+— APScheduler drains any in-flight job, then ``start()`` returns and
+the process exits 0. Docker's ``stop_grace_period: 5m`` allows a long
+Steam cycle to drain.
 """
 
 from __future__ import annotations
@@ -33,7 +53,9 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import threading
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import FrameType
 
@@ -43,7 +65,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from collectors.base import (
+    DECLINED,
     Collector,
+    PriceObservation,
+    RateLimited,
+    _DeclinedMarker,
     persist_observation,
     should_write_observation,
 )
@@ -51,16 +77,94 @@ from collectors.dmarket import DMarketCollector
 from collectors.skinport import SkinportCollector
 from collectors.steam import SteamCollector
 from db.connection import get_engine
-from db.models import Item
+from db.models import Item, Source
 
 logger = logging.getLogger(__name__)
 
 
 # Steam: 50 items per cycle. Our watchlist is 48, so this is a ceiling
 # not a slicing rule. If the watchlist ever grows past 50, add proper
-# round-robin rotation here (track an offset between cycles in a small
-# state row, or just rotate based on `cycle_count % chunk_count`).
+# round-robin rotation (see ADR 009 §7).
 STEAM_MAX_ITEMS_PER_CYCLE = 50
+
+# Cycle-level heuristic: if more than this fraction of a cycle's items
+# came back empty (DECLINED + ambiguous-None combined), treat the whole
+# cycle as source-degraded and re-label the ambiguous ones as DECLINED.
+# 0.5 chosen against the May 2026 Steam degradation event — baseline
+# rare-items rate is ~20% (10/48), degraded cycles ran 56% (27/48) and
+# 100% (48/48). A 50% threshold cleanly separates the two regimes.
+# See ADR 013 §3.
+AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD = 0.5
+
+# Fallback pause ladder (used when 429 carried no Retry-After header):
+# 5 min initial, double on repeat 429 within the same hour, cap 1 hour.
+RATE_LIMIT_FALLBACK_INITIAL_SECONDS = 300  # 5 min
+RATE_LIMIT_FALLBACK_CAP_SECONDS = 3600  # 1 hour
+RATE_LIMIT_FALLBACK_WINDOW = timedelta(hours=1)
+
+
+@dataclass(frozen=True)
+class SourceJobSpec:
+    """Per-source registration data resolved from the ``sources`` table.
+
+    Carried as a small dataclass so tests can inject a synthetic list
+    without touching the DB.
+    """
+
+    name: str
+    interval_minutes: int
+    per_item_delay_seconds: int
+
+
+@dataclass
+class _RateLimitMemory:
+    """Per-source rate-limit history used by the fallback ladder."""
+
+    last_429_time: datetime
+    current_pause_seconds: int
+
+
+# Mutable module-level state for the running scheduler. Cycle wrappers
+# read from these.
+_rate_limit_state: dict[str, _RateLimitMemory] = {}
+_state_lock = threading.Lock()
+_active_source_specs: dict[str, SourceJobSpec] = {}
+_scheduler_ref: BlockingScheduler | None = None
+
+
+# Source name → (collector class, log label, per-cycle watchlist limit).
+# Adding a fourth source is a config change: insert row in `sources`,
+# implement a Collector subclass, add an entry here, and (if it has its
+# own job-wrapper callable) extend ``_SOURCE_CALLABLES``.
+SOURCE_REGISTRY: dict[str, tuple[type[Collector], str, int | None]] = {
+    "steam_market": (SteamCollector, "Steam", STEAM_MAX_ITEMS_PER_CYCLE),
+    "skinport": (SkinportCollector, "Skinport", None),
+    "dmarket": (DMarketCollector, "DMarket", None),
+}
+
+
+def _load_enabled_sources(session: Session) -> list[SourceJobSpec]:
+    """Read the ``sources`` table for rows with ``enabled = TRUE``.
+
+    Order by ``id`` so log lines and test assertions are deterministic.
+    """
+    rows = session.execute(
+        select(
+            Source.name,
+            Source.interval_minutes,
+            Source.per_item_delay_seconds,
+        )
+        .where(Source.enabled.is_(True))
+        .order_by(Source.id)
+    ).all()
+    return [
+        SourceJobSpec(
+            name=row.name,
+            interval_minutes=row.interval_minutes,
+            per_item_delay_seconds=row.per_item_delay_seconds,
+        )
+        for row in rows
+    ]
 
 
 def _load_watchlist(session: Session, limit: int | None = None) -> list[str]:
@@ -69,17 +173,90 @@ def _load_watchlist(session: Session, limit: int | None = None) -> list[str]:
     ).all()
     names = [row[0] for row in rows]
     if limit is not None and len(names) > limit:
-        # TODO(watchlist-rotation): when watchlist grows past 50, this
-        # naive `names[:limit]` always picks the same first 50 items,
-        # starving the rest. Replace with round-robin: store a
-        # ``last_cycle_offset`` row in a small ``scheduler_state`` table
-        # (or compute the offset from a wall-clock-derived index, e.g.
-        # ``int(time.time() // interval_seconds) % chunk_count``), and
-        # slice ``names[offset:offset+limit]`` with wraparound. Not
-        # implemented because v1 watchlist is 48 < 50; ADR 009 §7 has
-        # the design context.
+        # TODO(watchlist-rotation): naive slice always picks the first
+        # `limit` items, starving the rest if watchlist grows past 50.
+        # ADR 009 §7 has the design context for round-robin rotation.
         names = names[:limit]
     return names
+
+
+def compute_pause_seconds(
+    source_name: str,
+    retry_after_seconds: int | None,
+    now: datetime | None = None,
+) -> int:
+    """Decide pause duration for ``source_name`` after a 429-exhaustion.
+
+    If the upstream sent a ``Retry-After`` header, use it directly —
+    the server told us how long to wait. Otherwise use a doubling
+    ladder: 5 min initial; if another 429 fires within 1 hour, double
+    (5→10→20→…) capped at 1 hour. After 1 hour with no 429s, the ladder
+    resets to 5 min.
+
+    Updates module-level ``_rate_limit_state`` so subsequent calls see
+    the new memory. Thread-safe.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+
+    if retry_after_seconds is not None:
+        with _state_lock:
+            _rate_limit_state[source_name] = _RateLimitMemory(
+                last_429_time=now,
+                current_pause_seconds=retry_after_seconds,
+            )
+        return retry_after_seconds
+
+    with _state_lock:
+        memory = _rate_limit_state.get(source_name)
+        if (
+            memory is not None
+            and (now - memory.last_429_time) < RATE_LIMIT_FALLBACK_WINDOW
+        ):
+            new_pause = min(
+                memory.current_pause_seconds * 2,
+                RATE_LIMIT_FALLBACK_CAP_SECONDS,
+            )
+        else:
+            new_pause = RATE_LIMIT_FALLBACK_INITIAL_SECONDS
+        _rate_limit_state[source_name] = _RateLimitMemory(
+            last_429_time=now,
+            current_pause_seconds=new_pause,
+        )
+        return new_pause
+
+
+def _apply_pause(source_name: str, pause_seconds: int) -> None:
+    """Defer ``source_name``'s next APScheduler firing by ``pause_seconds``.
+
+    No-op (with INFO log) if the scheduler reference isn't set — that's
+    the test path. APScheduler errors are caught and logged so a
+    misconfigured job ID can't crash the cycle wrapper.
+    """
+    if _scheduler_ref is None:
+        logger.info(
+            "%s rate-limited: scheduler ref unset, skipping job pause "
+            "(pause=%ds)",
+            source_name,
+            pause_seconds,
+        )
+        return
+    job_id = f"{source_name}_cycle"
+    next_run = datetime.now(UTC) + timedelta(seconds=pause_seconds)
+    try:
+        _scheduler_ref.modify_job(job_id, next_run_time=next_run)
+        logger.warning(
+            "%s job paused until %s (in %ds)",
+            source_name,
+            next_run.isoformat(),
+            pause_seconds,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to defer %s next run by %d seconds",
+            source_name,
+            pause_seconds,
+        )
 
 
 def _run_cycle(
@@ -89,13 +266,23 @@ def _run_cycle(
 ) -> None:
     """Run one cycle for ``collector`` over the current watchlist.
 
-    Logs a single summary line at the end. Counters split into:
-    - written: persisted to ``prices``
-    - unchanged: matched the most-recent row exactly; dedup skipped
-    - unavailable: collector returned None (Steam success:false /
-      Skinport min_price:null / retry exhaustion)
-    - lookup_failed: item or source name missing from DB (should never
-      happen in practice; defensive)
+    Counters:
+
+    - ``written``: persisted to ``prices``
+    - ``unchanged``: matched the most-recent row exactly; dedup skipped
+    - ``unavailable``: collector returned ambiguous-None (Steam
+      ``success:false`` / Skinport ``min_price:null`` / DMarket empty
+      ``objects[]``) AND the cycle did not exceed the degraded-cycle
+      threshold
+    - ``declined``: collector returned ``DECLINED`` (4xx non-429, retry
+      exhaustion on timeouts/5xx, bulk fetch error), OR the cycle as a
+      whole exceeded the threshold and an ambiguous-None was re-labeled
+    - ``lookup_failed``: item or source name missing from DB (defensive;
+      should be 0 in steady state)
+
+    If the collector raises ``RateLimited`` mid-cycle, the partial
+    results before the raise are still counted, then the source's job
+    is paused for the computed duration.
     """
     engine = get_engine()
 
@@ -113,18 +300,65 @@ def _run_cycle(
         "%s cycle starting: %d items", source_label, len(watchlist)
     )
 
-    with collector.make_client() as client:
-        observations = list(collector.collect_cycle(client, watchlist))
+    rate_limited_exc: RateLimited | None = None
+    outcomes: list[PriceObservation | _DeclinedMarker | None] = []
+
+    try:
+        with collector.make_client() as client:
+            for obs in collector.collect_cycle(client, watchlist):
+                outcomes.append(obs)
+    except RateLimited as exc:
+        rate_limited_exc = exc
+        logger.warning(
+            "%s cycle aborted by RateLimited after %d items consumed",
+            source_label,
+            len(outcomes),
+        )
+
+    # Cycle-level heuristic: relabel ambiguous Nones as declined if a
+    # large fraction of the cycle came back empty. Universal rule
+    # (applies to all sources); for Skinport/DMarket where ambiguity
+    # is rare in practice, the threshold simply won't be reached. For
+    # Steam this is the soft-degrade detection. ADR 013 §3.
+    none_count = sum(1 for o in outcomes if o is None)
+    declined_explicit = sum(1 for o in outcomes if o is DECLINED)
+    empty_fraction = (
+        (none_count + declined_explicit) / len(outcomes)
+        if outcomes
+        else 0.0
+    )
+    relabel_none_as_declined = (
+        empty_fraction > AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD
+        and none_count > 0
+    )
+    if relabel_none_as_declined:
+        logger.warning(
+            "%s cycle: %d/%d items came back empty (%.0f%%) — "
+            "re-labeling %d ambiguous-Nones as declined "
+            "(source-degraded heuristic)",
+            source_label,
+            none_count + declined_explicit,
+            len(outcomes),
+            empty_fraction * 100,
+            none_count,
+        )
 
     written = 0
     unchanged = 0
     unavailable = 0
+    declined = 0
     lookup_failed = 0
 
     with Session(engine) as session:
-        for obs in observations:
+        for obs in outcomes:
+            if obs is DECLINED:
+                declined += 1
+                continue
             if obs is None:
-                unavailable += 1
+                if relabel_none_as_declined:
+                    declined += 1
+                else:
+                    unavailable += 1
                 continue
             if not should_write_observation(session, obs):
                 unchanged += 1
@@ -137,106 +371,179 @@ def _run_cycle(
                 written += 1
             else:
                 lookup_failed += 1
-        # Defensive final commit — in case anything snuck in without
-        # going through persist_observation.
         session.commit()
 
     logger.info(
         "%s cycle complete: %d attempted, %d written, %d unchanged, "
-        "%d unavailable, %d lookup_failed",
+        "%d unavailable, %d declined, %d lookup_failed",
         source_label,
         len(watchlist),
         written,
         unchanged,
         unavailable,
+        declined,
         lookup_failed,
     )
 
+    # If retry exhaustion happened, defer the next firing of this
+    # source's job. Compute the pause AFTER the cycle summary so the
+    # outcome is recorded even if modify_job fails.
+    if rate_limited_exc is not None:
+        pause = compute_pause_seconds(
+            rate_limited_exc.source_name,
+            rate_limited_exc.retry_after_seconds,
+        )
+        logger.warning(
+            "%s rate-limited (Retry-After=%s) — pausing job for %ds",
+            source_label,
+            (
+                rate_limited_exc.retry_after_seconds
+                if rate_limited_exc.retry_after_seconds is not None
+                else "absent"
+            ),
+            pause,
+        )
+        _apply_pause(rate_limited_exc.source_name, pause)
 
-def run_steam_cycle() -> None:
-    """APScheduler job wrapper: never let a bad cycle take down the scheduler."""
+
+def _run_named_source(source_name: str) -> None:
+    """Run one cycle for the source named ``source_name``.
+
+    Reads the active SourceJobSpec from module state for the per-item
+    delay; resolves the collector class from SOURCE_REGISTRY. Logs and
+    swallows any unhandled exception so APScheduler doesn't lose the
+    cycle summary line.
+    """
+    spec = _active_source_specs.get(source_name)
+    if spec is None:
+        logger.warning(
+            "Source %r requested but not registered — skipping cycle",
+            source_name,
+        )
+        return
+    if source_name not in SOURCE_REGISTRY:
+        logger.warning(
+            "Source %r enabled in DB but no collector registered — "
+            "skipping cycle",
+            source_name,
+        )
+        return
+    collector_cls, source_label, watchlist_limit = SOURCE_REGISTRY[source_name]
     try:
+        collector = collector_cls()
+        # Per-item delay from DB; instance-attr shadows the class
+        # attribute used by Collector.collect_cycle.
+        collector.inter_request_delay = float(spec.per_item_delay_seconds)
         _run_cycle(
-            SteamCollector(),
-            "Steam",
-            watchlist_limit=STEAM_MAX_ITEMS_PER_CYCLE,
+            collector, source_label, watchlist_limit=watchlist_limit
         )
     except Exception:
-        logger.exception("Steam cycle failed with unhandled exception")
+        logger.exception(
+            "%s cycle failed with unhandled exception", source_label
+        )
+
+
+def run_steam_cycle() -> None:
+    """APScheduler job wrapper for Steam Market."""
+    _run_named_source("steam_market")
 
 
 def run_skinport_cycle() -> None:
-    try:
-        _run_cycle(SkinportCollector(), "Skinport")
-    except Exception:
-        logger.exception("Skinport cycle failed with unhandled exception")
+    """APScheduler job wrapper for Skinport."""
+    _run_named_source("skinport")
 
 
 def run_dmarket_cycle() -> None:
-    """APScheduler job wrapper for the DMarket per-item poll."""
-    try:
-        _run_cycle(DMarketCollector(), "DMarket")
-    except Exception:
-        logger.exception("DMarket cycle failed with unhandled exception")
+    """APScheduler job wrapper for DMarket."""
+    _run_named_source("dmarket")
 
 
-def build_scheduler() -> BlockingScheduler:
-    """Build (but don't start) the scheduler. Factored out for testability."""
+# Maps source name → the job callable APScheduler registers. Module-level
+# so tests can locate them by string and so dynamic dispatch in
+# _run_named_source stays out of APScheduler's job-pickling path.
+_SOURCE_CALLABLES: dict[str, object] = {
+    "steam_market": run_steam_cycle,
+    "skinport": run_skinport_cycle,
+    "dmarket": run_dmarket_cycle,
+}
+
+
+def build_scheduler(
+    source_jobs: list[SourceJobSpec] | None = None,
+) -> BlockingScheduler:
+    """Build (but don't start) the scheduler.
+
+    Iterates ``sources WHERE enabled = TRUE`` and registers one job per
+    enabled source, reading interval and per-item delay from the same
+    row. Disabled sources are not scheduled — the DB flag is the single
+    switch for "do not poll this source."
+
+    For testability, callers can inject ``source_jobs`` to skip the DB
+    read. Production leaves it None and the DB is queried.
+    """
+    if source_jobs is None:
+        with Session(get_engine()) as session:
+            source_jobs = _load_enabled_sources(session)
+
+    # Reset active-specs cache. Module-level dict — a subsequent
+    # build_scheduler in the same process (e.g. tests) gets a clean view.
+    _active_source_specs.clear()
+
     scheduler = BlockingScheduler(
         timezone="UTC",
         job_defaults={
-            # One concurrent run per job. If a cycle overruns, the next
-            # firing is dropped (with a "missed" log line from APScheduler)
-            # rather than running in parallel and double-hitting upstream.
             "max_instances": 1,
-            # If multiple firings stack up (e.g. process slept), collapse
-            # them into one.
             "coalesce": True,
-            # Tolerate small clock skew / GC pauses.
             "misfire_grace_time": 300,
         },
     )
 
-    # ``next_run_time`` fires each job a second after the scheduler starts
-    # (without it, the first run would wait a full interval — 30 min for
-    # Steam, 5 min for Skinport). This also avoids running cycles BEFORE
-    # ``scheduler.start()``, which would leave the SIGTERM handler unable
-    # to use ``scheduler.shutdown()`` (raises SchedulerNotRunningError).
+    # ``next_run_time`` fires each job a second after the scheduler
+    # starts (without it, the first run would wait a full interval).
+    # Also avoids running cycles BEFORE ``scheduler.start()``, which
+    # leaves the SIGTERM handler unable to call ``scheduler.shutdown()``
+    # cleanly (raises SchedulerNotRunningError).
     soon = datetime.now(UTC) + timedelta(seconds=1)
-    scheduler.add_job(
-        run_steam_cycle,
-        trigger="interval",
-        minutes=30,
-        next_run_time=soon,
-        id="steam_cycle",
-        name="Steam Market priceoverview poll",
-    )
-    scheduler.add_job(
-        run_skinport_cycle,
-        trigger="interval",
-        minutes=5,
-        next_run_time=soon,
-        id="skinport_cycle",
-        name="Skinport bulk poll",
-    )
-    # DMarket: 15 min interval — more aggressive than Steam (30 min,
-    # bot-sensitive endpoint) because DMarket has no anti-bot footgun,
-    # less aggressive than Skinport (5 min, single bulk call) because
-    # DMarket is per-item and a 48-item cycle takes ~2-3 min at 3s
-    # pacing. Per-item commit semantics (collectors/base.py) preserve
-    # mid-cycle progress under SIGKILL.
-    scheduler.add_job(
-        run_dmarket_cycle,
-        trigger="interval",
-        minutes=15,
-        next_run_time=soon,
-        id="dmarket_cycle",
-        name="DMarket per-item poll",
-    )
+
+    for spec in source_jobs:
+        if spec.name not in SOURCE_REGISTRY:
+            logger.warning(
+                "Source %r enabled in DB but no collector registered — "
+                "skipping",
+                spec.name,
+            )
+            continue
+        callable_ = _SOURCE_CALLABLES.get(spec.name)
+        if callable_ is None:
+            logger.error(
+                "Source %r in SOURCE_REGISTRY but no callable — "
+                "skipping (this is a programming error)",
+                spec.name,
+            )
+            continue
+        _active_source_specs[spec.name] = spec
+        _, source_label, _ = SOURCE_REGISTRY[spec.name]
+        scheduler.add_job(
+            callable_,
+            trigger="interval",
+            minutes=spec.interval_minutes,
+            next_run_time=soon,
+            id=f"{spec.name}_cycle",
+            name=f"{source_label} poll (every {spec.interval_minutes}m)",
+        )
+        logger.info(
+            "Registered %s cycle: interval=%dm, per_item_delay=%ds",
+            source_label,
+            spec.interval_minutes,
+            spec.per_item_delay_seconds,
+        )
+
     return scheduler
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — argv for parity
+def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
+    global _scheduler_ref
+
     logging.basicConfig(
         level=logging.INFO,
         format=(
@@ -246,23 +553,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — argv for par
     )
 
     scheduler = build_scheduler()
+    _scheduler_ref = scheduler
 
     def shutdown(signum: int, _frame: FrameType | None) -> None:
         logger.info(
-            "Signal %d received; finishing in-flight cycles and shutting down",
+            "Signal %d received; finishing in-flight cycles and "
+            "shutting down",
             signum,
         )
-        # wait=True blocks until every running job finishes — that's why
-        # docker-compose.yml uses stop_grace_period: 5m. The scheduler
-        # then returns control to start() below, which returns, and we
-        # exit cleanly with status 0.
         try:
             scheduler.shutdown(wait=True)
         except SchedulerNotRunningError:
-            # Race window between signal.signal() and scheduler.start().
-            # The scheduler hasn't started, so there's nothing to drain;
-            # exit immediately so the container doesn't end up running
-            # forever oblivious to the SIGTERM.
             logger.info(
                 "Scheduler not running yet; exiting without start()"
             )
@@ -271,9 +572,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 — argv for par
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
+    job_ids = [job.id for job in scheduler.get_jobs()]
     logger.info(
-        "Scheduler entering main loop: Steam every 30m, Skinport every 5m "
-        "(first run of each fires within ~1s)"
+        "Scheduler entering main loop: %d jobs registered: %s "
+        "(first run of each fires within ~1s)",
+        len(job_ids),
+        ", ".join(job_ids) if job_ids else "(none — no enabled sources)",
     )
     scheduler.start()  # blocks until shutdown() is called
     logger.info("Scheduler stopped cleanly")

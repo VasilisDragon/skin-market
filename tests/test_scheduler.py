@@ -1,16 +1,18 @@
 """Tests for the scheduler layer.
 
 Coverage:
-- ``should_write_observation`` (conditional-write logic): no-prior-row,
-  identical, price-change, volume-change, missing-price.
-- The Steam/Skinport job wrappers swallow exceptions so the scheduler
-  itself never crashes.
-- ``build_scheduler`` returns an APScheduler with the two expected jobs
-  configured per ADR 009.
+- ``should_write_observation`` (conditional-write logic).
+- Job wrappers swallow exceptions so the scheduler never crashes from a
+  cycle error.
+- ``build_scheduler`` registers one job per enabled source with the
+  cadence read from the ``sources`` table (or from an injected list).
+- ``compute_pause_seconds`` honors Retry-After when present and uses
+  the doubling fallback ladder otherwise.
+- ``_run_cycle`` cycle-level heuristic: an outsized fraction of empty
+  outcomes re-labels ambiguous Nones as declined.
 
-Skips the DB-dependent tests when DATABASE_URL is unset or postgres is
-unreachable, same pattern as ``test_db_roundtrip.py`` /
-``test_migration_roundtrip.py``.
+DB-dependent tests skip when DATABASE_URL is unset / postgres is
+unreachable, same pattern as ``test_db_roundtrip.py``.
 """
 
 from __future__ import annotations
@@ -27,11 +29,23 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from collectors.base import (
+    DECLINED,
+    Collector,
     PriceObservation,
+    RateLimited,
     should_write_observation,
 )
 from collectors.scheduler import (
+    AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD,
+    RATE_LIMIT_FALLBACK_CAP_SECONDS,
+    RATE_LIMIT_FALLBACK_INITIAL_SECONDS,
+    SourceJobSpec,
+    _active_source_specs,
+    _load_enabled_sources,
+    _rate_limit_state,
+    _run_cycle,
     build_scheduler,
+    compute_pause_seconds,
     run_skinport_cycle,
     run_steam_cycle,
 )
@@ -40,7 +54,7 @@ from db.models import Item, Price, Source
 
 _TEST_ITEM_NAME = "AK-47 | Redline (Field-Tested)"
 # Far-future timestamp so test rows can't collide with real Steam/Skinport
-# observations that ever existed or might be inserted in parallel.
+# observations.
 _TEST_TIMESTAMP = datetime(2099, 1, 1, tzinfo=UTC)
 
 
@@ -83,19 +97,16 @@ def session_with_baseline_row():
     engine = get_engine()
     with Session(engine) as session:
         item_id = session.execute(
-            select(Item.id).where(
-                Item.market_hash_name == _TEST_ITEM_NAME
-            )
+            select(Item.id).where(Item.market_hash_name == _TEST_ITEM_NAME)
         ).scalar_one()
         source_id = session.execute(
             select(Source.id).where(Source.name == "steam_market")
         ).scalar_one()
 
-        # Wipe any leftover from a previous interrupted run.
         session.execute(
             text(
-                "DELETE FROM prices WHERE item_id = :i AND source_id = :s "
-                "AND timestamp >= :t"
+                "DELETE FROM prices WHERE item_id = :i "
+                "AND source_id = :s AND timestamp >= :t"
             ),
             {
                 "i": item_id,
@@ -139,23 +150,47 @@ def session_with_baseline_row():
             session.commit()
 
 
+@pytest.fixture
+def _active_specs():
+    """Populate ``_active_source_specs`` so ``run_<source>_cycle`` wrappers
+    reach the body of ``_run_cycle`` instead of short-circuiting on a
+    missing spec. Restores the prior state after the test."""
+    snapshot = dict(_active_source_specs)
+    _active_source_specs.clear()
+    _active_source_specs.update(
+        {
+            "steam_market": SourceJobSpec("steam_market", 60, 5),
+            "skinport": SourceJobSpec("skinport", 15, 0),
+            "dmarket": SourceJobSpec("dmarket", 15, 3),
+        }
+    )
+    try:
+        yield
+    finally:
+        _active_source_specs.clear()
+        _active_source_specs.update(snapshot)
+
+
+@pytest.fixture(autouse=True)
+def _clean_rate_limit_state():
+    """Wipe the rate-limit memory between tests so the doubling ladder
+    starts from a known state for every compute_pause_seconds test."""
+    _rate_limit_state.clear()
+    yield
+    _rate_limit_state.clear()
+
+
 @_db_required
 class TestShouldWriteObservation:
     def test_returns_true_when_no_prior_row(self) -> None:
-        """For an item that has never been observed at this source, write."""
         engine = get_engine()
         with Session(engine) as session:
-            # Use a SOURCE that has no rows for the test item to guarantee
-            # "no prior row" — skinport may have many rows for this item
-            # from real collection, but the combination
-            # (test item, brand-new fake source) won't.
             obs = _make_obs("99.99", 1, source="__nonexistent_source__")
             assert should_write_observation(session, obs) is True
 
     def test_returns_false_when_identical(
         self, session_with_baseline_row
     ) -> None:
-        """Same price and same volume as the most recent row → skip."""
         obs = _make_obs("10.00", 100)
         assert should_write_observation(session_with_baseline_row, obs) is False
 
@@ -178,7 +213,6 @@ class TestShouldWriteObservation:
         assert should_write_observation(session_with_baseline_row, obs) is True
 
     def test_returns_false_when_price_is_none(self) -> None:
-        """A None-price observation is unwritable regardless of history."""
         engine = get_engine()
         with Session(engine) as session:
             obs = _make_obs(None, 100)
@@ -191,44 +225,438 @@ class TestCycleWrappers:
     that doesn't stop the scheduler, but logging gets garbled and the
     user-visible cycle summary line goes missing. We log+swallow instead."""
 
-    def test_steam_cycle_swallows_exception(self) -> None:
+    def test_steam_cycle_swallows_exception(self, _active_specs) -> None:
         with patch(
             "collectors.scheduler._run_cycle",
             side_effect=RuntimeError("simulated DB outage"),
         ):
-            # Should not raise.
+            run_steam_cycle()  # should not raise
+
+    def test_skinport_cycle_swallows_exception(
+        self, _active_specs
+    ) -> None:
+        with patch(
+            "collectors.scheduler._run_cycle",
+            side_effect=RuntimeError("simulated DB outage"),
+        ):
+            run_skinport_cycle()  # should not raise
+
+    def test_cycle_short_circuits_when_source_not_registered(self) -> None:
+        # _active_source_specs is empty (no _active_specs fixture); the
+        # wrapper logs a warning and returns without touching _run_cycle.
+        with patch(
+            "collectors.scheduler._run_cycle",
+            side_effect=RuntimeError("should never be called"),
+        ):
             run_steam_cycle()
 
-    def test_skinport_cycle_swallows_exception(self) -> None:
-        with patch(
-            "collectors.scheduler._run_cycle",
-            side_effect=RuntimeError("simulated DB outage"),
-        ):
-            run_skinport_cycle()
 
-
-class TestSchedulerConfig:
-    """``build_scheduler`` returns a configured-but-not-started scheduler;
-    no thread/resource cleanup is needed in these tests."""
+class TestBuildSchedulerInjection:
+    """Tests that don't need the DB — they inject SourceJobSpec lists."""
 
     def test_jobs_registered_with_expected_intervals(self) -> None:
-        scheduler = build_scheduler()
+        specs = [
+            SourceJobSpec("steam_market", 60, 5),
+            SourceJobSpec("skinport", 15, 0),
+            SourceJobSpec("dmarket", 15, 3),
+        ]
+        scheduler = build_scheduler(source_jobs=specs)
         jobs = {job.id: job for job in scheduler.get_jobs()}
-        assert set(jobs) == {"steam_cycle", "skinport_cycle", "dmarket_cycle"}
-        # APScheduler's IntervalTrigger exposes the interval as a
-        # timedelta on the trigger object.
-        assert jobs["steam_cycle"].trigger.interval == timedelta(minutes=30)
-        assert jobs["skinport_cycle"].trigger.interval == timedelta(minutes=5)
-        assert jobs["dmarket_cycle"].trigger.interval == timedelta(minutes=15)
+        assert set(jobs) == {
+            "steam_market_cycle",
+            "skinport_cycle",
+            "dmarket_cycle",
+        }
+        assert (
+            jobs["steam_market_cycle"].trigger.interval
+            == timedelta(minutes=60)
+        )
+        assert (
+            jobs["skinport_cycle"].trigger.interval
+            == timedelta(minutes=15)
+        )
+        assert (
+            jobs["dmarket_cycle"].trigger.interval
+            == timedelta(minutes=15)
+        )
 
     def test_scheduler_has_overlap_defaults(self) -> None:
-        """The overlap/coalesce/grace-time policy from ADR 009 must be in
-        the scheduler's job_defaults so every added job picks them up.
-        Checking the defaults dict rather than per-Job attributes because
-        APScheduler 3.x doesn't expose those as public attributes on Job.
-        """
-        scheduler = build_scheduler()
+        scheduler = build_scheduler(source_jobs=[])
         defaults = scheduler._job_defaults  # stable internal across 3.x
         assert defaults.get("max_instances") == 1
         assert defaults.get("coalesce") is True
         assert defaults.get("misfire_grace_time") == 300
+
+    def test_empty_specs_registers_no_jobs(self) -> None:
+        scheduler = build_scheduler(source_jobs=[])
+        assert scheduler.get_jobs() == []
+
+    def test_unknown_source_name_is_skipped(self) -> None:
+        scheduler = build_scheduler(
+            source_jobs=[
+                SourceJobSpec("steam_market", 60, 5),
+                SourceJobSpec("totally_made_up_source", 5, 0),
+            ]
+        )
+        ids = {job.id for job in scheduler.get_jobs()}
+        assert ids == {"steam_market_cycle"}
+
+    def test_reads_interval_from_spec(self) -> None:
+        """The interval value baked into the trigger reflects the spec,
+        not a hardcoded constant — this is the test the user's addendum
+        called out."""
+        scheduler = build_scheduler(
+            source_jobs=[SourceJobSpec("steam_market", 42, 5)]
+        )
+        jobs = {job.id: job for job in scheduler.get_jobs()}
+        assert (
+            jobs["steam_market_cycle"].trigger.interval
+            == timedelta(minutes=42)
+        )
+
+    def test_rebuild_picks_up_new_interval(self) -> None:
+        """Optional integration test from the plan: a subsequent
+        build_scheduler call with a different interval propagates to
+        the new scheduler instance, exercising the full DB-read /
+        rebuild story without actually touching the DB."""
+        first = build_scheduler(
+            source_jobs=[SourceJobSpec("steam_market", 30, 5)]
+        )
+        assert (
+            {j.id: j for j in first.get_jobs()}[
+                "steam_market_cycle"
+            ].trigger.interval
+            == timedelta(minutes=30)
+        )
+        second = build_scheduler(
+            source_jobs=[SourceJobSpec("steam_market", 90, 5)]
+        )
+        assert (
+            {j.id: j for j in second.get_jobs()}[
+                "steam_market_cycle"
+            ].trigger.interval
+            == timedelta(minutes=90)
+        )
+
+
+@_db_required
+class TestBuildSchedulerFromDB:
+    """Default build_scheduler() reads ``sources WHERE enabled = TRUE``.
+
+    The live DB's ``enabled`` flag is the single switch — disabling a
+    source via ``UPDATE sources SET enabled = FALSE WHERE name = ...``
+    removes its job from the next ``build_scheduler``."""
+
+    def test_disabled_source_not_scheduled(self) -> None:
+        engine = get_engine()
+        # Pick a currently-enabled source, flip it disabled, assert
+        # build_scheduler omits it. Snapshot the original state so the
+        # live DB is preserved regardless of which sources are enabled.
+        with Session(engine) as session:
+            enabled_names = [
+                row[0]
+                for row in session.execute(
+                    select(Source.name)
+                    .where(Source.enabled.is_(True))
+                    .order_by(Source.id)
+                ).all()
+            ]
+            if not enabled_names:
+                pytest.skip("no enabled sources in test DB")
+            victim = enabled_names[0]
+            session.execute(
+                text(
+                    "UPDATE sources SET enabled = FALSE WHERE name = :n"
+                ),
+                {"n": victim},
+            )
+            session.commit()
+            try:
+                scheduler = build_scheduler()
+                ids = {job.id for job in scheduler.get_jobs()}
+                assert f"{victim}_cycle" not in ids
+                # Other previously-enabled sources still scheduled.
+                for other in enabled_names[1:]:
+                    assert f"{other}_cycle" in ids
+            finally:
+                session.execute(
+                    text(
+                        "UPDATE sources SET enabled = TRUE "
+                        "WHERE name = :n"
+                    ),
+                    {"n": victim},
+                )
+                session.commit()
+
+    def test_load_enabled_sources_excludes_disabled_row(self) -> None:
+        engine = get_engine()
+        with Session(engine) as session:
+            enabled_names = [
+                row[0]
+                for row in session.execute(
+                    select(Source.name).where(Source.enabled.is_(True))
+                ).all()
+            ]
+            if not enabled_names:
+                pytest.skip("no enabled sources in test DB")
+            victim = enabled_names[0]
+            session.execute(
+                text(
+                    "UPDATE sources SET enabled = FALSE WHERE name = :n"
+                ),
+                {"n": victim},
+            )
+            session.commit()
+            try:
+                specs = _load_enabled_sources(session)
+                names = {s.name for s in specs}
+                assert victim not in names
+            finally:
+                session.execute(
+                    text(
+                        "UPDATE sources SET enabled = TRUE "
+                        "WHERE name = :n"
+                    ),
+                    {"n": victim},
+                )
+                session.commit()
+
+
+class TestComputePauseSeconds:
+    """The pause-decision logic for 429 retry-exhaustion.
+
+    Pure function modulo module-level ``_rate_limit_state`` updates.
+    The ``_clean_rate_limit_state`` autouse fixture resets that state
+    between tests."""
+
+    def test_retry_after_header_used_directly(self) -> None:
+        pause = compute_pause_seconds("steam_market", 60)
+        assert pause == 60
+
+    def test_retry_after_zero_is_used(self) -> None:
+        # Zero is technically a valid Retry-After (server says "okay
+        # now"); we honor it rather than falling through to the 5-min
+        # ladder.
+        pause = compute_pause_seconds("steam_market", 0)
+        assert pause == 0
+
+    def test_fallback_initial_pause(self) -> None:
+        pause = compute_pause_seconds("steam_market", None)
+        assert pause == RATE_LIMIT_FALLBACK_INITIAL_SECONDS
+
+    def test_fallback_doubles_within_window(self) -> None:
+        now = datetime(2026, 5, 12, 12, 0, 0, tzinfo=UTC)
+        first = compute_pause_seconds("steam_market", None, now=now)
+        second = compute_pause_seconds(
+            "steam_market", None, now=now + timedelta(minutes=2)
+        )
+        assert first == 300
+        assert second == 600
+
+    def test_fallback_resets_after_window(self) -> None:
+        now = datetime(2026, 5, 12, 12, 0, 0, tzinfo=UTC)
+        compute_pause_seconds("steam_market", None, now=now)
+        # >1 hour later — memory ages out, ladder resets to initial.
+        later = now + timedelta(hours=2)
+        pause = compute_pause_seconds("steam_market", None, now=later)
+        assert pause == RATE_LIMIT_FALLBACK_INITIAL_SECONDS
+
+    def test_fallback_caps_at_one_hour(self) -> None:
+        now = datetime(2026, 5, 12, 12, 0, 0, tzinfo=UTC)
+        pauses = []
+        # Many consecutive 429s within the same window.
+        for i in range(20):
+            pauses.append(
+                compute_pause_seconds(
+                    "steam_market",
+                    None,
+                    now=now + timedelta(seconds=i * 30),
+                )
+            )
+        # Eventually saturates at the cap.
+        assert pauses[-1] == RATE_LIMIT_FALLBACK_CAP_SECONDS
+        # And never exceeds it.
+        assert max(pauses) == RATE_LIMIT_FALLBACK_CAP_SECONDS
+
+    def test_state_keyed_by_source(self) -> None:
+        # Doubling for one source doesn't bleed into another.
+        now = datetime(2026, 5, 12, 12, 0, 0, tzinfo=UTC)
+        compute_pause_seconds("steam_market", None, now=now)
+        skinport_first = compute_pause_seconds(
+            "skinport", None, now=now + timedelta(seconds=1)
+        )
+        assert skinport_first == RATE_LIMIT_FALLBACK_INITIAL_SECONDS
+
+
+class _FakeCollector(Collector):
+    """Test double that yields a scripted sequence of outcomes.
+
+    Wraps the scripted list in a fake make_client so collect_cycle
+    follows the standard control flow (with-block enter/exit on the
+    client) but the HTTP layer is never reached.
+    """
+
+    source_name = "fake_source"
+
+    def __init__(
+        self,
+        scripted: list,
+        *,
+        raise_at_end: RateLimited | None = None,
+    ) -> None:
+        self._scripted = scripted
+        self._raise_at_end = raise_at_end
+
+    def collect_one(self, client, market_hash_name):  # type: ignore[override]
+        raise NotImplementedError("collect_cycle is overridden")
+
+    def collect_cycle(self, client, market_hash_names):  # type: ignore[override]
+        names = list(market_hash_names)
+        for i, _name in enumerate(names):
+            if i < len(self._scripted):
+                yield self._scripted[i]
+            else:
+                yield None
+        if self._raise_at_end is not None:
+            raise self._raise_at_end
+
+    def make_client(self):  # type: ignore[override]
+        # Return a context manager whose body the cycle iterates.
+        from contextlib import nullcontext
+
+        return nullcontext(enter_result=None)
+
+
+@_db_required
+class TestRunCycleDeclinedHeuristic:
+    """The cycle-level heuristic relabels ambiguous Nones as declined
+    when an outsized fraction of a cycle came back empty. Threshold is
+    ``AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD`` (0.5)."""
+
+    def test_below_threshold_keeps_unavailable_label(
+        self, caplog
+    ) -> None:
+        # Need a watchlist; _run_cycle queries items. Build a small
+        # synthetic outcome list whose length is <= the real watchlist;
+        # the slicing in _load_watchlist preserves order. We script as
+        # many outcomes as the watchlist length.
+        engine = get_engine()
+        with Session(engine) as session:
+            watchlist_size = session.execute(
+                text("SELECT count(*) FROM items")
+            ).scalar_one()
+        # Few Nones, mostly written (PriceObservations) — well below
+        # the 50% threshold.
+        scripted = [_make_obs("1.00", 1) for _ in range(watchlist_size - 2)]
+        scripted += [None, None]
+        collector = _FakeCollector(scripted)
+        with caplog.at_level("INFO", logger="collectors.scheduler"):
+            _run_cycle(collector, "Fake")
+        cycle_complete_lines = [
+            r for r in caplog.records if "cycle complete" in r.getMessage()
+        ]
+        assert cycle_complete_lines, "missing cycle complete log line"
+        msg = cycle_complete_lines[-1].getMessage()
+        # 2 ambiguous Nones, below threshold — counted as unavailable.
+        assert "2 unavailable, 0 declined" in msg
+
+    def test_above_threshold_relabels_nones_as_declined(
+        self, caplog
+    ) -> None:
+        engine = get_engine()
+        with Session(engine) as session:
+            watchlist_size = session.execute(
+                text("SELECT count(*) FROM items")
+            ).scalar_one()
+        # >50% Nones — cycle marked degraded, all Nones become declined.
+        none_count = (watchlist_size // 2) + 2  # comfortably above 50%
+        scripted = [None] * none_count + [
+            _make_obs("1.00", 1)
+            for _ in range(watchlist_size - none_count)
+        ]
+        collector = _FakeCollector(scripted)
+        with caplog.at_level("INFO", logger="collectors.scheduler"):
+            _run_cycle(collector, "Fake")
+        msg = next(
+            r.getMessage()
+            for r in caplog.records
+            if "cycle complete" in r.getMessage()
+        )
+        # All ambiguous Nones converted to declined; none remain
+        # unavailable.
+        assert "0 unavailable" in msg
+        assert f"{none_count} declined" in msg
+
+    def test_explicit_declined_always_counted(self, caplog) -> None:
+        engine = get_engine()
+        with Session(engine) as session:
+            watchlist_size = session.execute(
+                text("SELECT count(*) FROM items")
+            ).scalar_one()
+        # Mostly DECLINED — even without ambiguous Nones to relabel,
+        # the declined counter should reflect explicit DECLINEDs.
+        scripted = [DECLINED] * watchlist_size
+        collector = _FakeCollector(scripted)
+        with caplog.at_level("INFO", logger="collectors.scheduler"):
+            _run_cycle(collector, "Fake")
+        msg = next(
+            r.getMessage()
+            for r in caplog.records
+            if "cycle complete" in r.getMessage()
+        )
+        assert f"{watchlist_size} declined" in msg
+
+
+@_db_required
+class TestRunCycleRateLimited:
+    """When the collector raises RateLimited mid-cycle, _run_cycle counts
+    the partial results, logs, then computes and applies a pause via
+    compute_pause_seconds (which updates _rate_limit_state)."""
+
+    def test_partial_results_counted_then_pause_logged(
+        self, caplog
+    ) -> None:
+        engine = get_engine()
+        with Session(engine) as session:
+            watchlist_size = session.execute(
+                text("SELECT count(*) FROM items")
+            ).scalar_one()
+        # Two successful items then RateLimited — cycle should record
+        # the partial outcomes and compute a fallback pause.
+        scripted = [None, None]
+        collector = _FakeCollector(
+            scripted,
+            raise_at_end=RateLimited("fake_source", None),
+        )
+        with caplog.at_level("INFO", logger="collectors.scheduler"):
+            _run_cycle(collector, "Fake")
+        # rate-limit state should now have an entry for fake_source.
+        assert "fake_source" in _rate_limit_state
+        # And the pause log line should be present.
+        assert any(
+            "rate-limited" in r.getMessage().lower()
+            for r in caplog.records
+        )
+        # Note: 2 ambiguous Nones out of `watchlist_size` items, but
+        # collect_cycle aborts after 2 yields so total outcomes is 2,
+        # both Nones — 100% empty → relabeled as declined.
+        _ = watchlist_size  # silence linter on the unused size
+
+    def test_retry_after_header_propagates_to_pause(self) -> None:
+        collector = _FakeCollector(
+            [],
+            raise_at_end=RateLimited("fake_source", 137),
+        )
+        _run_cycle(collector, "Fake")
+        # The compute_pause_seconds call should have used 137 directly.
+        memory = _rate_limit_state["fake_source"]
+        assert memory.current_pause_seconds == 137
+
+
+class TestAmbiguousThresholdConstant:
+    """Sanity-check the threshold constant didn't drift accidentally —
+    ADR 013 §3 documents the 0.5 choice; if someone changes the value
+    the ADR should be updated alongside."""
+
+    def test_threshold_is_half(self) -> None:
+        assert AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD == 0.5

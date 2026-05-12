@@ -76,6 +76,81 @@ class PriceObservation:
     raw_response: dict[str, Any]
 
 
+class _DeclinedMarker:
+    """Sentinel: the source definitively declined to answer for this item
+    (HTTP 4xx non-429, retry exhaustion on timeouts/5xx, bulk fetch error).
+
+    Distinct from ``None`` (ambiguous — could be "no listings exist" OR
+    "source soft-degraded") and ``PriceObservation`` (success). The scheduler
+    counts these separately so a healthy cycle's ~10 genuinely-rare items
+    (rendered as ``unavailable``) stay distinguishable from rate-limit noise
+    (rendered as ``declined``). See ADR 013 for the full split rationale.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<DECLINED>"
+
+
+DECLINED: _DeclinedMarker = _DeclinedMarker()
+
+
+class RateLimited(Exception):
+    """Raised when a collector exhausts its in-call 429 retries.
+
+    Carries the most recent ``Retry-After`` value seen (or None if the
+    upstream never sent one). The scheduler catches this from the cycle
+    wrapper, computes a pause duration (header value, or a fallback
+    5min→10→20→…→1h ladder), and reschedules the affected source's job.
+    Other sources' jobs keep running.
+    """
+
+    def __init__(
+        self, source_name: str, retry_after_seconds: int | None
+    ) -> None:
+        self.source_name = source_name
+        self.retry_after_seconds = retry_after_seconds
+        hint = (
+            f"{retry_after_seconds}s"
+            if retry_after_seconds is not None
+            else "no header"
+        )
+        super().__init__(
+            f"{source_name} rate-limited (Retry-After: {hint})"
+        )
+
+
+def parse_retry_after(header_value: str | None) -> int | None:
+    """Parse an HTTP ``Retry-After`` header value into seconds.
+
+    RFC 7231 §7.1.3 allows either a non-negative integer (delta-seconds)
+    or an HTTP-date. Steam and Skinport in practice use only the integer
+    form when they send the header at all; we accept that and return None
+    for anything else so callers fall back to their own pause ladder.
+
+    >>> parse_retry_after("60")
+    60
+    >>> parse_retry_after("0")
+    0
+    >>> parse_retry_after(None) is None
+    True
+    >>> parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT") is None
+    True
+    >>> parse_retry_after("-5") is None
+    True
+    """
+    if not header_value:
+        return None
+    try:
+        seconds = int(header_value)
+    except ValueError:
+        return None
+    if seconds < 0:
+        return None
+    return seconds
+
+
 def full_jitter_backoff(
     attempt: int, base: float = 5.0, cap: float = 300.0
 ) -> float:
@@ -108,22 +183,31 @@ class Collector(ABC):
     @abstractmethod
     def collect_one(
         self, client: httpx.Client, market_hash_name: str
-    ) -> PriceObservation | None:
+    ) -> PriceObservation | _DeclinedMarker | None:
         """Fetch and normalize a single item.
 
-        Returns a PriceObservation when the upstream returned usable data,
-        or None when the request should be skipped (no listings,
-        unrecoverable HTTP error, parse failure, retry exhaustion).
-        Must not raise on normal failure modes — only on programming
-        errors.
+        Returns one of three signals:
+
+        - ``PriceObservation``: upstream returned usable data.
+        - ``DECLINED``: source refused to answer (4xx non-429, timeout/5xx
+          retry exhaustion). Counted distinct from ambiguous "no listings".
+        - ``None``: ambiguous — success-shape response with no parseable
+          price (Steam ``success:false``, Skinport ``min_price:null``,
+          DMarket empty ``objects[]``). The scheduler applies a cycle-level
+          heuristic to re-label these as ``declined`` when an outsized
+          fraction of the cycle came back empty (soft-degrade detection).
+
+        Raises ``RateLimited`` when 429 retries exhaust — aborts the cycle
+        and lets the scheduler pause the source's APScheduler job. Must
+        not raise on any other failure mode.
         """
 
     def collect_cycle(
         self,
         client: httpx.Client,
         market_hash_names: Iterable[str],
-    ) -> Iterator[PriceObservation | None]:
-        """Yield one observation per name (or None) for the whole watchlist.
+    ) -> Iterator[PriceObservation | _DeclinedMarker | None]:
+        """Yield one signal per name for the whole watchlist.
 
         Default implementation: serial per-item fetch via ``collect_one``,
         with ``inter_request_delay`` seconds between successive items.
@@ -131,7 +215,10 @@ class Collector(ABC):
         priceoverview.
 
         Subclasses with a bulk endpoint (Skinport) override this and yield
-        observations after one HTTP call.
+        signals after one HTTP call.
+
+        Propagates ``RateLimited`` if ``collect_one`` raises — the cycle
+        aborts mid-iteration and the scheduler handles the pause.
         """
         names = list(market_hash_names)
         for i, name in enumerate(names):

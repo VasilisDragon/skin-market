@@ -62,9 +62,13 @@ import httpx
 from sqlalchemy.orm import Session
 
 from collectors.base import (
+    DECLINED,
     Collector,
     PriceObservation,
+    RateLimited,
+    _DeclinedMarker,
     full_jitter_backoff,
+    parse_retry_after,
     persist_observation,
 )
 from db.connection import get_engine
@@ -123,7 +127,7 @@ class DMarketCollector(Collector):
 
     def collect_one(
         self, client: httpx.Client, market_hash_name: str
-    ) -> PriceObservation | None:
+    ) -> PriceObservation | _DeclinedMarker | None:
         params = {
             "gameId": DMARKET_GAME_ID_CS2,
             "title": market_hash_name,
@@ -132,6 +136,9 @@ class DMarketCollector(Collector):
             "orderBy": "price",
             "orderDir": "asc",
         }
+
+        saw_429 = False
+        last_retry_after_seconds: int | None = None
 
         for attempt in range(self.max_retries):
             try:
@@ -158,7 +165,31 @@ class DMarketCollector(Collector):
                 continue
 
             status = response.status_code
-            if status == 429 or status >= 500:
+            if status == 429:
+                saw_429 = True
+                retry_after = parse_retry_after(
+                    response.headers.get("Retry-After")
+                )
+                if retry_after is not None:
+                    last_retry_after_seconds = retry_after
+                    delay = float(min(retry_after, 60))
+                else:
+                    delay = full_jitter_backoff(
+                        attempt, base=self.base_delay
+                    )
+                logger.warning(
+                    "DMarket 429 (attempt %d/%d) for %r — "
+                    "Retry-After=%s, sleeping %.2fs",
+                    attempt + 1,
+                    self.max_retries,
+                    market_hash_name,
+                    retry_after if retry_after is not None else "absent",
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+
+            if status >= 500:
                 logger.warning(
                     "DMarket %d (attempt %d/%d) for %r — backing off",
                     status,
@@ -175,7 +206,7 @@ class DMarketCollector(Collector):
                     status,
                     market_hash_name,
                 )
-                return None
+                return DECLINED
 
             return self._parse_response(response, market_hash_name)
 
@@ -184,7 +215,9 @@ class DMarketCollector(Collector):
             self.max_retries,
             market_hash_name,
         )
-        return None
+        if saw_429:
+            raise RateLimited(self.source_name, last_retry_after_seconds)
+        return DECLINED
 
     def _parse_response(
         self, response: httpx.Response, market_hash_name: str

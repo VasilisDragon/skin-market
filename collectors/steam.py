@@ -48,9 +48,13 @@ import httpx
 from sqlalchemy.orm import Session
 
 from collectors.base import (
+    DECLINED,
     Collector,
     PriceObservation,
+    RateLimited,
+    _DeclinedMarker,
     full_jitter_backoff,
+    parse_retry_after,
     persist_observation,
 )
 from db.connection import get_engine
@@ -122,13 +126,20 @@ class SteamCollector(Collector):
 
     def collect_one(
         self, client: httpx.Client, market_hash_name: str
-    ) -> PriceObservation | None:
+    ) -> PriceObservation | _DeclinedMarker | None:
         params = {
             "country": "US",
             "currency": str(STEAM_CURRENCY_USD),
             "appid": str(STEAM_APPID_CS2),
             "market_hash_name": market_hash_name,
         }
+
+        # Track 429s so retry exhaustion raises RateLimited (with the most
+        # recent Retry-After hint, if any). Steam's 429 body is literally
+        # `null` and the header is usually absent, but if it ever shows up
+        # we honor it.
+        saw_429 = False
+        last_retry_after_seconds: int | None = None
 
         for attempt in range(self.max_retries):
             try:
@@ -156,7 +167,34 @@ class SteamCollector(Collector):
 
             status = response.status_code
 
-            if status == 429 or status >= 500:
+            if status == 429:
+                saw_429 = True
+                retry_after = parse_retry_after(
+                    response.headers.get("Retry-After")
+                )
+                if retry_after is not None:
+                    last_retry_after_seconds = retry_after
+                    # Cap the in-call sleep at 60s — past that we're better
+                    # off propagating to the scheduler so the whole job
+                    # pauses, not blocking this cycle in a long sleep.
+                    delay = float(min(retry_after, 60))
+                else:
+                    delay = full_jitter_backoff(
+                        attempt, base=self.base_delay
+                    )
+                logger.warning(
+                    "Steam 429 (attempt %d/%d) for %r — "
+                    "Retry-After=%s, sleeping %.2fs",
+                    attempt + 1,
+                    self.max_retries,
+                    market_hash_name,
+                    retry_after if retry_after is not None else "absent",
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+
+            if status >= 500:
                 logger.warning(
                     "Steam %d (attempt %d/%d) for %r — backing off",
                     status,
@@ -169,11 +207,11 @@ class SteamCollector(Collector):
 
             if status != 200:
                 # 4xx other than 429: bad item name, malformed request, etc.
-                # Not retryable.
+                # Not retryable, definitive decline.
                 logger.warning(
                     "Steam %d for %r — not retrying", status, market_hash_name
                 )
-                return None
+                return DECLINED
 
             obs = self._parse_response(response, market_hash_name)
             return obs
@@ -183,7 +221,12 @@ class SteamCollector(Collector):
             self.max_retries,
             market_hash_name,
         )
-        return None
+        if saw_429:
+            # Abort the cycle and let the scheduler pause Steam's job.
+            raise RateLimited(self.source_name, last_retry_after_seconds)
+        # Exhausted on timeouts / 5xx — source is unreachable for this
+        # item; count as declined rather than ambiguous-unavailable.
+        return DECLINED
 
     def _parse_response(
         self, response: httpx.Response, market_hash_name: str

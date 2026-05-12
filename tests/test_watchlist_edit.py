@@ -94,6 +94,37 @@ def tmp_watchlist(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _preserve_source_enabled_flags():
+    """Snapshot ``sources.enabled`` before each test and restore on
+    teardown. ``seed_watchlist``'s UPSERT clobbers ``enabled`` from the
+    test fixture YAML — which flips operator-managed flags (e.g.
+    skinport disabled during rate-limit recovery, ADR 013) as a test
+    side effect. Restoring keeps the live DB faithful regardless.
+    """
+    if not _db_reachable():
+        yield
+        return
+    engine = get_engine()
+    with Session(engine) as session:
+        snapshot = {
+            row.name: row.enabled
+            for row in session.execute(
+                select(Source.name, Source.enabled)
+            ).all()
+        }
+    yield
+    with Session(engine) as session:
+        for name, was_enabled in snapshot.items():
+            session.execute(
+                text(
+                    "UPDATE sources SET enabled = :e WHERE name = :n"
+                ),
+                {"e": was_enabled, "n": name},
+            )
+        session.commit()
+
+
 @pytest.fixture
 def _cleanup_test_item():
     """Delete the synthetic test item (and any rows it accumulated) from

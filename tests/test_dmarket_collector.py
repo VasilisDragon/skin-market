@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from collectors.base import full_jitter_backoff
+from collectors.base import DECLINED, RateLimited, full_jitter_backoff
 from collectors.dmarket import (
     DMarketCollector,
     parse_dmarket_price,
@@ -168,21 +168,38 @@ class TestDMarketCollectorHTTP:
         with collector.make_client() as client:
             obs = collector.collect_one(client, "Bad Item")
 
-        assert obs is None
+        assert obs is DECLINED
         assert len(httpx_mock.get_requests()) == 1
 
-    def test_429_exhausted(self, httpx_mock) -> None:
+    def test_429_exhausted_raises_ratelimited(self, httpx_mock) -> None:
         for _ in range(DMarketCollector.max_retries):
             httpx_mock.add_response(status_code=429)
 
         collector = DMarketCollector()
-        with collector.make_client() as client:
-            obs = collector.collect_one(client, "X")
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            collector.collect_one(client, "X")
 
-        assert obs is None
+        assert excinfo.value.source_name == "dmarket"
+        assert excinfo.value.retry_after_seconds is None
         assert (
             len(httpx_mock.get_requests()) == DMarketCollector.max_retries
         )
+
+    def test_429_with_retry_after_header_honored(
+        self, httpx_mock
+    ) -> None:
+        for _ in range(DMarketCollector.max_retries):
+            httpx_mock.add_response(
+                status_code=429, headers={"Retry-After": "15"}
+            )
+        collector = DMarketCollector()
+        with collector.make_client() as client, pytest.raises(
+            RateLimited
+        ) as excinfo:
+            collector.collect_one(client, "X")
+        assert excinfo.value.retry_after_seconds == 15
 
     def test_malformed_json(self, httpx_mock) -> None:
         httpx_mock.add_response(content=b"<html>maintenance</html>")

@@ -45,9 +45,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from collectors.base import (
+    DECLINED,
     Collector,
     PriceObservation,
+    RateLimited,
+    _DeclinedMarker,
     full_jitter_backoff,
+    parse_retry_after,
     persist_observation,
 )
 from db.connection import get_engine
@@ -105,7 +109,7 @@ class SkinportCollector(Collector):
 
     def collect_one(
         self, client: httpx.Client, market_hash_name: str
-    ) -> PriceObservation | None:
+    ) -> PriceObservation | _DeclinedMarker | None:
         """Convenience: fetch the bulk response and filter to one item.
 
         Wasteful for production use (the scheduler should call
@@ -120,15 +124,18 @@ class SkinportCollector(Collector):
         self,
         client: httpx.Client,
         market_hash_names: Iterable[str],
-    ) -> Iterator[PriceObservation | None]:
+    ) -> Iterator[PriceObservation | _DeclinedMarker | None]:
         wanted = [normalize_name(n) for n in market_hash_names]
+        # ``_fetch_bulk`` may raise RateLimited if 429 retries exhaust.
+        # We let it propagate — the scheduler will pause Skinport's job.
         response_index = self._fetch_bulk(client)
 
         if response_index is None:
-            # Bulk fetch failed after retries. Yield None for each requested
-            # item so callers can count the skip.
+            # Bulk fetch failed on a non-429 path (parse error, HTTP 4xx
+            # non-429, timeout exhaustion). All items are declined — same
+            # outcome for every name in this cycle.
             for _ in wanted:
-                yield None
+                yield DECLINED
             return
 
         # Single timestamp for the whole cycle — the response is a server
@@ -138,6 +145,10 @@ class SkinportCollector(Collector):
         for name in wanted:
             entry = response_index.get(name)
             if entry is None:
+                # Item not in Skinport's bulk response at all. Ambiguous:
+                # could be "Skinport doesn't list this item" (genuine
+                # unavailable) or a degraded subset; cycle-level heuristic
+                # decides.
                 logger.info(
                     "Skinport has no entry for %r — skipping", name
                 )
@@ -159,6 +170,9 @@ class SkinportCollector(Collector):
             "app_id": str(SKINPORT_APP_ID_CS2),
             "currency": "USD",
         }
+
+        saw_429 = False
+        last_retry_after_seconds: int | None = None
 
         for attempt in range(self.max_retries):
             try:
@@ -183,7 +197,30 @@ class SkinportCollector(Collector):
                 continue
 
             status = response.status_code
-            if status == 429 or status >= 500:
+            if status == 429:
+                saw_429 = True
+                retry_after = parse_retry_after(
+                    response.headers.get("Retry-After")
+                )
+                if retry_after is not None:
+                    last_retry_after_seconds = retry_after
+                    delay = float(min(retry_after, 60))
+                else:
+                    delay = full_jitter_backoff(
+                        attempt, base=self.base_delay
+                    )
+                logger.warning(
+                    "Skinport 429 (attempt %d/%d) — "
+                    "Retry-After=%s, sleeping %.2fs",
+                    attempt + 1,
+                    self.max_retries,
+                    retry_after if retry_after is not None else "absent",
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+
+            if status >= 500:
                 logger.warning(
                     "Skinport %d (attempt %d/%d) — backing off",
                     status,
@@ -219,6 +256,8 @@ class SkinportCollector(Collector):
         logger.error(
             "Skinport bulk fetch exhausted %d attempts", self.max_retries
         )
+        if saw_429:
+            raise RateLimited(self.source_name, last_retry_after_seconds)
         return None
 
     def _normalize(

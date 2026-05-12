@@ -130,9 +130,50 @@ def _source_id(session, name: str) -> int:
     ).scalar_one()
 
 
+@pytest.fixture
+def all_known_sources_enabled():
+    """Ensure steam_market, skinport, and dmarket are all enabled for
+    the duration of a cross-source test. The live DB may have one or
+    more disabled (e.g. skinport during rate-limit recovery — ADR 013);
+    analytics filters ``WHERE s.enabled = TRUE`` so a disabled source
+    would silently drop its observations from the test's assertions.
+    Snapshot and restore on teardown.
+    """
+    engine = get_engine()
+    with Session(engine) as session:
+        snapshot = dict(
+            session.execute(
+                text(
+                    "SELECT name, enabled FROM sources WHERE name IN "
+                    "('steam_market', 'skinport', 'dmarket')"
+                )
+            ).all()
+        )
+        session.execute(
+            text(
+                "UPDATE sources SET enabled = TRUE "
+                "WHERE name IN ('steam_market', 'skinport', 'dmarket')"
+            )
+        )
+        session.commit()
+        try:
+            yield
+        finally:
+            for name, was_enabled in snapshot.items():
+                session.execute(
+                    text(
+                        "UPDATE sources SET enabled = :e WHERE name = :n"
+                    ),
+                    {"e": was_enabled, "n": name},
+                )
+            session.commit()
+
+
 @_db_required
 class TestMovingAverages:
-    def test_writes_one_row_per_window_per_source(self, sentinel_item):
+    def test_writes_one_row_per_window_per_source(
+        self, sentinel_item, all_known_sources_enabled
+    ):
         engine = get_engine()
         item_id = sentinel_item
         now = datetime(2099, 7, 1, tzinfo=UTC)
@@ -173,7 +214,9 @@ class TestMovingAverages:
 
 @_db_required
 class TestCrossSource:
-    def test_view_and_spread(self, sentinel_item):
+    def test_view_and_spread(
+        self, sentinel_item, all_known_sources_enabled
+    ):
         engine = get_engine()
         item_id = sentinel_item
         now = datetime(2099, 7, 2, tzinfo=UTC)
