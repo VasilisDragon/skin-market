@@ -72,6 +72,18 @@ uv run uvicorn api.main:app --reload --port 8000
 curl localhost:8000/items/ak47-redline-fn/price | jq
 ```
 
+### Running tests
+
+```bash
+# Default: safe to run against any state. Skips destructive tests.
+uv run pytest
+
+# Destructive tests: drops + recreates all domain tables, re-seeds. Wipes
+# any collected price/insight data. Run explicitly when you want a clean
+# schema replay (typically only on a throwaway dev DB).
+uv run pytest -m destructive
+```
+
 ## Deploy to Spark (production)
 
 Once Phase 8 of `PROJECT_SPEC.md` is done:

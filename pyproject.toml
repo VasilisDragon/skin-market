@@ -38,8 +38,13 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# Skip destructive tests by default — they wipe DB tables. Opt in with
+# `uv run pytest -m destructive`.
+addopts = "-ra -m 'not destructive'"
 asyncio_mode = "auto"
+markers = [
+    "destructive: tests that wipe DB data (e.g. migration roundtrip). Opt in via `pytest -m destructive`.",
+]
 
 [tool.ruff]
 target-version = "py311"

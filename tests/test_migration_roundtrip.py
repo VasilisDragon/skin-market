@@ -38,10 +38,13 @@ def _db_reachable() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL") or not _db_reachable(),
-    reason="DATABASE_URL not set or postgres unreachable",
-)
+pytestmark = [
+    pytest.mark.destructive,
+    pytest.mark.skipif(
+        not os.environ.get("DATABASE_URL") or not _db_reachable(),
+        reason="DATABASE_URL not set or postgres unreachable",
+    ),
+]
 
 
 def _alembic_cfg() -> Config:
