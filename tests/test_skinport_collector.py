@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 
 from collectors.skinport import (
-    SKINPORT_BASE_URL,
     SkinportCollector,
     parse_skinport_price,
 )

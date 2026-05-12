@@ -56,6 +56,15 @@ docker compose up -d postgres
 # Install Python deps
 uv sync
 
+# Build and start the collector scheduler (Phase 4+; polls Steam every 30m,
+# Skinport every 5m, writes to the prices table with conditional dedup)
+docker compose up -d collector
+docker compose logs -f --tail 30 collector   # operational view; grep "cycle complete"
+
+# Graceful stop. SIGTERM finishes the in-flight Steam cycle (up to ~4 min)
+# before exit. stop_grace_period in compose is 5 min.
+docker compose stop collector
+
 # Run migrations
 uv run alembic upgrade head
 

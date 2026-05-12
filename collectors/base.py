@@ -216,3 +216,45 @@ def persist_observation(session: Session, obs: PriceObservation) -> bool:
     )
     session.execute(stmt)
     return True
+
+
+def should_write_observation(
+    session: Session, obs: PriceObservation
+) -> bool:
+    """Return True if this observation should be persisted.
+
+    Returns False when the most recent row for the same ``(item, source)``
+    has the same ``(price, volume)`` — an unchanged observation adds noise
+    to the time-series without new information. **Exact equality**, no
+    tolerance threshold (see ADR 009 for the rationale: tolerances are an
+    arbitrary bug source; cent-level changes are real signal).
+
+    Always True if no prior row exists. Always False if the item or source
+    is unknown (defensive — ``persist_observation`` also handles that,
+    and we want this function to return early without writing).
+
+    One SQL round-trip per call: a single JOIN-based SELECT bounded by
+    LIMIT 1 hits the composite PK index on ``prices``. At v1 cadences
+    (48 items × 2 sources × 12 cycles/hour) this is ~1100 lookups/hour,
+    well within Postgres's noise floor.
+    """
+    if obs.price is None:
+        return False
+
+    canonical_name = normalize_name(obs.market_hash_name)
+
+    latest = session.execute(
+        select(Price.price, Price.volume)
+        .join(Item, Item.id == Price.item_id)
+        .join(Source, Source.id == Price.source_id)
+        .where(
+            Item.market_hash_name == canonical_name,
+            Source.name == obs.source_name,
+        )
+        .order_by(Price.timestamp.desc())
+        .limit(1)
+    ).first()
+
+    if latest is None:
+        return True
+    return (latest.price, latest.volume) != (obs.price, obs.volume)

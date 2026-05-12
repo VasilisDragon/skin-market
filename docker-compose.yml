@@ -24,5 +24,25 @@ services:
       retries: 5
     restart: unless-stopped
 
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skinmarket-collector
+    environment:
+      # The container talks to postgres over the compose network, so the
+      # host is the service name "postgres", not "localhost" like the
+      # host-side .env. POSTGRES_* values come from the .env at the
+      # repo root via compose's variable interpolation.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Steam's per-cycle runtime is ~4 minutes (50 items at 5s spacing).
+    # Allow it to drain on SIGTERM before docker SIGKILLs the process.
+    stop_grace_period: 5m
+
 volumes:
   postgres_data:

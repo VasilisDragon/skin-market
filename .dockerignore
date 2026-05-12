@@ -1,0 +1,46 @@
+# VCS / CI
+.git/
+.github/
+.gitignore
+
+# Virtualenvs / build caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Local env (NEVER bake into the image — credentials must come from
+# docker-compose's environment block at runtime)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime caches that may exist locally but don't belong in the image
+data/cache/
+data/exports/
+*.log
+
+# Docs and tests — not needed at runtime, keep image small
+docs/
+tests/
+README.md
+PROJECT_SPEC.md
+ARCHITECTURE.md
+
+# Build artifacts that aren't checked in but might exist
+Dockerfile
+.dockerignore
