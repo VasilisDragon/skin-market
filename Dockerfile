@@ -29,6 +29,7 @@ COPY data/ ./data/
 COPY scripts/ ./scripts/
 COPY analytics/ ./analytics/
 COPY api/ ./api/
+COPY bot/ ./bot/
 COPY alembic.ini ./
 
 # Drop root for runtime. Image is then immutable — the container can't

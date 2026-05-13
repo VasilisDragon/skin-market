@@ -86,6 +86,41 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  bot:
+    # Same image as collector / analytics / api — only the
+    # entrypoint differs. Phase 7c (ADR 016): Discord bot routed
+    # through local Ollama for tool calling.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skinmarket-bot
+    command: ["python", "-m", "bot.main"]
+    environment:
+      # Bot reads the api over the compose internal network (the
+      # Phase 6.6 host port mapping is irrelevant in-compose). The
+      # token must be in the api's accepted set (Phase 7b §10).
+      SKIN_MARKET_API_BASE_URL: http://api:8000
+      SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
+      # Ollama on the host — same pattern as the analytics narrative
+      # job (ADR 011). host.docker.internal resolves via extra_hosts
+      # below on Linux Docker.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-huihui_ai/Qwen3.6-abliterated:27b}
+      # Discord credentials + access control.
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # No ``ports:`` mapping — the bot makes outbound connections
+    # only (Discord + Ollama + api). Nothing reaches in.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   analytics:
     # Same image as collector — only the entrypoint differs.
     build:

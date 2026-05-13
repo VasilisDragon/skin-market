@@ -28,6 +28,11 @@ dependencies = [
     # safe_dump would erase the file's header comments and section
     # markers on every edit.
     "ruamel.yaml>=0.18,<1.0",
+    # Phase 7c — the Discord bot. discord.py is the de-facto Python
+    # Discord client; ollama is the official Python client for the
+    # Ollama daemon the bot routes through (see ADR 016).
+    "discord.py>=2.4,<3.0",
+    "ollama>=0.4,<1.0",
 ]
 
 [dependency-groups]
@@ -57,3 +62,10 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# The system prompt is a single triple-quoted string of LLM-facing
+# instructions; trigger-phrase lists are naturally long, and wrapping
+# them adds visual noise without helping the model. Disable E501 for
+# this file specifically.
+"bot/system_prompt.py" = ["E501"]
