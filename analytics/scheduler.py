@@ -35,7 +35,13 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 
-from analytics import anomaly_detection, cross_source, moving_averages, narrative
+from analytics import (
+    anomaly_detection,
+    cross_source,
+    moving_averages,
+    narrative,
+    unavailability_streak,
+)
 from db.connection import get_engine
 
 logger = logging.getLogger(__name__)
@@ -70,6 +76,12 @@ def run_hourly_cycle() -> None:
         _run_with_logging(
             "Anomaly detection (volume + divergence)",
             anomaly_detection.compute_and_store,
+            session,
+            now,
+        )
+        _run_with_logging(
+            "Unavailability streaks",
+            unavailability_streak.compute_and_store,
             session,
             now,
         )

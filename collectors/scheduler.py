@@ -72,6 +72,7 @@ from collectors.base import (
     _DeclinedMarker,
     persist_observation,
     should_write_observation,
+    update_observation_log,
 )
 from collectors.dmarket import DMarketCollector
 from collectors.skinport import SkinportCollector
@@ -360,6 +361,10 @@ def _run_cycle(
                 else:
                     unavailable += 1
                 continue
+            # PriceObservation — update observation_log unconditionally
+            # (pre-dedup), so the streak counter sees a fresh "polled"
+            # timestamp even when the price was unchanged. ADR 015.
+            update_observation_log(session, obs)
             if not should_write_observation(session, obs):
                 unchanged += 1
                 continue

@@ -1,29 +1,41 @@
-"""``/items/{slug}/insights`` — latest of each per-item insight.
+"""Insights endpoints.
 
-Returns one row per ``(insight_type, sub-key)`` where ``sub-key`` is
-``meta_info->>'source_id'`` for per-source insights (moving averages),
-``source_a_id/source_b_id`` for per-pair insights (cross_source_spread),
-or empty for item-level insights (cross_source_view, volume_anomaly,
-cross_source_divergence).
+Three routes:
 
-``daily_narrative`` is excluded — it's a global insight pinned to an
-arbitrary "first item" by the analytics layer (see
-``analytics/narrative.py``), so surfacing it via a per-item endpoint
-would either lie (it's not about THIS item) or be inconsistent (it
-only shows up under one slug). The bot fetches the daily narrative
-via a different path in Phase 7. ADR 014 §5.
+- ``GET /items/{slug}/insights`` — per-item: latest of each
+  (insight_type, sub-key). Excludes ``daily_narrative`` (which is
+  global, ADR 014 §5).
+- ``GET /insights/narrative/latest`` — the latest daily narrative.
+  Item-agnostic; Phase 7a addition for the bot's "what happened
+  today" tool.
+- ``GET /insights/anomalies/recent`` — currently-firing cross-source
+  divergences + volume anomalies, joined with item metadata so the
+  bot can render "what's interesting today" without a second
+  round-trip.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from api.schemas import InsightRow, InsightsResponse
+from api.schemas import (
+    AnomaliesResponse,
+    AnomalyRow,
+    InsightRow,
+    InsightsResponse,
+    NarrativeResponse,
+)
 from db.connection import get_engine
 
 router = APIRouter(tags=["insights"])
+
+ANOMALIES_DEFAULT_HOURS = 6
+ANOMALIES_MAX_HOURS = 24
 
 
 @router.get(
@@ -81,6 +93,123 @@ def get_insights(slug: str) -> InsightsResponse:
                 computed_at=row["computed_at"],
                 value=row["value"],
                 text_value=row["text_value"],
+                meta=dict(row["meta_info"] or {}),
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get(
+    "/insights/narrative/latest",
+    response_model=NarrativeResponse,
+)
+def get_latest_narrative() -> NarrativeResponse:
+    """Return the most recent ``daily_narrative`` insight row.
+
+    404 if no narrative has been generated yet — the analytics
+    scheduler runs the narrative job at 02:00 UTC daily; on a fresh
+    deploy this will be empty until the first nightly cycle fires.
+    """
+    engine = get_engine()
+    with Session(engine) as session:
+        row = (
+            session.execute(
+                text(
+                    """
+                    SELECT computed_at, text_value, meta_info
+                    FROM insights
+                    WHERE insight_type = 'daily_narrative'
+                    ORDER BY computed_at DESC
+                    LIMIT 1
+                    """
+                )
+            )
+            .mappings()
+            .first()
+        )
+    if row is None or not row.get("text_value"):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No daily narrative generated yet. The analytics "
+                "scheduler runs the narrative job at 02:00 UTC; on a "
+                "fresh deploy, wait for the first cycle."
+            ),
+        )
+    return NarrativeResponse(
+        computed_at=row["computed_at"],
+        text=row["text_value"],
+        meta=dict(row["meta_info"] or {}),
+    )
+
+
+@router.get(
+    "/insights/anomalies/recent",
+    response_model=AnomaliesResponse,
+)
+def get_recent_anomalies(
+    hours: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=ANOMALIES_MAX_HOURS,
+            description=(
+                f"Lookback window in hours. Default "
+                f"{ANOMALIES_DEFAULT_HOURS}, max {ANOMALIES_MAX_HOURS}."
+            ),
+        ),
+    ] = ANOMALIES_DEFAULT_HOURS,
+) -> AnomaliesResponse:
+    """Return cross-source divergences + volume anomalies from the last
+    N hours, joined with item slug + display_name. Z-scores are signed.
+
+    Sorted by ``computed_at`` DESC so the most-recent anomalies surface
+    first. The bot's "what's interesting today" tool reads this
+    directly without per-item lookups.
+    """
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=hours)
+
+    engine = get_engine()
+    with Session(engine) as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    SELECT
+                        ins.insight_type,
+                        i.slug,
+                        i.display_name,
+                        ins.computed_at,
+                        ins.value AS z_score,
+                        ins.meta_info
+                    FROM insights ins
+                    JOIN items i ON i.id = ins.item_id
+                    WHERE ins.insight_type IN (
+                        'cross_source_divergence',
+                        'volume_anomaly'
+                    )
+                      AND ins.computed_at >= :since
+                    ORDER BY ins.computed_at DESC, i.market_hash_name
+                    """
+                ),
+                {"since": since},
+            )
+            .mappings()
+            .all()
+        )
+
+    return AnomaliesResponse(
+        since=since,
+        count=len(rows),
+        anomalies=[
+            AnomalyRow(
+                insight_type=row["insight_type"],
+                slug=row["slug"],
+                display_name=row["display_name"],
+                computed_at=row["computed_at"],
+                z_score=row["z_score"],
                 meta=dict(row["meta_info"] or {}),
             )
             for row in rows

@@ -44,7 +44,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from db.models import Item, Price, Source
+from db.models import Item, ObservationLog, Price, Source
 from db.naming import normalize_name
 
 logger = logging.getLogger(__name__)
@@ -247,6 +247,50 @@ class Collector(ABC):
             ),
             follow_redirects=False,
         )
+
+
+def update_observation_log(
+    session: Session, obs: PriceObservation
+) -> bool:
+    """Record that a source successfully observed an item at
+    ``obs.timestamp``, regardless of whether ``persist_observation``
+    will write a ``prices`` row (i.e. independent of dedup).
+
+    The streak counter (``analytics.unavailability_streak``) reads
+    from ``observation_log`` so dedup'd observations correctly count
+    as "fresh" rather than as missing. ADR 015 §"unavailability_streak"
+    for the rationale.
+
+    Returns True if the upsert ran, False if the item or source name
+    is missing from the DB (defensive — matches ``persist_observation``'s
+    same lookup-failed exit).
+    """
+    canonical_name = normalize_name(obs.market_hash_name)
+    item_id = session.execute(
+        select(Item.id).where(Item.market_hash_name == canonical_name)
+    ).scalar_one_or_none()
+    if item_id is None:
+        return False
+    source_id = session.execute(
+        select(Source.id).where(Source.name == obs.source_name)
+    ).scalar_one_or_none()
+    if source_id is None:
+        return False
+
+    stmt = (
+        pg_insert(ObservationLog)
+        .values(
+            item_id=item_id,
+            source_id=source_id,
+            last_observed_at=obs.timestamp,
+        )
+        .on_conflict_do_update(
+            index_elements=["item_id", "source_id"],
+            set_={"last_observed_at": obs.timestamp},
+        )
+    )
+    session.execute(stmt)
+    return True
 
 
 def persist_observation(session: Session, obs: PriceObservation) -> bool:

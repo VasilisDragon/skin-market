@@ -932,6 +932,246 @@ class TestDealsEvaluate:
 
 
 @_db_required
+class TestLatestNarrative:
+    """``GET /insights/narrative/latest`` — global daily narrative."""
+
+    def test_404_when_no_narrative(self, client: TestClient) -> None:
+        # Wipe any existing daily_narrative rows so this test starts
+        # from a known-empty state, then restore after.
+        engine = get_engine()
+        with Session(engine) as session:
+            snapshot = (
+                session.execute(
+                    text(
+                        "SELECT computed_at, item_id, text_value, "
+                        "meta_info FROM insights "
+                        "WHERE insight_type = 'daily_narrative'"
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            session.execute(
+                text(
+                    "DELETE FROM insights "
+                    "WHERE insight_type = 'daily_narrative'"
+                )
+            )
+            session.commit()
+        try:
+            resp = client.get("/insights/narrative/latest")
+            assert resp.status_code == 404
+        finally:
+            with Session(engine) as session:
+                for row in snapshot:
+                    session.execute(
+                        text(
+                            """
+                            INSERT INTO insights (
+                                item_id, computed_at, insight_type,
+                                text_value, meta_info
+                            )
+                            VALUES (
+                                :i, :t, 'daily_narrative', :txt,
+                                CAST(:m AS jsonb)
+                            )
+                            """
+                        ),
+                        {
+                            "i": row["item_id"],
+                            "t": row["computed_at"],
+                            "txt": row["text_value"],
+                            "m": json.dumps(dict(row["meta_info"] or {})),
+                        },
+                    )
+                session.commit()
+
+    def test_returns_latest_when_present(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        engine = get_engine()
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO insights (
+                        item_id, computed_at, insight_type,
+                        text_value, meta_info
+                    )
+                    VALUES (
+                        :i, :t, 'daily_narrative',
+                        'Synthetic test narrative.',
+                        CAST(:m AS jsonb)
+                    )
+                    """
+                ),
+                {
+                    "i": sentinel_item,
+                    "t": now,
+                    "m": json.dumps({"as_of": now.isoformat()}),
+                },
+            )
+            session.commit()
+
+        try:
+            resp = client.get("/insights/narrative/latest")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["text"] == "Synthetic test narrative."
+            assert "as_of" in body["meta"]
+        finally:
+            with Session(engine) as session:
+                session.execute(
+                    text(
+                        "DELETE FROM insights "
+                        "WHERE insight_type = 'daily_narrative' "
+                        "AND computed_at = :t"
+                    ),
+                    {"t": now},
+                )
+                session.commit()
+
+    def test_auth_required(self) -> None:
+        c = TestClient(app)  # no Authorization header
+        resp = c.get("/insights/narrative/latest")
+        assert resp.status_code == 401
+
+
+@_db_required
+class TestRecentAnomalies:
+    """``GET /insights/anomalies/recent`` — divergence + volume rows
+    from the last N hours, joined with item display_name."""
+
+    def test_returns_recent_anomalies(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        engine = get_engine()
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO insights (
+                        item_id, computed_at, insight_type, value, meta_info
+                    )
+                    VALUES
+                        (
+                            :i, :t1, 'cross_source_divergence', -2.8,
+                            CAST(:m1 AS jsonb)
+                        ),
+                        (
+                            :i, :t2, 'volume_anomaly', 2.3,
+                            CAST(:m2 AS jsonb)
+                        )
+                    """
+                ),
+                {
+                    "i": sentinel_item,
+                    "t1": now - timedelta(hours=1),
+                    "t2": now - timedelta(minutes=30),
+                    "m1": json.dumps(
+                        {"source_a_id": "1", "source_b_id": "27"}
+                    ),
+                    "m2": json.dumps({"source_id": 1, "observed_volume": 5}),
+                },
+            )
+            session.commit()
+
+        try:
+            resp = client.get("/insights/anomalies/recent?hours=6")
+            assert resp.status_code == 200
+            body = resp.json()
+            sentinel_rows = [
+                a for a in body["anomalies"] if a["slug"] == _SENTINEL_SLUG
+            ]
+            assert len(sentinel_rows) == 2
+            kinds = {a["insight_type"] for a in sentinel_rows}
+            assert kinds == {"cross_source_divergence", "volume_anomaly"}
+            # display_name joined in — bot doesn't need a second lookup.
+            for a in sentinel_rows:
+                assert a["display_name"] == _SENTINEL_NAME
+                assert isinstance(a["z_score"], str)  # money-as-string
+        finally:
+            with Session(engine) as session:
+                session.execute(
+                    text(
+                        "DELETE FROM insights "
+                        "WHERE item_id = :i AND insight_type IN "
+                        "('cross_source_divergence', 'volume_anomaly')"
+                    ),
+                    {"i": sentinel_item},
+                )
+                session.commit()
+
+    def test_since_filter_excludes_old(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        engine = get_engine()
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO insights (
+                        item_id, computed_at, insight_type, value, meta_info
+                    )
+                    VALUES (
+                        :i, :t, 'volume_anomaly', 3.1, CAST(:m AS jsonb)
+                    )
+                    """
+                ),
+                {
+                    "i": sentinel_item,
+                    # 12 hours ago — outside the default 6h window.
+                    "t": now - timedelta(hours=12),
+                    "m": json.dumps({"source_id": 1}),
+                },
+            )
+            session.commit()
+
+        try:
+            resp = client.get("/insights/anomalies/recent")
+            sentinel_rows = [
+                a
+                for a in resp.json()["anomalies"]
+                if a["slug"] == _SENTINEL_SLUG
+            ]
+            assert sentinel_rows == []
+
+            resp = client.get("/insights/anomalies/recent?hours=24")
+            sentinel_rows = [
+                a
+                for a in resp.json()["anomalies"]
+                if a["slug"] == _SENTINEL_SLUG
+            ]
+            assert len(sentinel_rows) == 1
+        finally:
+            with Session(engine) as session:
+                session.execute(
+                    text(
+                        "DELETE FROM insights "
+                        "WHERE item_id = :i AND insight_type = 'volume_anomaly'"
+                    ),
+                    {"i": sentinel_item},
+                )
+                session.commit()
+
+    def test_hours_param_validation(self, client: TestClient) -> None:
+        # hours=0 → 422 (ge=1)
+        resp = client.get("/insights/anomalies/recent?hours=0")
+        assert resp.status_code == 422
+        # hours=99 → 422 (le=24)
+        resp = client.get("/insights/anomalies/recent?hours=99")
+        assert resp.status_code == 422
+
+    def test_auth_required(self) -> None:
+        c = TestClient(app)
+        resp = c.get("/insights/anomalies/recent")
+        assert resp.status_code == 401
+
+
+@_db_required
 class TestOpenAPIDoc:
     def test_openapi_includes_examples_on_substantive_endpoints(
         self, client: TestClient

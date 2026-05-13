@@ -300,3 +300,93 @@ class HealthResponse(BaseModel):
     db: Literal["reachable", "unreachable"] = Field(
         description="Result of a SELECT 1 against the configured DATABASE_URL."
     )
+
+
+class NarrativeResponse(BaseModel):
+    """``GET /insights/narrative/latest`` — the most recent daily
+    narrative paragraph plus the citation payload the LLM was given.
+
+    The narrative is a global insight (not item-scoped); see ADR 014 §5
+    for why it's NOT surfaced through ``/items/{slug}/insights``.
+    """
+
+    computed_at: datetime
+    text: str
+    meta: dict
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "computed_at": "2026-05-13T03:00:17Z",
+                    "text": (
+                        "Today, the AWP | Hyper Beast (Field-Tested) "
+                        "saw a 7.07 % rise on Skinport…"
+                    ),
+                    "meta": {
+                        "top_movers": [{"name": "AWP | Hyper Beast (Field-Tested)"}],
+                        "as_of": "2026-05-13T03:00:00Z",
+                    },
+                }
+            ]
+        }
+    }
+
+
+AnomalyType = Literal["cross_source_divergence", "volume_anomaly"]
+
+
+class AnomalyRow(BaseModel):
+    """One anomaly insight, joined with the item it applies to so the
+    bot can render the row without a follow-up lookup."""
+
+    insight_type: AnomalyType
+    slug: str
+    display_name: str
+    computed_at: datetime
+    z_score: MoneyStr
+    meta: dict
+
+
+class AnomaliesResponse(BaseModel):
+    """``GET /insights/anomalies/recent`` — cross-source divergences and
+    volume anomalies from the last N hours, joined with item metadata.
+
+    Default window is 6h, max 24h. Z-scores are signed: positive means
+    the observed value is above the rolling baseline, negative is below.
+    """
+
+    since: datetime
+    count: int
+    anomalies: list[AnomalyRow]
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "since": "2026-05-12T18:00:00Z",
+                    "count": 2,
+                    "anomalies": [
+                        {
+                            "insight_type": "cross_source_divergence",
+                            "slug": "awp-hyper-beast-field-tested",
+                            "display_name": (
+                                "AWP | Hyper Beast (Field-Tested)"
+                            ),
+                            "computed_at": "2026-05-12T23:34:16Z",
+                            "z_score": "-2.89",
+                            "meta": {
+                                "source_a_id": "1",
+                                "source_b_id": "27",
+                                "observed_spread": 0.37,
+                                "baseline_mean": 0.45,
+                                "baseline_stddev": 0.028,
+                                "threshold_z": 2,
+                                "n_samples": 21,
+                            },
+                        }
+                    ],
+                }
+            ]
+        }
+    }

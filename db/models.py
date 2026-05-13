@@ -120,6 +120,40 @@ class Price(Base):
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
+class ObservationLog(Base):
+    """One row per ``(item, source)`` pair — the timestamp of the most
+    recent successful poll, regardless of whether a ``prices`` row was
+    written.
+
+    Phase 7a addition. Distinct from ``prices``:
+
+    - ``prices`` is the dedup'd time-series — rows only land when
+      ``(price, volume)`` changes (ADR 009 §3). For items whose price
+      doesn't change cycle-to-cycle, ``prices.timestamp`` stops
+      advancing even though the collector is still observing them.
+    - ``observation_log`` advances on every successful observation
+      (pre-dedup), so it's the right signal for "has source X seen
+      item Y recently?" — used by
+      ``analytics.unavailability_streak``.
+
+    Composite PK ``(item_id, source_id)`` means there is exactly one
+    row per pair; the collector upserts via
+    ``INSERT … ON CONFLICT DO UPDATE``.
+    """
+
+    __tablename__ = "observation_log"
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), primary_key=True
+    )
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id"), primary_key=True
+    )
+    last_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class Insight(Base):
     __tablename__ = "insights"
 
