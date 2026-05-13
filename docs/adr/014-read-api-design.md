@@ -130,11 +130,53 @@ API tests follow the same sentinel-item pattern as `test_analytics.py` and `test
 - An autouse `_preserve_source_enabled_flags` fixture snapshots `sources.enabled` for every test and restores on teardown, so a test that flips `enabled` (e.g. testing the `WHERE s.enabled = TRUE` filter on `/price`) does not unwind operator state. Same pattern as `test_watchlist_edit.py` (ADR 013 fire-drill side-effect lesson).
 - `fastapi.testclient.TestClient` against the real DB — no in-memory fake. Same skip pattern as the rest of the suite (`@_db_required` when `DATABASE_URL` unset or postgres unreachable).
 
+### 10. Phase 7 contact: bot-in-compose assumption inverted; auth + port mapping added
+
+The §3 "no auth, compose network is the gatekeeper" posture relied on the bot running as a compose service. Phase 7 contact (Hermes installs under `~/.hermes-discord/skills/skin-market/` — a host process, not a compose service) inverted that assumption: the api has to be reachable from the host for the bot to call it. The §3 escape hatch is now the real configuration.
+
+**What landed (Phase 6.6 — commit `<this commit>`):**
+
+1. `api/auth.py` — single FastAPI dependency `require_token`. Reads `SKIN_MARKET_API_TOKEN` from env, fails closed (500) if unset, 401 with `WWW-Authenticate: Bearer` if missing/wrong, constant-time comparison via `secrets.compare_digest`.
+2. `api/main.py` — `Depends(require_token)` applied to every `app.include_router(...)`. `/health` is declared directly on the app (outside any router), so it bypasses auth.
+3. `docker-compose.yml` — `ports: ["127.0.0.1:8001:8000"]` on the api service (**127.0.0.1**, never `0.0.0.0` — same posture as Postgres). Host port is **8001** rather than the originally planned 8000 because host port 8000 is already held by another container on this deployment; the container's internal port stays 8000 (`uvicorn --port 8000`), only the host-facing mapping shifts. `SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}` passed through from `.env`. The bot reads `http://localhost:8001` from the host, but the in-compose URL (used by the existing compose healthcheck inside the container) remains `http://localhost:8000`.
+4. `.env` — `SKIN_MARKET_API_TOKEN` generated via `openssl rand -hex 32` (256 bits). `.env.example` documents the generation step.
+
+**Why `/health` stays unauthenticated:**
+
+- Docker's healthcheck inside the container has no credentials; making it carry an Authorization header would couple the container's healthcheck to the env var being available *and well-formed*. A typo in `SKIN_MARKET_API_TOKEN` would silently break healthchecks and the orchestrator's restart logic, not just user-facing requests.
+- An operator running `curl http://localhost:8000/health` against a misconfigured deployment must see "api up, auth misconfigured" rather than a blanket 401. The 500-on-unset behavior of authenticated routes already covers misconfiguration visibility for the bot path; `/health` is the operator's separate read.
+- `/health` reveals nothing sensitive — `{"status": "ok", "db": "reachable"}`. The cost of leaving it open is zero (vs. the visibility lost by gating it).
+
+**Operator workflow — generating + rotating the token:**
+
+```bash
+# Generation (one-time per deployment):
+openssl rand -hex 32 >> .env  # then prefix with SKIN_MARKET_API_TOKEN=
+docker compose build api      # bake .env reference (image picks up the env var at runtime)
+docker compose up -d api      # restart with new token in env
+
+# Rotation:
+# 1. Edit .env, replace the value with a new openssl-generated string.
+# 2. docker compose up -d api  (re-reads .env)
+# 3. Update the bot's environment with the new token and restart Hermes.
+```
+
+No rotation tooling in v1 — manual is fine while there is exactly one client. ARCHITECTURE.md's "user accounts / auth (v5+)" deferral applies to multi-tenant user auth; a single machine-boundary secret is a different concern.
+
+**The image-rebuild lesson (Phase 5, Phase 6.5) carries over.** Adding auth code only takes effect after `docker compose build api` followed by `docker compose up -d api`. Skipping the build leaves the previous image running and the API will *appear* unauthenticated to a host-side `curl` until the build lands.
+
+**What this does NOT add:**
+
+- No user-tier auth. There is one token for one machine boundary. Roles, scopes, per-route permissions are all v5+.
+- No token rotation tooling, audit log, or revocation list — single token, single rotation = edit + restart.
+- No TLS termination at the api layer. The api binds to `127.0.0.1` and only the loopback interface; cleartext over loopback is acceptable, and any future public exposure should land behind a reverse proxy that handles TLS + the bearer pass-through.
+
 ## Consequences
 
 - **Pro:** the architectural invariant ("never collapse across denominations") is now machine-enforced at the API boundary. A bot or a future SaaS consumer cannot accidentally render `$42 on Steam` as USD; the denomination tag is mandatory on every price row.
 - **Pro:** money precision survives the wire. `Decimal("42.50") → "42.50" → Decimal("42.50")` round-trips cleanly; no float corruption.
-- **Pro:** the api service is one config-change away from third-party consumption — when Phase 7 or later opens the door, the auth dependency is documented and ~15 lines.
+- **Pro:** the api service is one config-change away from third-party consumption — and after Phase 6.6 (§10) the consumption boundary is already gated by a 256-bit token, so going from "Hermes-on-host" to "Hermes-on-different-host" is just a `.env` propagation, not a new auth design.
 - **Con:** `/deals/evaluate`'s 5% / 4-hour constants are static. As the volatility of CS2 prices changes and new sources land, these may need tuning. Named module constants mean tuning is a one-line change + ADR update, not a refactor.
 - **Con:** `daily_narrative` is omitted from `/items/{slug}/insights`, which means the bot needs a separate path to fetch it. Phase 7 adds that path; documented here so the omission is intentional, not an oversight.
 - **Con:** matplotlib's lazy import inside the chart handler means the first `/chart` request after process start is ~600ms slower than subsequent ones. Acceptable — `/chart` is a low-frequency endpoint, and bot users won't notice on a single request.
+- **Con:** the single static token has no rotation tooling. Rotation requires editing two `.env` files (api + bot) and restarting both services. Fine while there's exactly one bot; pre-supposes a v5+ tooling effort if the consumer count grows.

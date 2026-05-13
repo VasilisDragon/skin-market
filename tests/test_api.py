@@ -56,10 +56,32 @@ _db_required = pytest.mark.skipif(
 _SENTINEL_NAME = "__APITest__ | Sentinel (Field-Tested)"
 _SENTINEL_SLUG = "apitest-sentinel-field-tested"
 
+# Phase 6.6: every authenticated test runs with a known token set in
+# the environment via the autouse fixture. Authenticated clients carry
+# the matching Authorization header; tests that exercise the auth
+# itself construct their own clients with no/wrong header.
+_TEST_TOKEN = "test-token-deadbeefcafebabe1234567890"
+
+
+@pytest.fixture(autouse=True)
+def _set_api_token(monkeypatch):
+    """Ensure ``SKIN_MARKET_API_TOKEN`` is set for every test in this
+    file. Auth fails closed when unset, so tests that don't
+    monkeypatch.delenv() will see authenticated routes accept the
+    matching bearer token."""
+    monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    """TestClient pre-authenticated with the matching bearer token.
+
+    ``httpx.Client.headers`` is mutable and propagates to all calls
+    against the same client, so we don't have to thread headers
+    through every test invocation."""
+    c = TestClient(app)
+    c.headers["Authorization"] = f"Bearer {_TEST_TOKEN}"
+    return c
 
 
 @pytest.fixture(autouse=True)
@@ -197,6 +219,74 @@ class TestHealth:
         body = resp.json()
         assert body["status"] == "ok"
         assert body["db"] == "reachable"
+
+
+class TestAuth:
+    """Single static bearer token (api.auth.require_token) gates every
+    router. /health is the explicit exception. ADR 014 §10."""
+
+    def test_missing_authorization_header_401(self) -> None:
+        c = TestClient(app)  # no Authorization header
+        resp = c.get("/items")
+        assert resp.status_code == 401
+        assert resp.headers.get("WWW-Authenticate") == "Bearer"
+
+    def test_invalid_token_401(self) -> None:
+        c = TestClient(app)
+        c.headers["Authorization"] = "Bearer wrong-token-on-purpose"
+        resp = c.get("/items")
+        assert resp.status_code == 401
+
+    def test_malformed_authorization_header_401(self) -> None:
+        c = TestClient(app)
+        # Not "Bearer X" — wrong scheme.
+        c.headers["Authorization"] = f"Basic {_TEST_TOKEN}"
+        resp = c.get("/items")
+        assert resp.status_code == 401
+
+    @_db_required
+    def test_valid_token_passes(self, client: TestClient) -> None:
+        # ``client`` fixture has the matching Bearer header.
+        resp = client.get("/items")
+        assert resp.status_code == 200
+
+    def test_health_bypasses_auth(self) -> None:
+        """``/health`` must respond without any Authorization header —
+        Docker healthchecks have no credentials and an operator
+        running ``curl http://localhost:8000/health`` against a
+        misconfigured auth state must still see the API's actual
+        status. ADR 014 §10."""
+        c = TestClient(app)  # no Authorization header
+        resp = c.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+    def test_env_var_unset_returns_500(
+        self, monkeypatch
+    ) -> None:
+        """Defense in depth: if SKIN_MARKET_API_TOKEN is unset at
+        request time, auth fails closed with 500 — never silently
+        accepts requests."""
+        monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
+        c = TestClient(app)
+        c.headers["Authorization"] = f"Bearer {_TEST_TOKEN}"
+        resp = c.get("/items")
+        assert resp.status_code == 500
+        assert "auth is not configured" in resp.json()["detail"].lower()
+
+    def test_constant_time_comparison_used(self) -> None:
+        """Sanity-check the implementation uses secrets.compare_digest
+        rather than ``==`` — protects against any future hand-edits
+        that could introduce a timing oracle on token comparison.
+        Asserts on the imported symbol; not a runtime behavior test."""
+        import inspect
+
+        from api import auth
+
+        src = inspect.getsource(auth.require_token)
+        assert "compare_digest" in src, (
+            "Token comparison must use secrets.compare_digest"
+        )
 
 
 # ---------------------------------------------------------------------

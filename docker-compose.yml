@@ -59,11 +59,18 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    # Deliberately NO ``ports:`` mapping — the API is reachable from
-    # other compose services at http://api:8000 via the internal
-    # network, but not from the host. Auth is unnecessary while that
-    # holds; if Phase 7 ever deploys the bot outside the compose stack,
-    # add a static-bearer dependency (see ADR 014 §3).
+      # Single static bearer for the read API. Set in .env (Phase 6.6,
+      # ADR 014 §10). Required at startup — auth fails closed if unset.
+      SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
+    # Host-local port mapping (NEVER 0.0.0.0) so Hermes — which runs
+    # as a host process at ~/.hermes-discord/, not as a compose
+    # service — can reach the api with the bearer token. Host port
+    # 8001 chosen because 8000 is held by another container on this
+    # host (open-terminal). The container's internal port stays 8000;
+    # only the host-facing mapping shifts. ADR 014 §3 anticipated the
+    # host-mapping requirement; §10 documents the deployment.
+    ports:
+      - "127.0.0.1:8001:8000"
     depends_on:
       postgres:
         condition: service_healthy
