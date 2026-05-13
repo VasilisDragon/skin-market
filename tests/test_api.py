@@ -288,6 +288,71 @@ class TestAuth:
             "Token comparison must use secrets.compare_digest"
         )
 
+    def test_multiple_tokens_all_authenticate(
+        self, monkeypatch
+    ) -> None:
+        """SKIN_MARKET_API_TOKENS (plural) is comma-separated; any
+        token in the set authenticates. v1 single-consumer uses the
+        singular alias; Phase 8+ multi-consumer uses this knob.
+        ADR 014 §10."""
+        monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
+        monkeypatch.setenv(
+            "SKIN_MARKET_API_TOKENS",
+            "tokenA, tokenB ,tokenC",  # spaces + missing trim cases
+        )
+        for token in ("tokenA", "tokenB", "tokenC"):
+            c = TestClient(app)
+            c.headers["Authorization"] = f"Bearer {token}"
+            resp = c.get("/items")
+            assert resp.status_code == 200, (
+                f"token {token!r} should authenticate but didn't"
+            )
+
+    def test_unrelated_token_rejected_against_set(
+        self, monkeypatch
+    ) -> None:
+        """A token NOT in the configured set must 401 — set
+        membership, not prefix or substring match."""
+        monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
+        monkeypatch.setenv("SKIN_MARKET_API_TOKENS", "tokenA,tokenB")
+        c = TestClient(app)
+        c.headers["Authorization"] = "Bearer tokenC"
+        resp = c.get("/items")
+        assert resp.status_code == 401
+
+    def test_empty_token_set_fails_closed(self, monkeypatch) -> None:
+        """Both env vars empty/unset → 500 (fail closed). Silently
+        treating "no tokens configured" as "auth disabled" would be a
+        footgun — surface the misconfiguration."""
+        monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
+        monkeypatch.setenv("SKIN_MARKET_API_TOKENS", "   ,  , ")
+        c = TestClient(app)
+        c.headers["Authorization"] = "Bearer anything"
+        resp = c.get("/items")
+        assert resp.status_code == 500
+        assert "auth is not configured" in resp.json()["detail"].lower()
+
+    def test_plural_and_singular_unioned(self, monkeypatch) -> None:
+        """If both env vars are set, the accepted set is their union —
+        useful when an operator phases in a new client without
+        disrupting the existing one."""
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", "primary")
+        monkeypatch.setenv("SKIN_MARKET_API_TOKENS", "secondary,tertiary")
+        for token in ("primary", "secondary", "tertiary"):
+            c = TestClient(app)
+            c.headers["Authorization"] = f"Bearer {token}"
+            assert client_status_ok(c.get("/items"), token)
+
+
+def client_status_ok(response, token: str) -> bool:
+    """Helper for the union test: asserts and returns True so the
+    parametric loop reads naturally."""
+    assert response.status_code == 200, (
+        f"token {token!r} should authenticate but did not: "
+        f"{response.status_code} {response.text}"
+    )
+    return True
+
 
 # ---------------------------------------------------------------------
 # /items, /items/{slug}
