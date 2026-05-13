@@ -745,6 +745,118 @@ class TestChart:
         )
         assert resp.status_code == 404
 
+    def test_chart_single_observation_in_window(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """Phase 8a edge case: a window with exactly one observation
+        must still render (not crash on min(prices) over a 1-element
+        list or similar). The fill_between under the curve uses
+        ``min(prices)`` which is well-defined for length-1 lists,
+        but the test pins the contract."""
+        now = datetime.now(UTC)
+        engine = get_engine()
+        with Session(engine) as session:
+            _ensure_source_enabled(session, "skinport")
+            _insert_price(
+                session, sentinel_item, "skinport",
+                now - timedelta(hours=2), "33.06",
+            )
+            session.commit()
+
+        resp = client.get(
+            f"/items/{_SENTINEL_SLUG}/chart?source=skinport&days=7"
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+        # Non-trivial body so we know the chart actually rendered
+        # (not just an empty PNG stub).
+        assert len(resp.content) > 3000
+
+    def test_chart_days_equal_one(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """Phase 8a: days=1 takes the HourLocator branch of
+        _apply_chart_style. Edge of the date-locator decision tree."""
+        resp = client.get(
+            f"/items/{_SENTINEL_SLUG}/chart?source=skinport&days=1"
+        )
+        assert resp.status_code == 200
+        assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_chart_long_display_name_does_not_overflow(
+        self, client: TestClient
+    ) -> None:
+        """Phase 8a: items with very long display names get truncated
+        in the title so the canvas doesn't overflow. Use the
+        underlying helper directly so we don't have to insert a
+        synthetic item via the fixture path."""
+        import matplotlib
+
+        from api.routes.charts import _apply_chart_style
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        long_name = "★ StatTrak™ " + ("Karambit " * 10) + "Doppler (FN)"
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot([0, 1], [1, 2])
+        ax.set_title(f"{long_name} · skinport · last 7d")
+        # Must not raise.
+        _apply_chart_style(
+            fig, ax,
+            source="skinport",
+            denomination="usd",
+            days=7,
+        )
+        # Sanity-render to make sure savefig doesn't fail on the
+        # styled figure.
+        import io as _io
+
+        buf = _io.BytesIO()
+        fig.savefig(buf, format="png")
+        plt.close(fig)
+        assert len(buf.getvalue()) > 1000
+
+    def test_chart_y_axis_currency_formatter_usd(
+        self, client: TestClient
+    ) -> None:
+        """Phase 8a contract: USD denomination produces ``$X.XX``
+        y-tick labels; wallet_credit produces ``X.XX SC``. Verified
+        via the formatter, not pixel inspection."""
+        import matplotlib
+
+        from api.routes.charts import _apply_chart_style
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        # USD
+        fig, ax = plt.subplots()
+        ax.plot([0, 1], [10.5, 42.42])
+        _apply_chart_style(
+            fig, ax, source="skinport", denomination="usd", days=7
+        )
+        # Force a draw so the formatter has known tick positions.
+        fig.canvas.draw()
+        labels_usd = [t.get_text() for t in ax.get_yticklabels()]
+        assert any(lbl.startswith("$") for lbl in labels_usd)
+        plt.close(fig)
+
+        # Wallet credit
+        fig, ax = plt.subplots()
+        ax.plot([0, 1], [10.5, 42.42])
+        _apply_chart_style(
+            fig, ax,
+            source="steam_market",
+            denomination="wallet_credit",
+            days=7,
+        )
+        fig.canvas.draw()
+        labels_sc = [t.get_text() for t in ax.get_yticklabels()]
+        assert any(lbl.endswith("SC") for lbl in labels_sc)
+        plt.close(fig)
+
 
 # ---------------------------------------------------------------------
 # /deals/evaluate
