@@ -27,8 +27,10 @@ import pytest
 
 from bot import discord_render, ollama_client
 from bot.tools import (
+    HISTORY_DOWNSAMPLE_THRESHOLD,
     TOOL_DEFINITIONS,
     TOOL_FUNCTIONS,
+    WATCHLIST_SAMPLE_SIZE,
     ApiAuthError,
     ApiUnexpectedError,
     ApiUnreachableError,
@@ -334,6 +336,335 @@ class TestQueryPriceHistory:
         )
         result = query_price_history("x", source="skinport", days=3)
         assert result["source"] == "skinport"
+
+
+# =====================================================================
+# Section 1b: Phase 7c-fix — tool-result size discipline
+# (ADR 016 §"Tool result size discipline")
+# =====================================================================
+
+
+import json as _json  # noqa: E402 — placed near the size tests
+
+
+def _serialized_len(obj) -> int:
+    """Helper: JSON-serialize a tool result and return byte count.
+    Approximates what the Ollama tool_result payload looks like."""
+    return len(_json.dumps(obj, default=str).encode("utf-8"))
+
+
+class TestListWatchlistSizeDiscipline:
+    def test_returns_summarized_shape_not_raw_list(
+        self, httpx_mock
+    ) -> None:
+        """Original /items returned a 48-item list to the LLM and
+        exceeded its rendering latency budget. Tool now returns
+        {count, by_category, sample}."""
+        raw_48 = [
+            {
+                "slug": f"item-{i}",
+                "market_hash_name": f"AK-47 | Skin{i} (Field-Tested)",
+                "display_name": f"AK-47 | Skin{i} (Field-Tested)",
+            }
+            for i in range(48)
+        ]
+        httpx_mock.add_response(url=f"{_BASE}/items", json=raw_48)
+        result = list_watchlist()
+
+        # Shape contract
+        assert set(result.keys()) == {"count", "by_category", "sample"}
+        assert result["count"] == 48
+        assert len(result["sample"]) == WATCHLIST_SAMPLE_SIZE
+        # All 48 are AK-47s in this fixture → categorized as rifle.
+        assert result["by_category"] == {"rifle": 48}
+
+        # Size — much smaller than the raw 48-record payload.
+        assert _serialized_len(result) < 2000, (
+            f"Summarized watchlist should be <2KB; got "
+            f"{_serialized_len(result)} bytes"
+        )
+
+    def test_category_breakdown_diverse_watchlist(
+        self, httpx_mock
+    ) -> None:
+        diverse = [
+            {
+                "slug": "ak", "market_hash_name": "AK-47 | Redline (FT)",
+                "display_name": "AK-47 | Redline (FT)",
+            },
+            {
+                "slug": "awp", "market_hash_name": "AWP | Asiimov (FT)",
+                "display_name": "AWP | Asiimov (FT)",
+            },
+            {
+                "slug": "kn", "market_hash_name": "★ Karambit | Doppler (FN)",
+                "display_name": "★ Karambit | Doppler (FN)",
+            },
+            {
+                "slug": "gl", "market_hash_name": "★ Sport Gloves | Vice (FT)",
+                "display_name": "★ Sport Gloves | Vice (FT)",
+            },
+            {
+                "slug": "dg",
+                "market_hash_name": "Desert Eagle | Blaze (FN)",
+                "display_name": "Desert Eagle | Blaze (FN)",
+            },
+        ]
+        httpx_mock.add_response(url=f"{_BASE}/items", json=diverse)
+        result = list_watchlist()
+        # Gloves must check before knife (else ★ Sport Gloves
+        # lands in knife). Regression-guards the ordering in
+        # _CATEGORY_PATTERNS.
+        assert result["by_category"] == {
+            "rifle": 1,
+            "sniper": 1,
+            "knife": 1,
+            "gloves": 1,
+            "pistol": 1,
+        }
+
+
+class TestQueryPriceHistorySizeDiscipline:
+    def _obs(self, source: str, ts: str, price: str) -> dict:
+        return {
+            "timestamp": ts,
+            "source": source,
+            "denomination": "usd"
+            if source != "steam_market"
+            else "wallet_credit",
+            "price": price,
+            "volume": 10,
+        }
+
+    def test_passes_through_when_below_threshold(
+        self, httpx_mock
+    ) -> None:
+        rows = [
+            self._obs("skinport", f"2026-05-{i:02d}T00:00:00Z", "30.00")
+            for i in range(1, 6)  # 5 rows, well below the threshold
+        ]
+        httpx_mock.add_response(
+            url=re.compile(rf"^{re.escape(_BASE)}/items/x/history\?.*"),
+            json={
+                "slug": "x",
+                "source": "skinport",
+                "since": "...",
+                "until": "...",
+                "limit": 500,
+                "count": 5,
+                "observations": rows,
+            },
+        )
+        result = query_price_history("x")
+        # Raw shape preserved.
+        assert "observations" in result
+        assert len(result["observations"]) == 5
+        assert "downsampled" not in result
+
+    def test_downsamples_when_above_threshold(
+        self, httpx_mock
+    ) -> None:
+        """Above HISTORY_DOWNSAMPLE_THRESHOLD rows → return per-source
+        aggregate stats instead of the raw list. Bounded payload for
+        LLM rendering."""
+        # 50 rows across 2 sources, prices ramping so first/last/min/
+        # max are distinct and the test can verify them.
+        rows = []
+        for i in range(25):
+            rows.append(
+                self._obs(
+                    "skinport",
+                    f"2026-05-01T{i:02d}:00:00Z",
+                    f"{30 + i}.00",
+                )
+            )
+        for i in range(25):
+            rows.append(
+                self._obs(
+                    "dmarket",
+                    f"2026-05-01T{i:02d}:00:00Z",
+                    f"{40 + i}.00",
+                )
+            )
+        assert len(rows) > HISTORY_DOWNSAMPLE_THRESHOLD
+
+        httpx_mock.add_response(
+            url=re.compile(rf"^{re.escape(_BASE)}/items/x/history\?.*"),
+            json={
+                "slug": "x",
+                "source": None,
+                "since": "...",
+                "until": "...",
+                "limit": 500,
+                "count": len(rows),
+                "observations": rows,
+            },
+        )
+        result = query_price_history("x", days=30)
+
+        assert result.get("downsampled") is True
+        assert "observations" not in result
+        assert "per_source_stats" in result
+        # 2 sources represented.
+        assert set(result["per_source_stats"]) == {"skinport", "dmarket"}
+        # First/last/min/max correct for each.
+        sk = result["per_source_stats"]["skinport"]
+        assert sk["first_price"] == "30.00"
+        assert sk["last_price"] == "54.00"
+        assert sk["min_price"] == "30.00"
+        assert sk["max_price"] == "54.00"
+        assert sk["count"] == 25
+        # Bounded.
+        assert _serialized_len(result) < 3000
+
+
+class TestWhatsInterestingSizeDiscipline:
+    def test_top_n_when_above_threshold(self, httpx_mock) -> None:
+        # 25 anomalies — well above the threshold of 10. z-scores
+        # ramped so we can verify the top-N picks the largest |z|.
+        anomalies = []
+        for i in range(25):
+            z = (-1 if i % 2 == 0 else 1) * (0.1 * (i + 1))
+            anomalies.append(
+                {
+                    "insight_type": "cross_source_divergence",
+                    "slug": f"item-{i}",
+                    "display_name": f"Item {i}",
+                    "computed_at": "2026-05-13T00:00:00Z",
+                    "z_score": f"{z:.2f}",
+                    "meta": {},
+                }
+            )
+        httpx_mock.add_response(
+            url=re.compile(
+                rf"^{re.escape(_BASE)}/insights/anomalies/recent\?.*"
+            ),
+            json={
+                "since": "...", "count": 25, "anomalies": anomalies
+            },
+        )
+        result = whats_interesting()
+        assert result.get("downsampled") is True
+        assert result["total_count"] == 25
+        assert len(result["anomalies"]) == 10
+        # Top 10 by |z| → the highest-index items (largest |z|).
+        top_slugs = {a["slug"] for a in result["anomalies"]}
+        assert "item-24" in top_slugs  # |z|=2.5
+        assert "item-0" not in top_slugs  # |z|=0.1
+
+    def test_pass_through_when_below_threshold(
+        self, httpx_mock
+    ) -> None:
+        anomalies = [
+            {
+                "insight_type": "volume_anomaly",
+                "slug": "x",
+                "display_name": "X",
+                "computed_at": "2026-05-13T00:00:00Z",
+                "z_score": "2.0",
+                "meta": {},
+            }
+        ]
+        httpx_mock.add_response(
+            url=re.compile(
+                rf"^{re.escape(_BASE)}/insights/anomalies/recent\?.*"
+            ),
+            json={"since": "...", "count": 1, "anomalies": anomalies},
+        )
+        result = whats_interesting()
+        assert "downsampled" not in result
+        assert len(result["anomalies"]) == 1
+
+
+class TestNarrativeMetaTrimmed:
+    def test_meta_collapsed_to_compact_shape(self, httpx_mock) -> None:
+        bulky_meta = {
+            "as_of": "2026-05-13T03:00:00Z",
+            "top_movers": [{"name": f"Item {i}"} for i in range(20)],
+            "volume_anomalies": [{"name": "X"} for _ in range(5)],
+            "cross_source_divergences": [{"name": "Y"} for _ in range(3)],
+        }
+        httpx_mock.add_response(
+            url=f"{_BASE}/insights/narrative/latest",
+            json={
+                "computed_at": "2026-05-13T03:00:00Z",
+                "text": "Today, X moved up...",
+                "meta": bulky_meta,
+            },
+        )
+        result = narrative_today()
+        # Text passes through.
+        assert result["text"].startswith("Today")
+        # Meta is compact.
+        assert result["meta"] == {
+            "as_of": "2026-05-13T03:00:00Z",
+            "cited_count": 28,
+        }
+
+
+class TestEndToEndWhatDoYouTrackPayloadBounded:
+    """The original failure mode: 'what items do you track?' fed the
+    full 48-item list to the LLM, which timed out rendering it. With
+    size discipline applied, the tool_result the LLM sees must be
+    bounded (<2KB). This regression-guards the production path."""
+
+    async def test_tool_result_to_llm_is_bounded(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+
+        # 48-item API response — what blew up in live testing.
+        raw_48 = [
+            {
+                "slug": f"item-{i}",
+                "market_hash_name": f"AK-47 | Skin{i} (Field-Tested)",
+                "display_name": f"AK-47 | Skin{i} (Field-Tested)",
+            }
+            for i in range(48)
+        ]
+        httpx_mock.add_response(url=f"{_BASE}/items", json=raw_48)
+
+        client = AsyncMock()
+        client.chat.side_effect = [
+            {
+                "message": _make_msg(
+                    tool_calls=[
+                        {
+                            "function": {
+                                "name": "list_watchlist",
+                                "arguments": {},
+                            }
+                        }
+                    ]
+                )
+            },
+            {
+                "message": _make_msg(
+                    content="We track 48 items, all rifles."
+                )
+            },
+        ]
+
+        await ollama_client.handle_user_message(
+            "what items do you track?", client=client
+        )
+
+        # Inspect the SECOND chat call — its `messages` arg has the
+        # tool_result message we just produced.
+        second_call_kwargs = client.chat.call_args_list[1].kwargs
+        messages = second_call_kwargs["messages"]
+        tool_message = next(
+            m for m in messages if m.get("role") == "tool"
+        )
+        # The tool_result content (a JSON string of the summarized
+        # watchlist) must be bounded — the pre-fix payload at this
+        # site was ~7KB and exceeded Ollama's rendering budget.
+        assert len(tool_message["content"]) < 2000, (
+            f"tool_result fed to Ollama is "
+            f"{len(tool_message['content'])} bytes; size discipline "
+            f"should bound it under 2KB."
+        )
 
 
 # =====================================================================

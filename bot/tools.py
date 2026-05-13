@@ -18,12 +18,17 @@ Hermes attempt (now archived at
   ``asyncio.to_thread`` so a slow API call doesn't block the
   discord.py event loop.
 
+Phase 7c-fix added tool-result size discipline (ADR 016 §11) — the
+``_summarize_*`` helpers cap what gets fed to the LLM so it doesn't
+spend wall-clock time rendering unbounded structured data.
+
 ADR 016 documents the broader runtime design and the open-source
 tool-calling defensive posture.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from dataclasses import dataclass
@@ -51,6 +56,19 @@ _DENOMINATION_BY_SOURCE: dict[str, str] = {
 
 STALE_HOURS: int = 4
 ANOMALY_FRESHNESS_HOURS: int = 2
+
+# Phase 7c-fix — tool-result size discipline. Open-source LLMs spend
+# real wall-clock time rendering structured data; a 48-item list
+# took the bot past its 120s Ollama timeout in live testing. Cap
+# what the LLM sees per tool. ADR 016 §"Tool result size discipline"
+# documents the constraint as load-bearing.
+#
+# Above these row counts, tool functions return a summarized shape
+# (aggregate stats + a few representative rows) instead of the raw
+# list. Below the threshold, the raw shape passes through unchanged.
+HISTORY_DOWNSAMPLE_THRESHOLD: int = 30
+ANOMALIES_TOP_N_THRESHOLD: int = 10
+WATCHLIST_SAMPLE_SIZE: int = 5
 
 
 @dataclass(frozen=True)
@@ -152,9 +170,21 @@ def _get_json(
 # ---------------------------------------------------------------------
 
 
-def list_watchlist() -> list[dict]:
+def list_watchlist() -> dict:
+    """Return a **summarized** view of the watchlist for LLM
+    consumption: ``{count, by_category, sample}``. The raw 48-item
+    list with full per-item fields blows past Qwen3 27b's
+    practical rendering latency (>120s in live testing); the
+    summarization is part of the bot's load-bearing size-discipline
+    contract (ADR 016 §"Tool result size discipline").
+
+    Categories are inferred client-side via ``_category(display_name)``
+    — a heuristic over CS2 weapon names. Mis-categorized items go
+    into ``other``; no data-correctness consequence.
+    """
     with _client() as c:
-        return _get_json(c, "/items")
+        items = _get_json(c, "/items")
+    return _summarize_watchlist(items)
 
 
 def query_current_price(slug: str) -> dict:
@@ -270,12 +300,22 @@ def query_price_history(
     days: int = 7,
     limit: int = 500,
 ) -> dict:
+    """Time-series observations for one item.
+
+    When the API returns more than ``HISTORY_DOWNSAMPLE_THRESHOLD``
+    rows (~30), the response is replaced with aggregate per-source
+    stats (first/last/min/max/count) instead of the raw observation
+    list. This keeps the payload bounded for LLM consumption.
+    Below the threshold, the raw response passes through so the LLM
+    can cite specific points.
+    """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     params: dict[str, Any] = {"since": since, "limit": limit}
     if source is not None:
         params["source"] = source
     with _client() as c:
-        return _get_json(c, f"/items/{slug}/history", params=params)
+        raw = _get_json(c, f"/items/{slug}/history", params=params)
+    return _summarize_history(raw)
 
 
 def render_chart(
@@ -337,15 +377,217 @@ def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
 
 
 def narrative_today() -> dict:
+    """Latest daily narrative. The ``text`` field is bounded (one
+    English paragraph) and passes through unchanged; the ``meta``
+    citation block can be verbose (lists of top-movers / anomalies /
+    divergences) and is replaced with a compact ``{as_of,
+    cited_count}`` shape — the LLM doesn't need the citation rows to
+    render the paragraph for the user."""
     with _client() as c:
-        return _get_json(c, "/insights/narrative/latest")
+        raw = _get_json(c, "/insights/narrative/latest")
+    return _trim_narrative_meta(raw)
 
 
 def whats_interesting(hours: int = 6) -> dict:
+    """Currently-firing anomalies. When the API returns more than
+    ``ANOMALIES_TOP_N_THRESHOLD`` rows, only the top-N by ``|z|`` are
+    returned, plus a ``total_count`` so the LLM can mention how many
+    were elided. Below the threshold, the raw shape passes through."""
     with _client() as c:
-        return _get_json(
+        raw = _get_json(
             c, "/insights/anomalies/recent", params={"hours": hours}
         )
+    return _summarize_anomalies(raw)
+
+
+# ---------------------------------------------------------------------
+# Size-discipline summarizers (Phase 7c-fix)
+# ---------------------------------------------------------------------
+
+# Heuristic CS2 weapon → category mapping. Order matters:
+#
+# - **Gloves first** — both knife and glove items use the ``★`` prefix
+#   ("★ Karambit ..." vs "★ Sport Gloves ..."), so a knife-first
+#   ordering would mis-categorize all gloves. The "Gloves" / "Hand
+#   Wraps" tokens are unambiguous and let glove items short-circuit.
+# - Then knife — ``★`` + ``Knife`` + specific knife names.
+# - Then weapon families.
+#
+# Items not matching any pattern go into ``other``; mis-categorization
+# costs nothing (it's only used for a count summary).
+_CATEGORY_PATTERNS: list[tuple[str, list[str]]] = [
+    ("gloves", ["Gloves", "Hand Wraps"]),
+    (
+        "knife",
+        ["★", "Knife", "Bayonet", "Karambit", "Daggers"],
+    ),
+    (
+        "rifle",
+        ["AK-47", "M4A4", "M4A1-S", "Galil AR", "FAMAS", "AUG", "SG 553"],
+    ),
+    ("sniper", ["AWP", "SSG 08", "G3SG1", "SCAR-20"]),
+    (
+        "pistol",
+        [
+            "Desert Eagle",
+            "USP-S",
+            "Glock-18",
+            "Five-SeveN",
+            "Tec-9",
+            "CZ75-Auto",
+            "P250",
+            "P2000",
+            "R8 Revolver",
+            "Dual Berettas",
+        ],
+    ),
+    (
+        "smg",
+        ["MP9", "MP7", "MP5", "MAC-10", "UMP-45", "PP-Bizon", "P90"],
+    ),
+    ("shotgun", ["Nova", "XM1014", "Sawed-Off", "MAG-7"]),
+    ("lmg", ["M249", "Negev"]),
+]
+
+
+def _category(item_name: str) -> str:
+    """Best-guess CS2 weapon category from the display_name string."""
+    for cat, patterns in _CATEGORY_PATTERNS:
+        for p in patterns:
+            if p in item_name:
+                return cat
+    return "other"
+
+
+def _summarize_watchlist(items: list[dict]) -> dict:
+    """Replace the raw 48-item list with ``{count, by_category,
+    sample}``. by_category is sorted desc by count so the largest
+    category shows first when the LLM renders."""
+    by_cat: dict[str, int] = {}
+    for it in items:
+        c = _category(it.get("display_name", ""))
+        by_cat[c] = by_cat.get(c, 0) + 1
+    return {
+        "count": len(items),
+        "by_category": dict(
+            sorted(by_cat.items(), key=lambda x: -x[1])
+        ),
+        "sample": [
+            {
+                "slug": it.get("slug"),
+                "display_name": it.get("display_name"),
+            }
+            for it in items[:WATCHLIST_SAMPLE_SIZE]
+        ],
+    }
+
+
+def _summarize_history(raw: dict) -> dict:
+    """Pass through small results; aggregate large ones.
+
+    Aggregation shape: ``{slug, source, since, until, count,
+    downsampled=True, per_source_stats: {source: {denomination,
+    count, first_price, first_observed, last_price, last_observed,
+    min_price, max_price}}}``. The LLM has enough to answer "how has
+    X moved?" without seeing each individual observation.
+    """
+    obs = raw.get("observations") or []
+    if len(obs) <= HISTORY_DOWNSAMPLE_THRESHOLD:
+        return raw
+
+    by_source: dict[str, list[dict]] = {}
+    for o in obs:
+        by_source.setdefault(o.get("source", "?"), []).append(o)
+
+    per_source_stats: dict[str, dict] = {}
+    for s, src_obs in by_source.items():
+        # Sort newest-first → oldest-first so first/last is
+        # chronological. The API returns timestamp DESC; we reverse.
+        src_obs_chrono = sorted(
+            src_obs, key=lambda o: o.get("timestamp", "")
+        )
+        prices: list[float] = []
+        for o in src_obs_chrono:
+            with contextlib.suppress(TypeError, ValueError):
+                prices.append(float(o.get("price", "0")))
+        if not prices:
+            continue
+        first = src_obs_chrono[0]
+        last = src_obs_chrono[-1]
+        per_source_stats[s] = {
+            "denomination": first.get("denomination"),
+            "count": len(prices),
+            "first_price": first.get("price"),
+            "first_observed": first.get("timestamp"),
+            "last_price": last.get("price"),
+            "last_observed": last.get("timestamp"),
+            "min_price": f"{min(prices):.2f}",
+            "max_price": f"{max(prices):.2f}",
+        }
+
+    return {
+        "slug": raw.get("slug"),
+        "source": raw.get("source"),
+        "since": raw.get("since"),
+        "until": raw.get("until"),
+        "count": raw.get("count", len(obs)),
+        "downsampled": True,
+        "downsample_note": (
+            f"{raw.get('count', len(obs))} raw observations summarized "
+            f"into per-source aggregates "
+            f"(threshold={HISTORY_DOWNSAMPLE_THRESHOLD})."
+        ),
+        "per_source_stats": per_source_stats,
+    }
+
+
+def _summarize_anomalies(raw: dict) -> dict:
+    """Pass through ≤10 anomalies; otherwise return the top-N by
+    absolute z-score + a ``total_count`` so the LLM can say "X
+    anomalies total; here are the most severe"."""
+    anomalies = raw.get("anomalies") or []
+    if len(anomalies) <= ANOMALIES_TOP_N_THRESHOLD:
+        return raw
+
+    def _abs_z(a: dict) -> float:
+        try:
+            return abs(float(a.get("z_score", "0") or "0"))
+        except (TypeError, ValueError):
+            return 0.0
+
+    top = sorted(anomalies, key=_abs_z, reverse=True)[
+        :ANOMALIES_TOP_N_THRESHOLD
+    ]
+    return {
+        "since": raw.get("since"),
+        "total_count": len(anomalies),
+        "downsampled": True,
+        "downsample_note": (
+            f"{len(anomalies)} anomalies total; top "
+            f"{ANOMALIES_TOP_N_THRESHOLD} by |z-score| returned."
+        ),
+        "anomalies": top,
+    }
+
+
+def _trim_narrative_meta(raw: dict) -> dict:
+    """Keep ``text`` as-is; collapse the citation ``meta`` block into
+    ``{as_of, cited_count}``. The LLM renders the paragraph text;
+    it doesn't need the citation rows to do so."""
+    meta = raw.get("meta") or {}
+    cited_count = (
+        len(meta.get("top_movers") or [])
+        + len(meta.get("volume_anomalies") or [])
+        + len(meta.get("cross_source_divergences") or [])
+    )
+    return {
+        "computed_at": raw.get("computed_at"),
+        "text": raw.get("text"),
+        "meta": {
+            "as_of": meta.get("as_of"),
+            "cited_count": cited_count,
+        },
+    }
 
 
 # ---------------------------------------------------------------------

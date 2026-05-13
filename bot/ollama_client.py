@@ -81,9 +81,15 @@ DEFAULT_OLLAMA_MODEL = "huihui_ai/Qwen3.6-abliterated:27b"
 MAX_TOOL_CALLS: int = 5
 
 # Ollama timeout — first call after model load is 20-30s on Qwen 27b
-# on the Spark; subsequent calls under KEEP_ALIVE are <2s. Generous
-# enough to absorb cold-start without crashing the bot.
-OLLAMA_TIMEOUT_SECONDS: float = 120.0
+# on the Spark; subsequent calls under KEEP_ALIVE are <2s. Bumped to
+# 300s in Phase 7c-fix as defensive headroom: even with the tool-
+# result size discipline in ``bot.tools`` (ADR 016 §"Tool result
+# size discipline"), some legitimate queries (history with months
+# of data, narrative + many citations) still produce 60-90s
+# rendering on Qwen 27b. The real fix is size discipline; this
+# timeout is the band-aid that prevents a tail-case from killing the
+# reply altogether.
+OLLAMA_TIMEOUT_SECONDS: float = 300.0
 
 
 @dataclass

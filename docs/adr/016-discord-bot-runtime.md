@@ -152,6 +152,32 @@ See `bot/README.md` for the full walkthrough. The short version:
 8. `docker compose up -d bot`.
 9. @-mention the bot in Discord: "@bot what's the AK Redline FT price?"
 
+### 11. Tool result size discipline (load-bearing)
+
+**Phase 7c-fix amendment.** End-to-end testing surfaced a class of bug the original ADR didn't cover: tool results that return unbounded structured data blow past the Ollama timeout because Qwen3 27b spends real wall-clock time *rendering* the data into prose. The failing case: `"what items do you track?"` → `list_watchlist` → 48-item list returned to LLM → >120s rendering → `ReadTimeout`. Queries returning one-item shapes (single price, single verdict, chart PNG) completed in 46-95s; the failure mode is specifically size-driven.
+
+**The wrong framing** was "bump the timeout". The right framing: **the LLM is not a generic renderer for structured data.** It's for routing and natural-language phrasing. Tool results going to the LLM must be bounded *by the bot*, not by the model's effort budget.
+
+**Size-discipline rule, applied in `bot/tools.py`:**
+
+| Tool | Size discipline |
+|---|---|
+| `list_watchlist` | Always summarized to `{count, by_category, sample}`. Categorization via display_name regex; first 5 items as sample. Never returns the raw 48-record list. |
+| `query_price_history` | Pass-through when ≤30 rows. Above 30, return `{count, downsampled: true, per_source_stats: {source: {first_price, first_observed, last_price, last_observed, min_price, max_price, count, denomination}}}`. The LLM can answer "how has X moved?" from the aggregates; raw points aren't needed. |
+| `whats_interesting` | Pass-through when ≤10 anomalies. Above 10, top-N by `|z-score|` + `total_count`. The LLM mentions "X anomalies total; here are the most severe". |
+| `narrative_today` | `text` passes through (one paragraph, bounded by design). `meta` collapsed from citation lists to `{as_of, cited_count}` — the LLM doesn't need the citation rows to render the paragraph. |
+| `query_current_price`, `render_chart`, `evaluate_deal` | Already bounded by their domain shape (3 sources, 1 chart, 1 verdict). Unchanged. |
+
+The thresholds are tunable constants in `bot/tools.py`: `HISTORY_DOWNSAMPLE_THRESHOLD = 30`, `ANOMALIES_TOP_N_THRESHOLD = 10`, `WATCHLIST_SAMPLE_SIZE = 5`. The size-discipline tests in `tests/test_bot.py::TestListWatchlistSizeDiscipline` / `TestQueryPriceHistorySizeDiscipline` / `TestWhatsInterestingSizeDiscipline` / `TestNarrativeMetaTrimmed` regression-guard the shape contract.
+
+**The end-to-end regression test** (`TestEndToEndWhatDoYouTrackPayloadBounded`) reconstructs the exact failure path: 48 items mocked → `list_watchlist` called → `tool_result` content asserted under 2KB. This is the kind of bug that's easy to re-introduce by tweaking a tool's return shape; the test catches it before it ships.
+
+**Defensive band-aid:** `OLLAMA_TIMEOUT_SECONDS` bumped from 120 → 300 in `bot/ollama_client.py`. This is not the fix; it's the headroom for legitimate large-response cases the size discipline can't fully eliminate (e.g. a narrative with substantial prose, history queries on volatile items). The fix is size discipline.
+
+**Future work (not v1):** bypass-LLM rendering for list-shaped responses. For tools where the natural output is a deterministic list (full watchlist enumeration, history table dumps), `bot/discord_render.py` would render directly to Discord markdown without round-tripping through the LLM for formatting. The LLM still chooses *which* tool to call; it just doesn't re-render output the bot can render faithfully on its own. This is more invasive than size-discipline (it changes the response surface between `ollama_client` and `main`) and is deferred until quality observation warrants it.
+
+**Architectural rule going forward:** when adding a new tool, the author owns the size-discipline question. If the tool's worst-case response is unbounded by upstream API design, the tool function must summarize before returning. The size of any tool_result fed to the LLM is the bot's responsibility, not the model's problem to render.
+
 ## Consequences
 
 - **Pro:** the project's local-first posture extends to the user-facing layer. No external API key, no per-message cost, no third-party data flow.

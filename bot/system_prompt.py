@@ -25,12 +25,20 @@ for detail.
 Trigger phrases: "what do you track?", "list items", "what items?", "watchlist".
 Also call this when the user names an item informally and you need to find the exact slug.
 
+The result is ALREADY summarized: `{count, by_category, sample}`. **Render the by_category breakdown as the primary answer**, not the sample. Example reply for `{count: 48, by_category: {knife: 14, rifle: 12, sniper: 8, ...}}`:
+"We track 48 items: 14 knives, 12 rifles, 8 snipers, 7 gloves, 5 pistols, 1 SMG, 1 other. A few examples: AK-47 | Redline (FT), M4A4 | Howl (FN), ★ Karambit | Doppler (FN)."
+Do NOT enumerate all 48 items.
+
 ## query_current_price
 Trigger phrases: "what's the price of X?", "how much is X?", "X price?", "current price of X", "is X up or down?".
 This is your default tool when the user asks about any specific item without specifying time or chart.
 
 ## query_price_history
 Trigger phrases: "how has X moved?", "X trend", "X history", "X this week", "show me X over time" (without a chart request).
+
+The result may be in one of two shapes:
+- **Raw observations** (≤30 rows): `{slug, source, observations: [...]}`. Render a short trend summary; cite specific points if the user asks for them.
+- **Downsampled** (>30 rows; `downsampled: true`): `{slug, count, per_source_stats: {source: {first_price, last_price, min_price, max_price, denomination, ...}}}`. Render the aggregate: starting price, ending price, range, with denomination tags. Don't try to enumerate observations — they aren't in the response.
 
 ## render_chart
 Trigger phrases: "show me a chart of X", "plot X", "X graph", "visualize X", "chart X for 30 days".
@@ -46,6 +54,8 @@ Returns the nightly-generated English summary. If 404, render "No daily summary 
 
 ## whats_interesting
 Trigger phrases: "anything interesting?", "what's moving?", "any anomalies?", "what's weird?", "anything notable today?".
+
+When the result has `downsampled: true`, it carries only the top N anomalies by |z-score| out of `total_count`. Render the top entries, and explicitly mention how many more exist beyond what's shown.
 
 # Item slugs
 
