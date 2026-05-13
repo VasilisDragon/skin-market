@@ -263,6 +263,37 @@ class DMarketCollector(Collector):
             )
             return None
 
+        # IMPORTANT: DMarket's ``title=`` query is a substring/prefix match,
+        # not an exact match. Asking for ``Desert Eagle | Blaze (Factory
+        # New)`` returns ``Desert Eagle | Oxide Blaze (Factory New)``;
+        # asking for ``M4A1-S | Cyrex (Field-Tested)`` returns the
+        # StatTrak™ variant; asking for ``MP9 | Hot Rod (Factory New)``
+        # returns the Souvenir variant. Cross-source spreads on the
+        # affected items go through the roof (480× on the Blaze case)
+        # because the cheaper-variant listings are being persisted under
+        # the wrong canonical name. Enforce exact NFC-normalized title
+        # equality before persistence; reject anything else. Pollution
+        # surfaced in the Phase 6.5 sweep — 95 rows across 10 items.
+        returned_title = cheapest.get("title")
+        if not isinstance(returned_title, str):
+            logger.warning(
+                "DMarket cheapest offer has no title field for %r — "
+                "skipping (response shape changed?)",
+                market_hash_name,
+            )
+            return None
+        if normalize_name(returned_title) != normalize_name(
+            market_hash_name
+        ):
+            logger.warning(
+                "DMarket title mismatch: requested %r, got %r — "
+                "skipping (loose substring match on DMarket's `title=` "
+                "parameter; see ADR 012 §4)",
+                market_hash_name,
+                returned_title,
+            )
+            return None
+
         # IMPORTANT: use .price.USD (actual listing) NOT .suggestedPrice
         # (DMarket's own recommendation). See ADR 012 §3.
         price_obj = cheapest.get("price")

@@ -70,11 +70,22 @@ def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("collectors.dmarket.time.sleep", lambda _: None)
 
 
-def _offers(*prices_usd: str, float_value: float | None = None) -> list[dict]:
-    """Build a minimal DMarket-shaped offers array sorted ascending by price."""
+def _offers(
+    *prices_usd: str,
+    float_value: float | None = None,
+    title: str = "X",
+) -> list[dict]:
+    """Build a minimal DMarket-shaped offers array sorted ascending by price.
+
+    ``title`` mirrors what DMarket returns; the collector's post-fetch
+    title-match check (Phase 6.5) requires it to equal the requested
+    market_hash_name. Tests that request item ``"X"`` get the default;
+    others override.
+    """
     offers = []
     for p in prices_usd:
         offer: dict = {
+            "title": title,
             "price": {"USD": p},
             # Trap field — collector MUST NOT use this. We put an
             # obviously-wrong value (10x the listing price) so a bug
@@ -94,7 +105,12 @@ def _body(*prices_usd: str, **kwargs) -> dict:
 class TestDMarketCollectorHTTP:
     def test_happy_path_uses_price_not_suggested(self, httpx_mock) -> None:
         # listing is $43.78; suggestedPrice would be $437.80 if buggy.
-        httpx_mock.add_response(json=_body("4378", "5000", "9999"))
+        httpx_mock.add_response(
+            json=_body(
+                "4378", "5000", "9999",
+                title="AK-47 | Redline (Field-Tested)",
+            )
+        )
 
         collector = DMarketCollector()
         with collector.make_client() as client:
@@ -128,7 +144,11 @@ class TestDMarketCollectorHTTP:
         raw_response.extra.floatValue but do NOT promote it to a
         top-level column."""
         httpx_mock.add_response(
-            json=_body("4378", float_value=0.0712)
+            json=_body(
+                "4378",
+                float_value=0.0712,
+                title="AK-47 | Redline (Field-Tested)",
+            )
         )
         collector = DMarketCollector()
         with collector.make_client() as client:
@@ -227,8 +247,111 @@ class TestDMarketCollectorHTTP:
             obs = collector.collect_one(client, "X")
         assert obs is None
 
+    def test_title_mismatch_dropped(self, httpx_mock) -> None:
+        """DMarket's `title=` query is a substring/prefix match, not exact —
+        asking for `Desert Eagle | Blaze (Factory New)` can return a
+        `Desert Eagle | Oxide Blaze (Factory New)` listing (~480× cheaper,
+        different skin entirely). Phase 6.5: post-fetch, enforce exact
+        NFC-normalized title equality and drop non-matches before they
+        pollute prices + cross_source_spread + cross_source_divergence."""
+        httpx_mock.add_response(
+            json={
+                "objects": [
+                    {
+                        "title": "Desert Eagle | Oxide Blaze (Factory New)",
+                        "price": {"USD": "159"},
+                        "suggestedPrice": {"USD": "200"},
+                    }
+                ],
+                "total": {},
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(
+                client, "Desert Eagle | Blaze (Factory New)"
+            )
+        assert obs is None, (
+            "Title mismatch must skip persistence; got a "
+            "PriceObservation with the wrong-variant price"
+        )
+
+    def test_title_match_persists(self, httpx_mock) -> None:
+        """Mirror of the mismatch test: when title matches exactly,
+        persistence proceeds normally."""
+        httpx_mock.add_response(
+            json={
+                "objects": [
+                    {
+                        "title": "Desert Eagle | Blaze (Factory New)",
+                        "price": {"USD": "76103"},  # $761.03
+                        "suggestedPrice": {"USD": "80000"},
+                    }
+                ],
+                "total": {},
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(
+                client, "Desert Eagle | Blaze (Factory New)"
+            )
+        assert obs is not None
+        assert obs.price == Decimal("761.03")
+
+    def test_title_match_nfc_tolerant(self, httpx_mock) -> None:
+        """The check normalizes both sides via NFC, so a decomposed-form
+        unicode title returned by DMarket still matches our canonical
+        market_hash_name. Defensive — Steam-sourced names are already NFC,
+        but copy-pasted/hand-typed test fixtures aren't always."""
+        # NFC: U+2122 (™) single codepoint. We pass that on both sides;
+        # if normalize_name passed through identity (as expected),
+        # equality holds.
+        httpx_mock.add_response(
+            json={
+                "objects": [
+                    {
+                        "title": (
+                            "StatTrak™ AK-47 | Redline (Field-Tested)"
+                        ),
+                        "price": {"USD": "5000"},
+                    }
+                ],
+                "total": {},
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(
+                client,
+                "StatTrak™ AK-47 | Redline (Field-Tested)",
+            )
+        assert obs is not None
+        assert obs.price == Decimal("50.00")
+
+    def test_title_missing_drops(self, httpx_mock) -> None:
+        """If DMarket changes response shape and stops returning `title`,
+        we skip rather than silently persisting under a name we can't
+        verify."""
+        httpx_mock.add_response(
+            json={
+                "objects": [
+                    {"price": {"USD": "4378"}, "suggestedPrice": {"USD": "5000"}}
+                ],
+                "total": {},
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(
+                client, "AK-47 | Redline (Field-Tested)"
+            )
+        assert obs is None
+
     def test_request_url_carries_all_params(self, httpx_mock) -> None:
-        httpx_mock.add_response(json=_body("4378"))
+        httpx_mock.add_response(
+            json=_body("4378", title="AK-47 | Redline (Field-Tested)")
+        )
 
         collector = DMarketCollector()
         with collector.make_client() as client:
@@ -246,9 +369,9 @@ class TestDMarketCollectorHTTP:
         assert "AK-47" in url  # title= encoding sanity
 
     def test_unicode_market_hash_name_in_request(self, httpx_mock) -> None:
-        httpx_mock.add_response(json=_body("100000"))
-        collector = DMarketCollector()
         name = "★ Karambit | Doppler (Factory New)"
+        httpx_mock.add_response(json=_body("100000", title=name))
+        collector = DMarketCollector()
         with collector.make_client() as client:
             collector.collect_one(client, name)
         request = httpx_mock.get_requests()[0]
