@@ -101,6 +101,40 @@ browser UA for a long time. Pinned as a constant
 (`collectors.base.DEFAULT_USER_AGENT`); update when Steam starts
 demanding newer.
 
+### 6. Steam outlier filter (post-v1 addendum)
+
+Steam's `priceoverview` returns `lowest_price` — the single lowest currently-listed price. Most of the time that's a faithful proxy for "what does the cheapest listing cost right now?" But periodically a single listing briefly sits at a manipulated, fat-finger, or test price (typical observation: $1.00 with `volume: 1`). The collector captures it at face value; by the next cycle the listing is gone. **A `prices` row at the manipulated value remains in the time series and pollutes every downstream consumer** — moving averages, cross-source divergence baselines, history charts.
+
+Skinport and DMarket don't have this problem: their endpoints return full listing arrays, so a single bad listing doesn't dominate `min_price`. The filter described here is Steam-specific by construction.
+
+**The filter:** before returning a `PriceObservation` from `collect_one`, look up the item's 7-day median Steam price. If the observation is below `STEAM_OUTLIER_THRESHOLD_PCT` of that median, reject the observation. Rejected rows are treated as `DECLINED` — the closest existing semantic for "source returned something but we refuse to persist it" (it surfaces in the cycle counter as a real signal an operator can grep for, rather than being silently dropped).
+
+**Three constants in `collectors/steam.py`, tunable in one place:**
+
+| Constant | Value | Why |
+|---|---|---|
+| `STEAM_OUTLIER_THRESHOLD_PCT` | `Decimal("0.20")` | The observed contamination pattern was ~2.3% of median. A 20% floor leaves an order of magnitude of headroom for genuine moves while still catching this class of outlier. A real >80% drop on a single observation is either a different real event worth investigating manually, or another manipulation. |
+| `STEAM_OUTLIER_MIN_OBSERVATIONS` | `5` | Items with fewer than 5 prior Steam observations in the 7-day window get `median = None` from the helper; the filter is skipped. Bias toward letting new-item data land — we don't want a freshly-added watchlist item to be soft-blacklisted before it accumulates enough history. |
+| `STEAM_OUTLIER_WINDOW_DAYS` | `7` | Matches the moving-average window already in use (ADR 010). A shorter window would be too noisy on a low-cadence source; a longer one would lag through legitimate price regime changes. |
+
+**Strict less-than:** observations exactly at the threshold pass. The threshold is a floor, not a forbidden value. (`Decimal("8.00") < Decimal("40.00") * Decimal("0.20")` is `False` — `8.00` is not less than `8.00`.)
+
+**Logging contract:** every filtered observation emits a WARNING with the substring `"Steam outlier filter"`, plus structured details (item name, observed price, median, threshold, volume). Operators grep that substring to audit what the filter has rejected:
+
+```bash
+docker compose logs --since 24h collector | grep "Steam outlier filter"
+```
+
+If the filter starts firing on observations that turn out to be legitimate price moves, the constants above are the tuning knob. Past evidence + the in-prod log trail let us calibrate empirically rather than guess.
+
+**Implementation note:** the median lookup opens its own DB session via `db.connection.get_engine()`. The `Collector` interface predates the outlier check and doesn't carry a session through `collect_one`; rather than refactor the interface for this one use case, the helper handles it locally. At Steam's 60-min cadence × 48 watchlist items, the extra DB connection per cycle is negligible compared to the existing per-cycle SQL load (~144 reads + writes from `should_write_observation` + `persist_observation` + `update_observation_log`).
+
+**What this does NOT do:**
+
+- It does not filter high outliers. A spike upward might be a genuine moment of high demand (Howl spikes during a tournament, Doppler phase reveals) and is real signal. We only reject below-floor observations because the failure mode we care about is asymmetric.
+- It does not filter Skinport or DMarket — those sources' response shapes (full listing arrays) immunize them against the single-listing-manipulation pattern.
+- It does not look at `volume`. A 1-volume observation isn't inherently suspicious (rare items often have volume=1); the *combination* of `volume=1` and `price << median` is what's suspicious, and the median check catches it without needing a separate volume rule.
+
 ## Consequences
 
 - **Pro:** the failure modes are now explicit; new collectors (Skinport,
@@ -110,11 +144,21 @@ demanding newer.
   decision.
 - **Pro:** the time-series stays clean — only real price observations
   land in `prices`. Availability is captured in logs and (later)
-  potentially a separate table.
+  potentially a separate table. The §6 outlier filter extends this:
+  even within `success: true` responses, we refuse Steam-specific
+  manipulation moments at the persistence boundary.
 - **Con:** 5 retries x 50 items at base=5s means a single bad cycle
   can take 25 minutes to fully give up. APScheduler should overlap
   cycles only if the previous one completed; otherwise we'd compound
   the backlog. The scheduler (Phase 4) will enforce that.
+- **Con (§6 specifically):** the filter is heuristic. A genuine market
+  event that drives the price below 20% of the 7-day median in a
+  single cycle would also be rejected. Empirically that hasn't
+  happened in our window of observation; the failure mode this filter
+  defends against is roughly 100× more common than the false-positive
+  case. If we ever see a legitimate filter false-positive, the log
+  trail makes recovery deterministic (revert the filter, restore the
+  observation via a one-row INSERT).
 - **Related:** the persistence layer (`persist_observation`) is
   defensive about unknown items and sources — it logs and returns
   False rather than crashing. Same philosophy: keep one item's

@@ -13,7 +13,9 @@ import pytest
 
 from collectors.base import DECLINED, RateLimited, full_jitter_backoff
 from collectors.steam import (
+    STEAM_OUTLIER_THRESHOLD_PCT,
     SteamCollector,
+    _is_steam_outlier,
     parse_steam_price,
     parse_steam_volume,
 )
@@ -72,6 +74,19 @@ class TestFullJitterBackoff:
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     """Squash time.sleep inside the collector so retry tests are instant."""
     monkeypatch.setattr("collectors.steam.time.sleep", lambda _: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_outlier_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: ``_seven_day_median`` returns None so the outlier filter
+    is inert (None median → no filter, observation passes through).
+    Tests that exercise the filter re-monkeypatch this with a concrete
+    Decimal median. Existing HTTP-mocked tests are pure: no DB
+    connection, no median lookup, original semantics preserved."""
+    monkeypatch.setattr(
+        "collectors.steam._seven_day_median",
+        lambda _name: None,
+    )
 
 
 class TestSteamCollectorHTTP:
@@ -285,6 +300,7 @@ class TestSteamCollectorHTTP:
     def test_unicode_market_hash_name_in_request(self, httpx_mock) -> None:
         """Make sure ★ and ™ characters reach the wire encoded correctly,
         not mangled by encoding-default surprises."""
+        # (ordered before the next test class so the existing test stays here)
         httpx_mock.add_response(
             json={"success": True, "lowest_price": "$1000.00", "volume": "1"}
         )
@@ -296,3 +312,153 @@ class TestSteamCollectorHTTP:
         request = httpx_mock.get_requests()[0]
         # U+2605 ★ encodes as %E2%98%85 in UTF-8 percent-encoding.
         assert "%E2%98%85" in str(request.url)
+
+
+class TestIsSteamOutlierPureFunction:
+    """``_is_steam_outlier(median, observed)`` is a pure decision function;
+    test the boundaries without spinning up a collector."""
+
+    def test_none_median_passes(self) -> None:
+        # No median → no filter (bias toward data on new items).
+        assert _is_steam_outlier(None, Decimal("1.00")) is False
+        assert _is_steam_outlier(None, Decimal("0.01")) is False
+
+    def test_well_below_threshold_filtered(self) -> None:
+        # Threshold at 20% of 40.00 = 8.00; observation $1.00 is far below.
+        assert _is_steam_outlier(Decimal("40.00"), Decimal("1.00")) is True
+
+    def test_strictly_at_threshold_passes(self) -> None:
+        # Filter is `<`, not `<=`. Observation exactly at the threshold
+        # passes — the threshold is a floor, not a forbidden value.
+        threshold_value = Decimal("40.00") * STEAM_OUTLIER_THRESHOLD_PCT
+        assert _is_steam_outlier(Decimal("40.00"), threshold_value) is False
+
+    def test_just_below_threshold_filtered(self) -> None:
+        threshold_value = Decimal("40.00") * STEAM_OUTLIER_THRESHOLD_PCT
+        just_below = threshold_value - Decimal("0.01")
+        assert _is_steam_outlier(Decimal("40.00"), just_below) is True
+
+    def test_above_median_passes(self) -> None:
+        # Filter only catches LOW outliers; high spikes are real signal.
+        assert _is_steam_outlier(Decimal("40.00"), Decimal("100.00")) is False
+
+
+class TestSteamOutlierFilter:
+    """Integration of the outlier filter into ``SteamCollector.collect_one``.
+
+    Median lookup is mocked per-test so the existing DB-free unit-test
+    posture is preserved. The pure function (above) covers the
+    arithmetic; these tests verify the integration: filter fires →
+    DECLINED, filter doesn't fire → PriceObservation, insufficient
+    history → PriceObservation."""
+
+    def test_outlier_filtered_when_below_threshold(
+        self, monkeypatch, httpx_mock, caplog
+    ) -> None:
+        # Median $40; observation $1.00 (the live-observed manipulation
+        # pattern). 1.00 is 2.5% of median, well below the 20% floor.
+        monkeypatch.setattr(
+            "collectors.steam._seven_day_median",
+            lambda _name: Decimal("40.00"),
+        )
+        httpx_mock.add_response(
+            json={"success": True, "lowest_price": "$1.00", "volume": "1"}
+        )
+        collector = SteamCollector()
+        with collector.make_client() as client, caplog.at_level(
+            "WARNING", logger="collectors.steam"
+        ):
+            result = collector.collect_one(
+                client, "AK-47 | Redline (Field-Tested)"
+            )
+
+        assert result is DECLINED, (
+            "outlier observation must be rejected (DECLINED), not "
+            "returned as a PriceObservation that persist_observation "
+            "would later write."
+        )
+        # Log carries the structured detail operators grep for.
+        outlier_logs = [
+            r.getMessage()
+            for r in caplog.records
+            if "Steam outlier filter" in r.getMessage()
+        ]
+        assert outlier_logs, (
+            "expected a 'Steam outlier filter' WARNING log line"
+        )
+        msg = outlier_logs[-1]
+        assert "AK-47" in msg
+        assert "median" in msg.lower()
+        assert "1.00" in msg or "1" in msg
+
+    def test_normal_observation_passes_filter(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        # Median $40, observation $35 — within typical market noise,
+        # well above the 20% floor. Filter must not fire.
+        monkeypatch.setattr(
+            "collectors.steam._seven_day_median",
+            lambda _name: Decimal("40.00"),
+        )
+        httpx_mock.add_response(
+            json={
+                "success": True,
+                "lowest_price": "$35.00",
+                "volume": "12",
+            }
+        )
+        collector = SteamCollector()
+        with collector.make_client() as client:
+            result = collector.collect_one(
+                client, "AK-47 | Redline (Field-Tested)"
+            )
+
+        assert result is not DECLINED
+        assert result is not None
+        assert result.price == Decimal("35.00")
+
+    def test_insufficient_history_passes_filter(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        """Items with fewer than STEAM_OUTLIER_MIN_OBSERVATIONS rows in
+        the 7-day window get None from ``_seven_day_median``; the filter
+        is skipped (bias toward letting new-item data land)."""
+        monkeypatch.setattr(
+            "collectors.steam._seven_day_median",
+            lambda _name: None,
+        )
+        httpx_mock.add_response(
+            json={"success": True, "lowest_price": "$1.00", "volume": "1"}
+        )
+        collector = SteamCollector()
+        with collector.make_client() as client:
+            result = collector.collect_one(
+                client, "New Item With No History"
+            )
+
+        assert result is not DECLINED
+        assert result is not None
+        assert result.price == Decimal("1.00")
+
+    def test_threshold_boundary(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        """Observation EXACTLY at ``median * STEAM_OUTLIER_THRESHOLD_PCT``
+        passes (filter is strict less-than, not less-than-or-equal).
+        Median $40 × 0.20 = $8.00; an $8.00 observation passes."""
+        monkeypatch.setattr(
+            "collectors.steam._seven_day_median",
+            lambda _name: Decimal("40.00"),
+        )
+        httpx_mock.add_response(
+            json={"success": True, "lowest_price": "$8.00", "volume": "3"}
+        )
+        collector = SteamCollector()
+        with collector.make_client() as client:
+            result = collector.collect_one(
+                client, "AK-47 | Redline (Field-Tested)"
+            )
+
+        assert result is not DECLINED
+        assert result is not None
+        assert result.price == Decimal("8.00")

@@ -26,6 +26,16 @@ Failure modes and our response:
 - Empty body / non-JSON / dict missing ``lowest_price`` and
   ``median_price``: WARNING log, return None.
 - Retry exhaustion: ERROR log, return None.
+- **Steam outlier filter (ADR 006 §6)**: ``lowest_price`` reflects a
+  single current listing. When that listing briefly sits at a manipulated
+  / fat-finger / test price (typical observation: $1.00 with volume=1),
+  the cycle captures it at face value and pollutes the time series. The
+  filter rejects observations below ``STEAM_OUTLIER_THRESHOLD_PCT`` of
+  the item's 7-day median Steam price; rejected rows are treated as
+  ``DECLINED`` (closest existing semantic for "source returned something
+  but we refuse to persist it"). Skinport and DMarket don't need this —
+  their endpoints return full listing arrays, so a single bad listing
+  doesn't dominate their ``min_price`` field.
 
 Cookies: Steam will eventually 429-block anonymous polling regardless of
 backoff. The plan when that happens is to read a ``steamLoginSecure``
@@ -45,6 +55,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 import httpx
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from collectors.base import (
@@ -66,6 +77,85 @@ logger = logging.getLogger(__name__)
 STEAM_BASE_URL = "https://steamcommunity.com/market/priceoverview/"
 STEAM_APPID_CS2 = 730  # appid 730 covers both CS:GO and CS2
 STEAM_CURRENCY_USD = 1
+
+# ─── Outlier filter (ADR 006 §6) ────────────────────────────────────────────
+# Steam's lowest_price is one listing; manipulation/fat-finger/test
+# listings briefly at e.g. $1.00 with volume=1 get captured at face value
+# and pollute the time series. We refuse to persist observations below
+# this fraction of the item's 7-day median Steam price.
+#
+# 0.20 calibrated against the observed contamination pattern: the
+# repeated $1.00 outliers we cleaned up were ~2.3% of the median; setting
+# the threshold a full order of magnitude above the worst-observed ratio
+# leaves comfortable headroom for genuine moves while still catching the
+# class of outlier we care about. Tunable; if a real >80% drop happens,
+# revisit (or treat it as a real signal worth investigating manually).
+STEAM_OUTLIER_THRESHOLD_PCT: Decimal = Decimal("0.20")
+
+# Items with fewer than this many prior observations in the 7-day window
+# fall through the filter — there isn't enough data for a meaningful
+# median. Bias toward letting new-item observations land so we don't
+# soft-blacklist freshly-added watchlist items.
+STEAM_OUTLIER_MIN_OBSERVATIONS: int = 5
+
+# Lookback window for the median calculation.
+STEAM_OUTLIER_WINDOW_DAYS: int = 7
+
+
+def _seven_day_median(market_hash_name: str) -> Decimal | None:
+    """Look up the 7-day median Steam price for ``market_hash_name``.
+
+    Opens its own DB session — collectors don't carry one (the
+    ``Collector`` interface predates the outlier check). The extra
+    connection per Steam cycle item is negligible at 60-min cadence.
+
+    Returns ``None`` if there are fewer than
+    ``STEAM_OUTLIER_MIN_OBSERVATIONS`` rows in the window, signalling
+    "not enough history; let the observation through".
+    """
+    canonical = normalize_name(market_hash_name)
+    with Session(get_engine()) as session:
+        rows = session.execute(
+            text(
+                """
+                SELECT p.price
+                FROM prices p
+                JOIN items i ON i.id = p.item_id
+                JOIN sources s ON s.id = p.source_id
+                WHERE i.market_hash_name = :name
+                  AND s.name = 'steam_market'
+                  AND p.timestamp > NOW() - make_interval(days => :days)
+                """
+            ),
+            {
+                "name": canonical,
+                "days": STEAM_OUTLIER_WINDOW_DAYS,
+            },
+        ).all()
+    if len(rows) < STEAM_OUTLIER_MIN_OBSERVATIONS:
+        return None
+    prices = sorted(r.price for r in rows)
+    mid = len(prices) // 2
+    if len(prices) % 2 == 1:
+        return prices[mid]
+    return (prices[mid - 1] + prices[mid]) / Decimal("2")
+
+
+def _is_steam_outlier(
+    median: Decimal | None, observed_price: Decimal
+) -> bool:
+    """Pure decision function: is ``observed_price`` low enough to
+    reject as an outlier given the recent ``median``?
+
+    ``median is None`` → False (no median, no filter; new-item path).
+    Strict less-than at the threshold — observations exactly at
+    ``median * THRESHOLD_PCT`` pass (the threshold is the floor, not
+    a forbidden value).
+    """
+    if median is None:
+        return False
+    threshold = median * STEAM_OUTLIER_THRESHOLD_PCT
+    return observed_price < threshold
 
 
 # Steam US prices look like "$12.34" or "$1,234.56". Strip everything except
@@ -214,6 +304,29 @@ class SteamCollector(Collector):
                 return DECLINED
 
             obs = self._parse_response(response, market_hash_name)
+            if obs is None:
+                return None
+
+            # Steam outlier filter — ADR 006 §6. priceoverview's
+            # lowest_price is one listing; manipulation moments at
+            # e.g. $1 with volume=1 get captured at face value if we
+            # don't refuse them at the collector layer. Check against
+            # the 7-day median; treat outliers as DECLINED so the
+            # cycle counter surfaces them without poisoning prices.
+            median = _seven_day_median(obs.market_hash_name)
+            if _is_steam_outlier(median, obs.price):
+                threshold = median * STEAM_OUTLIER_THRESHOLD_PCT
+                logger.warning(
+                    "Steam outlier filter: rejecting %r at price=%s "
+                    "(7-day median=%s, threshold=%s, volume=%s) — "
+                    "treating as DECLINED",
+                    obs.market_hash_name,
+                    obs.price,
+                    median,
+                    threshold,
+                    obs.volume,
+                )
+                return DECLINED
             return obs
 
         logger.error(
