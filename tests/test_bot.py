@@ -1011,3 +1011,38 @@ class TestSystemPrompt:
             assert tool_name in SYSTEM_PROMPT, (
                 f"system prompt doesn't mention tool {tool_name!r}"
             )
+
+    def test_anti_hallucination_guard_present(self) -> None:
+        """Contract test on the prompt content (not a behavior test —
+        we can't unit-test model output). Pins the literal strings that
+        make up the anti-hallucination guard so a future prompt edit
+        can't accidentally weaken it without this assertion firing.
+
+        If you intentionally rewrite the guard, update the assertions
+        to match the new wording — don't remove the test."""
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        # Pin half 1: the prohibition itself, verbatim.
+        assert "NEVER answer questions about prices" in SYSTEM_PROMPT, (
+            "anti-hallucination guard's prohibition clause is missing"
+        )
+
+        # Pin half 2: the source-of-truth distinction (model memory
+        # vs tool result). Both halves must live in the same paragraph;
+        # the prompt is structured so they appear together.
+        assert "from memory" in SYSTEM_PROMPT, (
+            "anti-hallucination guard's 'from memory' framing is missing"
+        )
+
+        # Pin the explicit exception list — without it, the LLM might
+        # over-apply the prohibition and refuse to answer "what can
+        # you do?" or "what does SC mean?".
+        for required_category in (
+            "Meta questions",
+            "Definitional questions",
+            "Confirmations",
+        ):
+            assert required_category in SYSTEM_PROMPT, (
+                f"anti-hallucination exception list missing "
+                f"{required_category!r}"
+            )
