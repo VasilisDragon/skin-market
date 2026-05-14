@@ -3,7 +3,21 @@
 # either ALTER USER inside the running container, or destroy + recreate the
 # volume with `docker compose down -v` (DESTRUCTIVE — wipes all data).
 # A stale-password container will fail healthchecks and refuse connections
-# until you do one or the other.
+# until you do one or the other. See docs/operations.md §"Postgres password
+# rotation footgun" for the full recovery recipe.
+#
+# Phase 8b polish: every service has consistent restart + log rotation
+# settings. Log driver caps stdout to 50MB × 5 files per service so a
+# long-running collector doesn't fill disk over weeks of operation.
+
+# Shared log-rotation config — every service inherits via YAML anchor so a
+# future tweak is a one-place change. 50MB × 5 = 250MB max per service.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: "5"
+
 services:
   postgres:
     image: timescale/timescaledb:2.17.2-pg16
@@ -23,6 +37,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *default-logging
 
   collector:
     build:
@@ -40,6 +55,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     # Steam's per-cycle runtime is ~4 minutes (50 items at 5s spacing).
     # Allow it to drain on SIGTERM before docker SIGKILLs the process.
     stop_grace_period: 5m
@@ -62,6 +78,11 @@ services:
       # Single static bearer for the read API. Set in .env (Phase 6.6,
       # ADR 014 §10). Required at startup — auth fails closed if unset.
       SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
+      # Phase 7b multi-token (ADR 014 §10): comma-separated list of
+      # accepted tokens, unioned with the singular alias above.
+      # Operator typically leaves this empty in single-consumer
+      # deployments; populate during a graceful rotation cutover.
+      SKIN_MARKET_API_TOKENS: ${SKIN_MARKET_API_TOKENS:-}
     # Host-local port mapping (NEVER 0.0.0.0) so Hermes — which runs
     # as a host process at ~/.hermes-discord/, not as a compose
     # service — can reach the api with the bearer token. Host port
@@ -85,6 +106,7 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
 
   bot:
     # Same image as collector / analytics / api — only the
@@ -105,6 +127,12 @@ services:
       # job (ADR 011). host.docker.internal resolves via extra_hosts
       # below on Linux Docker.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # NOTE: OLLAMA_MODEL is read by BOTH the bot and the analytics
+      # narrative job. If .env sets it, both use that model.
+      # Discrete per-service models would be a small refactor in
+      # bot/ollama_client.py + analytics/ollama_client.py (split into
+      # BOT_OLLAMA_MODEL + ANALYTICS_OLLAMA_MODEL); deferred until
+      # operator workflow demands it.
       OLLAMA_MODEL: ${OLLAMA_MODEL:-huihui_ai/Qwen3.6-abliterated:27b}
       # Discord credentials + access control.
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
@@ -120,6 +148,7 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
   analytics:
     # Same image as collector — only the entrypoint differs.
@@ -133,7 +162,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Narrative job calls a local Ollama instance. The Spark host runs
       # Ollama at 127.0.0.1:11434; host.docker.internal maps to the host
-      # gateway via the extra_hosts entry below.
+      # gateway via the extra_hosts entry below. See the bot service
+      # block above for the shared-env-var caveat on OLLAMA_MODEL.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gpt-oss:20b}
     extra_hosts:
@@ -144,6 +174,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     # Daily narrative LLM call can run multiple minutes on a 27b model.
     stop_grace_period: 5m
 

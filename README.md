@@ -1,135 +1,142 @@
 # skin-market
 
-A locally-hosted, eventually-public CS2 skin market data aggregation service with a Discord-native LLM frontend.
-
-## What this does
-
-Polls multiple skin marketplaces on a schedule, stores the data, computes analytics, and exposes the results both as a REST API and as a Hermes Agent Discord bot. The bot can answer questions like:
-
-- "What's the current best price for AK Redline FN?"
-- "Show me a 30-day price chart for Karambit Doppler"
-- "Is $400 a good price for a Glock Fade with 0.07 float?" (v2 once CSFloat is integrated)
-- "Which items had unusual volume in the last 24 hours?"
-
-## Tech stack
-
-- **Python 3.11+** with `uv` for dependency management
-- **PostgreSQL + TimescaleDB** for time-series storage
-- **APScheduler** for collector scheduling
-- **FastAPI** for the read API
-- **matplotlib** for chart rendering
-- **Hermes Agent** for the Discord frontend (skill bundle in `bot_skill/`)
-- **Docker Compose** for orchestration
-
-Everything runs on a single DGX Spark via Docker Compose. No cloud services required for v1.
-
-## Status
-
-Project is in v1 development. Read `PROJECT_SPEC.md` for what's being built and `ARCHITECTURE.md` for the workflow.
+A locally-hosted CS2 skin market data aggregation service with a Discord-native LLM frontend. v1 tracks **48 hand-curated CS2 items** across **Steam Market**, **Skinport**, and **DMarket** every 15–60 minutes, computes cross-source analytics (moving averages, divergence z-scores, volume anomalies, nightly LLM narrative summaries), exposes the data through a **FastAPI read API**, and answers questions in Discord via a **bot routed through local Ollama** for tool calling. Built for an active skin trader who wants reliable, denomination-aware price intelligence without sending data to a third party.
 
 ## Architecture
 
-See `ARCHITECTURE.md` for the diagram and rationale. Briefly:
-
 ```
-Collectors → Postgres → Analytics → API → Hermes Bot → Discord
+HOST (Spark — Ubuntu, Docker, Ollama at :11434)
+│
+├── ollama
+│   ├── huihui_ai/Qwen3.6-abliterated:27b  ── bot tool-call routing
+│   └── analytics narrative model          ── nightly English summaries
+│
+└── docker compose stack:
+
+    ┌── collectors ────────────────────► writes ┐
+    │   Steam, Skinport, DMarket                │
+    │   per-source intervals from sources       │
+    │                                           ▼
+    ├── analytics ─────────── reads ──► Postgres + TimescaleDB
+    │   hourly: MAs, cross_source_view/spread,  ▲
+    │           cross_source_divergence,        │
+    │           volume_anomaly, unavailability_streak
+    │   nightly (02:00 UTC): daily_narrative
+    │                                           │
+    ├── api ──── reads ───────────────────────── ┘
+    │   FastAPI, bearer-token auth (multi-token)
+    │   /items, /price, /history, /insights,
+    │   /chart (PNG), /deals/evaluate
+    │
+    └── bot ──── http://api:8000 ──┐
+        discord.py + ollama         │
+        │                           │
+        │ on @-mention or DM:       │
+        │  1. parse via Ollama      │
+        │  2. tool-call (up to 5)   │
+        │  3. render reply  ────────┘
+        ▼
+        Discord (DM + @-mention only)
 ```
 
-The LLM (Hermes/Ollama) does NOT scrape, fetch, or compute. It parses user questions, calls deterministic tools, and writes the response.
+Outbound traffic only from the compose stack: collectors hit Steam/Skinport/DMarket; analytics + bot hit the host's Ollama. The bot also reaches Discord. Nothing reaches in except the bot's own gateway connection.
 
-## Getting started (development)
+The architectural invariant: **prices from different sources are denominated differently and are never collapsed.** Steam Market quotes in Wallet Credit (~30–50% structural premium over USD because it can't be withdrawn). Skinport and DMarket quote in real-money USD. Every API response carries the `denomination` tag; the bot renders `$X.XX USD` for USD and `X.XX SC` for wallet credit. See `docs/sources-and-semantics.md`.
 
-Prereqs: Docker, `uv` installed, Postgres client (`psql`) for debugging.
+## Running it
+
+### Prerequisites
+
+- Docker + Docker Compose (recent enough for compose v2 syntax)
+- Ollama daemon on the host with the bot's model pulled:
+  ```bash
+  ollama pull huihui_ai/Qwen3.6-abliterated:27b
+  ollama serve  # or systemd unit
+  ```
+- A Discord application + bot token from <https://discord.com/developers/applications> with the **MESSAGE CONTENT** intent enabled (see `bot/README.md` for the walkthrough).
+- A `.env` file copied from `.env.example` with real values filled in.
+
+### Canonical bring-up
 
 ```bash
-# Clone the repo
-git clone <your-fork> skin-market
-cd skin-market
-
-# Set up environment
-cp .env.example .env
-# edit .env — set DATABASE_URL, etc.
-
-# Start postgres
-docker compose up -d postgres
-
-# Install Python deps
-uv sync
-
-# Build and start the collector scheduler (Phase 4+; polls Steam every 30m,
-# Skinport every 5m, writes to the prices table with conditional dedup)
-docker compose up -d collector
-docker compose logs -f --tail 30 collector   # operational view; grep "cycle complete"
-
-# Graceful stop. SIGTERM finishes the in-flight Steam cycle (up to ~4 min)
-# before exit. stop_grace_period in compose is 5 min.
-docker compose stop collector
-
-# Run migrations
-uv run alembic upgrade head
-
-# Seed the watchlist
-uv run python scripts/seed_watchlist.py
-
-# Run a one-shot collection (for testing)
-uv run python -m collectors.steam --item "AK-47 | Redline (Field-Tested)"
-
-# Start the API
-uv run uvicorn api.main:app --reload --port 8000
-
-# In another terminal, hit the API
-curl localhost:8000/items/ak47-redline-fn/price | jq
-```
-
-### Running tests
-
-```bash
-# Default: safe to run against any state. Skips destructive tests.
-uv run pytest
-
-# Destructive tests: drops + recreates all domain tables, re-seeds. Wipes
-# any collected price/insight data. Run explicitly when you want a clean
-# schema replay (typically only on a throwaway dev DB).
-uv run pytest -m destructive
-```
-
-## Deploy to Spark (production)
-
-Once Phase 8 of `PROJECT_SPEC.md` is done:
-
-```bash
-# On the Spark
-ssh vasilis@<spark-ip>
 git clone <repo> ~/skin-market
 cd ~/skin-market
 cp .env.example .env
-# edit .env with prod values
+# Edit .env. At minimum:
+#   POSTGRES_PASSWORD       (any string; only matters on first volume init)
+#   SKIN_MARKET_API_TOKEN   (run: openssl rand -hex 32)
+#   DISCORD_BOT_TOKEN       (from the Discord dev portal)
+#   DISCORD_ALLOWED_USER_IDS (your Discord user ID; empty = reject all)
+
 docker compose up -d
 docker compose ps
-# all services healthy
+# All services should be Up; api should be (healthy) after ~10s.
+
+# Smoke-check the read API from the host (Phase 6.6 port mapping is
+# 127.0.0.1:8001:8000 — host port 8001 because 8000 was held by another
+# container on this deployment).
+TOKEN=$(grep ^SKIN_MARKET_API_TOKEN= .env | cut -d= -f2)
+curl -sS http://localhost:8001/health                  # 200, no token needed
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8001/items | jq 'length'             # 48
 ```
 
-## Connecting the Hermes Discord bot
+In Discord, @-mention the bot in a server the bot has been invited to:
 
-The bot lives in a separate Hermes home (`~/.hermes-discord/`). The skill bundle gets installed there:
+```
+@skin-market what's the AK Redline FT price?
+```
+
+If the bot is healthy you'll see a "typing…" indicator and a per-source price snapshot in 5–60 seconds (first call after Ollama idle is slower; subsequent calls are fast). If you get "I'm not authorized to chat with you", your Discord user ID isn't in `DISCORD_ALLOWED_USER_IDS` — add it and `docker compose up -d bot`.
+
+### Stopping
 
 ```bash
-mkdir -p ~/.hermes-discord/skills/
-cp -r bot_skill/ ~/.hermes-discord/skills/skin-market/
-# Restart hermes gateway
+docker compose stop           # graceful; collector + analytics drain in-flight cycles
+docker compose down           # tear down containers; keeps data volume
+docker compose down -v        # DESTRUCTIVE — drops the Postgres volume + all prices/insights
 ```
 
-The skill calls the API at `http://localhost:8000` (when the bot runs on the same Spark) or `http://<spark-ip>:8000` (if the bot runs elsewhere).
+The `stop_grace_period` is 5 min on the collector + analytics services (matches Steam's per-cycle runtime). A `stop` during a running cycle takes that long before SIGKILL.
 
-## Roadmap
+## Project structure
 
-- **v1** (current) — Steam + Skinport, ~50 items, basic analytics, Discord bot
-- **v2** — Add CSFloat for float-tier pricing, deal evaluation accounts for float bands
-- **v3** — News/speculation layer (RSS ingestion, LLM commentary on price moves)
-- **v4** — Multi-game (Dota 2, TF2, Rust)
-- **v5** — Web frontend, user accounts, paid tiers
-- **vN (post-v3, exact phase TBD)** — Autonomous predictor / listener / validation loop. Per-server opt-in, strict per-server data isolation. Paid-tier feature; see PROJECT_SPEC.md "Post-v1 roadmap" for the full picture.
+| Directory | What's there |
+|---|---|
+| `collectors/` | One module per upstream (Steam, Skinport, DMarket) + `scheduler.py` (APScheduler-driven, DB-aware enabled flag, retry-after honoring). Each collector returns `PriceObservation`, `DECLINED`, or `None`; the scheduler counts outcomes per cycle. |
+| `analytics/` | Hourly compute jobs (moving averages, cross-source views + spreads, divergence/volume anomalies, item unavailability streaks) + nightly narrative LLM job. |
+| `api/` | FastAPI read-only service. `auth.py` (bearer middleware), `schemas.py` (Pydantic v2 with `MoneyStr`), `routes/` (items, history, insights, charts, deals). |
+| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `ollama_client.py` (tool-use loop), `tools.py` (7 HTTP wrappers + size-discipline summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
+| `db/` | SQLAlchemy models + Alembic migrations + connection plumbing. |
+| `scripts/` | One-off operator tools — `seed_watchlist.py`, `watchlist_edit.py`. |
+| `data/` | `watchlist.yaml` — the canonical 48-item list, plus source definitions. Edited via `scripts/watchlist_edit.py` so comments + ordering are preserved. |
+| `docs/adr/` | Architecture Decision Records, chronological. Read these before changing anything load-bearing. |
+| `docs/operations.md` | Runbooks: bring-up, image-rebuild discipline, token rotation, common failure modes. |
+| `docs/sources-and-semantics.md` | The denomination invariant — Steam wallet credit vs real-money USD, why we never average across sources, why three sources beat two. |
+| `tests/` | pytest. Default run skips destructive tests (those drop tables); `pytest -m destructive` opts in. 251+ tests at v1 close. |
+| `bot_skill/` | **Archived** (now at `docs/archive/bot_skill_hermes_attempt/`). Phase 7b Hermes-shaped attempt; superseded by `bot/`. |
+
+## Where to read more
+
+1. **`docs/adr/`** — chronological tour. The headline decisions:
+   - 002 — TimescaleDB over vanilla Postgres
+   - 006 — Collector resilience (retry/backoff strategy)
+   - 009 — Scheduler design (overlap policy, conditional writes, SIGTERM)
+   - 013 — Rate-limit policy (DB-driven scheduler, Retry-After honoring, declined vs unavailable split, observation_log for streaks)
+   - 014 — Read API design (money-as-string, denomination tagging, auth multi-token, `/health` bypass)
+   - 015 — Bot skill design (rules; the Hermes runtime was retired by ADR 016 but the rendering rules carried forward)
+   - 016 — Bot runtime (Ollama Default-not-Native, tool-use loop, size discipline, defensive failure modes)
+2. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.
+3. **`docs/sources-and-semantics.md`** — why averaging is a category error in this domain.
+
+## Tests
+
+```bash
+uv run pytest          # default; skips destructive tests
+uv run pytest -m destructive   # opts in; wipes tables on a throwaway dev DB
+uv run ruff check .    # linter
+```
 
 ## License
 
-TBD.
+Proprietary. Not licensed for redistribution.
