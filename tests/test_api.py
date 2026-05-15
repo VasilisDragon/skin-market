@@ -147,6 +147,10 @@ def sentinel_item():
             {"i": item_id},
         )
         session.execute(
+            text("DELETE FROM observation_log WHERE item_id = :i"),
+            {"i": item_id},
+        )
+        session.execute(
             text("DELETE FROM insights WHERE item_id = :i"),
             {"i": item_id},
         )
@@ -156,6 +160,10 @@ def sentinel_item():
 
         session.execute(
             text("DELETE FROM prices WHERE item_id = :i"),
+            {"i": item_id},
+        )
+        session.execute(
+            text("DELETE FROM observation_log WHERE item_id = :i"),
             {"i": item_id},
         )
         session.execute(
@@ -203,6 +211,38 @@ def _insert_price(
         .on_conflict_do_nothing(
             index_elements=["item_id", "source_id", "timestamp"]
         )
+    )
+
+
+def _upsert_observation_log(
+    session: Session,
+    item_id: uuid.UUID,
+    source_name: str,
+    last_observed_at: datetime,
+) -> None:
+    """Upsert observation_log for the sentinel item. The /items/{slug}/price
+    query is driven off observation_log (ADR 017) — tests that hit /price
+    must therefore seed observation_log as well as prices.
+
+    The fixture's prices DELETE cascades cleanly via FK ordering; this
+    helper additionally clears observation_log on rollback via the
+    sentinel cleanup hook below.
+    """
+    session.execute(
+        text(
+            """
+            INSERT INTO observation_log
+                (item_id, source_id, last_observed_at)
+            VALUES (:i, :s, :ts)
+            ON CONFLICT (item_id, source_id)
+            DO UPDATE SET last_observed_at = EXCLUDED.last_observed_at
+            """
+        ),
+        {
+            "i": item_id,
+            "s": _source_id(session, source_name),
+            "ts": last_observed_at,
+        },
     )
 
 
@@ -415,6 +455,13 @@ class TestPrice:
                 session, sentinel_item, "steam_market",
                 now - timedelta(minutes=5), "42.92", volume=99,
             )
+            # observation_log mirrors the prices timestamps — fresh
+            # poll, fresh change. The interesting divergence is tested
+            # separately in test_polled_fresh_but_price_flat.
+            for source in ("skinport", "dmarket", "steam_market"):
+                _upsert_observation_log(
+                    session, sentinel_item, source, now,
+                )
             session.commit()
 
         resp = client.get(f"/items/{_SENTINEL_SLUG}/price")
@@ -439,15 +486,19 @@ class TestPrice:
         assert isinstance(by_source["skinport"]["price"], str)
         assert by_source["steam_market"]["price"] == "42.92"
 
-        # observed_at is present on every row.
+        # Both timestamps present on every row (ADR 017). The
+        # `observed_at` field is GONE — clients must read
+        # last_polled_at (staleness) and last_changed_at (informational).
         for s in body["sources"]:
-            assert s["observed_at"] is not None
+            assert s["last_polled_at"] is not None
+            assert s["last_changed_at"] is not None
+            assert "observed_at" not in s
 
     def test_picks_latest_per_source(
         self, client: TestClient, sentinel_item
     ) -> None:
         """When a source has multiple observations, /price returns the
-        most recent only — DISTINCT ON (source_id) … ORDER BY ts DESC."""
+        most recent only — LATERAL (SELECT … ORDER BY ts DESC LIMIT 1)."""
         now = datetime.now(UTC)
         engine = get_engine()
         with Session(engine) as session:
@@ -459,6 +510,9 @@ class TestPrice:
             _insert_price(
                 session, sentinel_item, "skinport",
                 now - timedelta(minutes=5), "28.00",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", now,
             )
             session.commit()
 
@@ -486,6 +540,12 @@ class TestPrice:
                 session, sentinel_item, "steam_market",
                 now - timedelta(minutes=5), "42.92",
             )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", now,
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "steam_market", now,
+            )
             session.execute(
                 text(
                     "UPDATE sources SET enabled = FALSE "
@@ -508,6 +568,112 @@ class TestPrice:
         resp = client.get(f"/items/{_SENTINEL_SLUG}/price")
         assert resp.status_code == 200
         assert resp.json()["sources"] == []
+
+    def test_polled_fresh_but_price_flat(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """ADR 017 / Phase 1 fix: the two timestamps diverge when the
+        collector polls cleanly but the dedup gate (ADR 009 §3)
+        suppresses the write. Skinport in steady state shows this for
+        ~45/48 items per cycle.
+
+        Expected: last_polled_at is fresh (minutes ago),
+        last_changed_at is multi-hour-old. Confirms the two fields are
+        sourced from observation_log and prices separately.
+        """
+        now = datetime.now(UTC)
+        old_price_ts = now - timedelta(hours=16)
+        fresh_poll_ts = now - timedelta(minutes=2)
+        engine = get_engine()
+        with Session(engine) as session:
+            _ensure_source_enabled(session, "skinport")
+            _insert_price(
+                session, sentinel_item, "skinport",
+                old_price_ts, "28.00",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", fresh_poll_ts,
+            )
+            session.commit()
+
+        resp = client.get(f"/items/{_SENTINEL_SLUG}/price")
+        assert resp.status_code == 200
+        skinport = next(
+            s for s in resp.json()["sources"] if s["source"] == "skinport"
+        )
+        # last_polled_at tracks observation_log
+        assert (
+            datetime.fromisoformat(
+                skinport["last_polled_at"].replace("Z", "+00:00")
+            )
+            - fresh_poll_ts
+        ).total_seconds() < 1.0
+        # last_changed_at tracks prices.timestamp
+        assert (
+            datetime.fromisoformat(
+                skinport["last_changed_at"].replace("Z", "+00:00")
+            )
+            - old_price_ts
+        ).total_seconds() < 1.0
+
+    def test_source_without_observation_log_omitted(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """Per ADR 017: the /price query drives off observation_log.
+        A source with a stale prices row but no observation_log row
+        (e.g. DMarket items that fall through the title-mismatch
+        guard) is omitted from the response — the bot's never_observed
+        branch fills in the slot at render time.
+        """
+        now = datetime.now(UTC)
+        engine = get_engine()
+        with Session(engine) as session:
+            _ensure_source_enabled(session, "skinport")
+            _ensure_source_enabled(session, "dmarket")
+            # Skinport has both prices AND observation_log (normal).
+            _insert_price(
+                session, sentinel_item, "skinport",
+                now - timedelta(minutes=10), "28.00",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", now,
+            )
+            # DMarket has a stale prices row but no observation_log
+            # row — modelling the Moto-Gloves-on-DMarket scenario.
+            _insert_price(
+                session, sentinel_item, "dmarket",
+                now - timedelta(days=3), "31.41",
+            )
+            session.commit()
+
+        resp = client.get(f"/items/{_SENTINEL_SLUG}/price")
+        sources = {s["source"] for s in resp.json()["sources"]}
+        assert "skinport" in sources
+        assert "dmarket" not in sources, (
+            "A source with prices but no observation_log must be "
+            "omitted — the bot fills with never_observed."
+        )
+
+    def test_schema_rejects_missing_last_polled_at(self) -> None:
+        """Pure schema test: ``PerSourcePrice`` must reject a request
+        body missing ``last_polled_at`` (the new freshness signal).
+        Catches accidental schema drift if the API stops surfacing
+        this field.
+        """
+        from pydantic import ValidationError
+
+        from api.schemas import PerSourcePrice
+
+        with pytest.raises(ValidationError) as exc_info:
+            PerSourcePrice(
+                source="skinport",
+                denomination="usd",
+                price=Decimal("28.00"),
+                volume=27,
+                # last_polled_at intentionally omitted
+                last_changed_at=datetime.now(UTC),
+            )
+        assert "last_polled_at" in str(exc_info.value)
 
     def test_unknown_slug_404(self, client: TestClient) -> None:
         resp = client.get("/items/__definitely-not-real__/price")

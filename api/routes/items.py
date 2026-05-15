@@ -6,7 +6,11 @@ Endpoints:
 - ``GET /items/{slug}``        — single item's metadata.
 - ``GET /items/{slug}/price``  — latest per-source price snapshot. The
   enforcement point for "no collapsed price field" — every row carries
-  the source's name, ``denomination``, and ``observed_at``.
+  the source's name, ``denomination``, and two distinct freshness
+  timestamps: ``last_polled_at`` (from ``observation_log``, the
+  last-successful-poll signal) and ``last_changed_at`` (from
+  ``prices.timestamp``, the last time the dedup gate let a row through).
+  Splitting these is load-bearing: see ADR 017.
 
 Source iteration: ``sources WHERE enabled = TRUE``. Adding a fourth
 source remains a config change (row insert + collector subclass), not
@@ -86,12 +90,24 @@ def get_item(slug: str) -> ItemDetail:
 def get_item_price(slug: str) -> PriceResponse:
     """Latest per-source price for an item.
 
-    Single Postgres ``DISTINCT ON (source_id)`` ordered by ``timestamp
-    DESC`` — one row per enabled source. Items that no enabled source
-    has yet observed return an empty ``sources`` array (200, not 404)
-    so the bot can distinguish "I don't track that item" (404 from
-    ``/items/{slug}``) from "I track it but have no data yet" (empty
-    list here).
+    Driven by ``observation_log`` (one row per ``(item, source)`` pair
+    advanced on every successful poll, regardless of whether the dedup
+    gate let a ``prices`` row through). For each row we look up the
+    most recent ``prices`` row via a LATERAL subquery and surface two
+    timestamps:
+
+    - ``last_polled_at`` — the last successful poll (the staleness
+      signal the bot's 4-hour 🟡 threshold reads).
+    - ``last_changed_at`` — the last time ``(price, volume)`` actually
+      changed (an informational "price is flat" signal, NOT a
+      warning).
+
+    Sources with no ``observation_log`` row for this item are omitted
+    — the bot fills those slots with ``never_observed`` from the
+    insights layer. Items that no enabled source has yet observed
+    return an empty ``sources`` array (200, not 404) so the bot can
+    distinguish "I don't track that item" (404 from ``/items/{slug}``)
+    from "I track it but have no data yet" (empty list here).
     """
     engine = get_engine()
     with Session(engine) as session:
@@ -108,17 +124,26 @@ def get_item_price(slug: str) -> PriceResponse:
         rows = session.execute(
             text(
                 """
-                SELECT DISTINCT ON (p.source_id)
+                SELECT
                     s.name AS source_name,
                     s.denomination,
                     p.price,
                     p.volume,
-                    p.timestamp AS observed_at
-                FROM prices p
-                JOIN sources s ON s.id = p.source_id
-                WHERE p.item_id = :item_id
+                    p.timestamp AS last_changed_at,
+                    ol.last_observed_at AS last_polled_at
+                FROM observation_log ol
+                JOIN sources s ON s.id = ol.source_id
+                JOIN LATERAL (
+                    SELECT timestamp, price, volume
+                    FROM prices
+                    WHERE item_id = ol.item_id
+                      AND source_id = ol.source_id
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ) p ON TRUE
+                WHERE ol.item_id = :item_id
                   AND s.enabled = TRUE
-                ORDER BY p.source_id, p.timestamp DESC
+                ORDER BY s.name
                 """
             ),
             {"item_id": item.id},
@@ -133,7 +158,8 @@ def get_item_price(slug: str) -> PriceResponse:
                 denomination=row["denomination"],
                 price=row["price"],
                 volume=row["volume"],
-                observed_at=row["observed_at"],
+                last_polled_at=row["last_polled_at"],
+                last_changed_at=row["last_changed_at"],
             )
             for row in rows
         ],

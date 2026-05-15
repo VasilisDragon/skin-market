@@ -58,15 +58,26 @@ class ItemDetail(Item):
 class PerSourcePrice(BaseModel):
     """One source's latest reading for an item.
 
-    ``observed_at`` lets the bot answer "how fresh is this?" and feeds
-    into ``/deals/evaluate``'s freshness filter (ADR 014 §4).
+    Two timestamps surface to the bot, NOT one (ADR 017):
+
+    - ``last_polled_at``: from ``observation_log.last_observed_at`` —
+      the last successful poll, advanced unconditionally on every
+      cycle. This is what the bot's staleness threshold reads.
+    - ``last_changed_at``: from ``prices.timestamp`` — the last time
+      the dedup gate (ADR 009 §3) admitted a new ``(price, volume)``
+      row. Informational; "price is flat" is not a warning.
+
+    ``last_changed_at`` is declared nullable defensively: in practice
+    every ``observation_log`` row co-exists with at least one
+    ``prices`` row, but the schema admits the edge case.
     """
 
     source: str
     denomination: Denomination
     price: MoneyStr
     volume: int | None
-    observed_at: datetime
+    last_polled_at: datetime
+    last_changed_at: datetime | None
 
 
 class PriceResponse(BaseModel):
@@ -94,21 +105,24 @@ class PriceResponse(BaseModel):
                             "denomination": "usd",
                             "price": "28.00",
                             "volume": 27,
-                            "observed_at": "2026-05-12T21:25:06Z",
+                            "last_polled_at": "2026-05-15T20:38:00Z",
+                            "last_changed_at": "2026-05-15T04:23:00Z",
                         },
                         {
                             "source": "dmarket",
                             "denomination": "usd",
                             "price": "31.41",
                             "volume": 12,
-                            "observed_at": "2026-05-12T21:27:38Z",
+                            "last_polled_at": "2026-05-15T20:39:00Z",
+                            "last_changed_at": "2026-05-12T21:27:38Z",
                         },
                         {
                             "source": "steam_market",
                             "denomination": "wallet_credit",
                             "price": "42.92",
                             "volume": 99,
-                            "observed_at": "2026-05-12T21:47:02Z",
+                            "last_polled_at": "2026-05-15T20:00:00Z",
+                            "last_changed_at": "2026-05-15T20:00:00Z",
                         },
                     ],
                 }
