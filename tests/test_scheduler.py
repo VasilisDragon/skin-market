@@ -52,7 +52,18 @@ from collectors.scheduler import (
 from db.connection import get_engine
 from db.models import Item, Price, Source
 
-_TEST_ITEM_NAME = "AK-47 | Redline (Field-Tested)"
+# Sentinel item used exclusively by this test module. A name no real
+# CS2 item could ever match (the double-underscore prefix + bracket
+# pattern is unmistakable). Was previously a real watchlist item
+# ("AK-47 | Redline (Field-Tested)"); see
+# ``docs/pre-phase2-diagnostics.md §Q2`` for the contamination story
+# — the ``_FakeCollector`` in ``TestRunCycleDeclinedHeuristic``
+# bypasses ``SteamCollector.collect_one`` (and therefore the outlier
+# filter), so any rows it produced landed in the live ``prices``
+# table at face value against the real Redline item. The bot then
+# reported Steam = $1.00 SC for Redline in live Discord output.
+_TEST_ITEM_NAME = "__SchedulerTest__ | Sentinel (Field-Tested)"
+_TEST_ITEM_SLUG = "schedulertest-sentinel-field-tested"
 # Far-future timestamp so test rows can't collide with real Steam/Skinport
 # observations.
 _TEST_TIMESTAMP = datetime(2099, 1, 1, tzinfo=UTC)
@@ -73,6 +84,78 @@ _db_required = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL") or not _db_reachable(),
     reason="DATABASE_URL not set or postgres unreachable",
 )
+
+
+def _purge_sentinel(session: Session) -> None:
+    """Delete every row pointing at the sentinel item (prices,
+    observation_log, insights, then the item itself). Idempotent."""
+    item_id = session.execute(
+        select(Item.id).where(Item.market_hash_name == _TEST_ITEM_NAME)
+    ).scalar_one_or_none()
+    if item_id is None:
+        return
+    session.execute(
+        text("DELETE FROM prices WHERE item_id = :i"), {"i": item_id}
+    )
+    session.execute(
+        text("DELETE FROM observation_log WHERE item_id = :i"),
+        {"i": item_id},
+    )
+    session.execute(
+        text("DELETE FROM insights WHERE item_id = :i"), {"i": item_id}
+    )
+    session.execute(
+        text("DELETE FROM items WHERE id = :i"), {"i": item_id}
+    )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _ensure_sentinel_item():
+    """Ensure the sentinel item exists in the DB for the lifetime of
+    this module, and purge every row pointing at it on teardown.
+
+    Previously this module used the real watchlist item AK-47 Redline
+    FT as its hardcoded test target. ``_FakeCollector`` bypasses
+    ``SteamCollector.collect_one`` (and the outlier filter), so
+    ``_run_cycle`` happily persisted synthetic
+    ``raw_response={"test": True}`` rows against the real Redline
+    item, and the bot reported Steam = $1.00 SC for Redline in live
+    Discord. See ``docs/pre-phase2-diagnostics.md §Q2`` for the full
+    trace.
+
+    Skips cleanly when the DB is unreachable; the surrounding
+    ``_db_required`` marker keeps DB-dependent tests deselected in
+    that case.
+    """
+    if not _db_reachable():
+        yield
+        return
+    engine = get_engine()
+    with Session(engine) as session:
+        # Up-front purge — defensive in case a prior aborted run left
+        # rows behind.
+        _purge_sentinel(session)
+        session.execute(
+            text(
+                """
+                INSERT INTO items (
+                    market_hash_name, display_name, slug, item_type,
+                    weapon_name, skin_name, wear
+                )
+                VALUES (
+                    :name, :name, :slug, 'rifle',
+                    'TestWeapon', 'Sentinel', 'Field-Tested'
+                )
+                ON CONFLICT (market_hash_name) DO NOTHING
+                """
+            ),
+            {"name": _TEST_ITEM_NAME, "slug": _TEST_ITEM_SLUG},
+        )
+        session.commit()
+    yield
+    with Session(engine) as session:
+        _purge_sentinel(session)
+        session.commit()
 
 
 def _make_obs(
