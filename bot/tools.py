@@ -223,23 +223,39 @@ def query_current_price(slug: str) -> dict:
     for source_name in EXPECTED_SOURCES:
         if source_name in fresh_by_source:
             row = fresh_by_source[source_name]
-            observed_at = _parse_iso(row["observed_at"])
-            minutes = int((now - observed_at).total_seconds() / 60)
-            per_source.append(
-                {
-                    "source": source_name,
-                    "denomination": row["denomination"],
-                    "state": (
-                        "stale"
-                        if minutes > STALE_HOURS * 60
-                        else "fresh"
-                    ),
-                    "price": row["price"],
-                    "volume": row["volume"],
-                    "observed_at": row["observed_at"],
-                    "minutes_since_observed": minutes,
-                }
+            last_polled_at = _parse_iso(row["last_polled_at"])
+            minutes_since_polled = int(
+                (now - last_polled_at).total_seconds() / 60
             )
+            state = (
+                "stale"
+                if minutes_since_polled > STALE_HOURS * 60
+                else "fresh"
+            )
+            entry: dict[str, Any] = {
+                "source": source_name,
+                "denomination": row["denomination"],
+                "state": state,
+                "price": row["price"],
+                "volume": row["volume"],
+                "last_polled_at": row["last_polled_at"],
+                "minutes_since_polled": minutes_since_polled,
+            }
+            # last_changed_at is informational only — surface it
+            # explicitly when the price has been flat for an
+            # interesting stretch (>1h beyond last_polled_at), so the
+            # bot can mention "price flat for Nh" without the model
+            # mistaking it for a freshness warning.
+            last_changed_raw = row.get("last_changed_at")
+            if last_changed_raw is not None:
+                entry["last_changed_at"] = last_changed_raw
+                last_changed_at = _parse_iso(last_changed_raw)
+                gap_minutes = int(
+                    (last_polled_at - last_changed_at).total_seconds() / 60
+                )
+                if gap_minutes >= 60:
+                    entry["price_flat_minutes"] = gap_minutes
+            per_source.append(entry)
         elif source_name in streak_by_source:
             s = streak_by_source[source_name]
             per_source.append(

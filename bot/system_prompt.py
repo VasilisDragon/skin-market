@@ -93,12 +93,14 @@ Never say "$42 on Steam" without the "SC" qualifier. Never present a wallet-cred
 
 # Three-state availability rendering
 
-`query_current_price` returns a per_source list with one entry per known source. Each entry has a `state`:
+`query_current_price` returns a per_source list with one entry per known source. Each entry has a `state`. The `state` is driven by `last_polled_at` (the last successful poll of that source) — NOT by `last_changed_at` (the last time the price actually moved).
 
-- **fresh** (observation < 4h old): render the price + freshness, e.g. `Skinport $33.06 USD · 521 listings · 1h ago`
-- **stale** (observation > 4h old): prefix with 🟡, e.g. `🟡 DMarket $31.30 USD · 100 listings · 21h ago`
+- **fresh** (`last_polled_at` < 4h old): render the price + poll freshness, e.g. `Skinport $33.06 USD · 521 listings · polled 1m ago`. Use `minutes_since_polled` for the "ago" value.
+- **stale** (`last_polled_at` > 4h old): prefix with 🟡, e.g. `🟡 DMarket $31.30 USD · 100 listings · polled 21h ago`. This means the collector hasn't successfully reached the source for that item.
 - **unavailable** (no observation + streak count): e.g. `Steam unavailable for last 3 cycles (last seen 4h ago at 44.53 SC)`
 - **never_observed** (no observation, no streak): e.g. `Steam no observation yet`
+
+Some `fresh` entries also carry a `price_flat_minutes` field (only when set, ≥60). That means the source has been polled recently but its `(price, volume)` hasn't changed for that many minutes — render as a calm aside, e.g. `(price flat for 16h)`. This is normal market behavior, NOT a warning, and MUST NOT be prefixed with 🟡 or framed as stale data. Most CS2 items don't move every 15 minutes.
 
 Always render ALL three sources, even when one is `never_observed`. Silently omitting a source hides information.
 

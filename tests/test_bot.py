@@ -159,7 +159,10 @@ class TestQueryCurrentPriceComposer:
                         "denomination": "usd",
                         "price": "33.06",
                         "volume": 521,
-                        "observed_at": (
+                        "last_polled_at": (
+                            (now - timedelta(minutes=10)).isoformat()
+                        ),
+                        "last_changed_at": (
                             (now - timedelta(minutes=10)).isoformat()
                         ),
                     }
@@ -205,6 +208,11 @@ class TestQueryCurrentPriceComposer:
         assert result["anomaly_flag"] is None
 
     def test_stale_when_older_than_4h(self, httpx_mock) -> None:
+        """`state == stale` is driven by `last_polled_at`, NOT
+        `last_changed_at` — a poll older than STALE_HOURS=4h means the
+        collector has genuinely lost reach on that source for that item.
+        ADR 017 split.
+        """
         now = datetime.now(UTC)
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/price",
@@ -215,7 +223,10 @@ class TestQueryCurrentPriceComposer:
                         "denomination": "usd",
                         "price": "28.00",
                         "volume": 27,
-                        "observed_at": (
+                        "last_polled_at": (
+                            (now - timedelta(hours=5)).isoformat()
+                        ),
+                        "last_changed_at": (
                             (now - timedelta(hours=5)).isoformat()
                         ),
                     }
@@ -229,6 +240,52 @@ class TestQueryCurrentPriceComposer:
         result = query_current_price("x")
         sk = next(p for p in result["per_source"] if p["source"] == "skinport")
         assert sk["state"] == "stale"
+
+    def test_polled_fresh_but_price_flat_is_fresh_not_stale(
+        self, httpx_mock
+    ) -> None:
+        """The Phase 1 fix in a sentence: an item polled cleanly 2
+        minutes ago but whose price hasn't moved in 16h is FRESH, not
+        stale. The 16h gap surfaces as ``price_flat_minutes`` — an
+        informational hint, not a 🟡 warning.
+        """
+        now = datetime.now(UTC)
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/price",
+            json=self._price(
+                [
+                    {
+                        "source": "skinport",
+                        "denomination": "usd",
+                        "price": "28.00",
+                        "volume": 27,
+                        "last_polled_at": (
+                            (now - timedelta(minutes=2)).isoformat()
+                        ),
+                        "last_changed_at": (
+                            (now - timedelta(hours=16)).isoformat()
+                        ),
+                    }
+                ]
+            ),
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/insights",
+            json=self._insights([]),
+        )
+        result = query_current_price("x")
+        sk = next(
+            p for p in result["per_source"] if p["source"] == "skinport"
+        )
+        assert sk["state"] == "fresh"
+        assert sk["minutes_since_polled"] < 5
+        # 16h - 2min poll lag = ~958 minutes (with a few seconds of
+        # real-time slop during the test); allow a small margin below
+        # the nominal 16h gap to absorb that.
+        assert sk["price_flat_minutes"] >= 950
+        # observed_at must not bleed through — the bot only reads
+        # the two new fields.
+        assert "observed_at" not in sk
 
     def test_anomaly_flag_recent_divergence(self, httpx_mock) -> None:
         now = datetime.now(UTC)
