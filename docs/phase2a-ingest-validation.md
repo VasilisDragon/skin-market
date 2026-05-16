@@ -169,29 +169,68 @@ The diagnostic flagged Skinport. The live ingest shows it at a manageable 6.4% �
 
 **Action for Phase 2b drift logic:** Both `pricempire_skinport` AND `pricempire_swapgg` need to ignore `updated_at` and rely on `last_checked_at` as the primary "how fresh is Pricempire's view" signal. The cleanest implementation: a small constant set of provider names that need the fallback, applied at drift-query time. Or — simpler — Phase 2b ignores `updated_at` entirely and uses `last_checked_at` for all providers, since it's always populated.
 
-## 6. Errors / unexpected during the first cycles **[invariant]**
+## 6. swap_gg coverage characterization **[follow-up to §2/§4]**
+
+§2 reports `pricempire_swap_gg` has 45 rows total after 54 cycles — 44 from the first cycle plus exactly ONE non-initial write (USP-S | Kill Confirmed at 09:19). The other 5 providers wrote between 121 and 849 rows over the same window. Why is swap_gg so sparse?
+
+**Question:** is the swap_gg sub-collector silently dropping data, or is swap.gg genuinely so flat that the dedup gate suppresses essentially every cycle's write?
+
+**Method:** for each of the 48 watchlist items:
+
+1. Read the latest `pricempire_swap_gg` row from `pricempire_observations` (`price`, `count`, `raw_response->>'last_checked_at'`).
+2. Read the current swap.gg price for that item from a cached Pricempire probe (`/tmp/swapgg-check.json`, 19.5 MB, captured 2026-05-16 16:51 UTC — ~2 min before the queries in §1/§2/§4 ran; fresh enough that no API call was spent for this analysis).
+3. Compare.
+
+**Results (count of 48 watchlist items):**
+
+| Group | Count |
+|---|---|
+| Both DB and Pricempire have a swap_gg row | **44** |
+| Only Pricempire has swap_gg (DB row missing) | **0** |
+| Only DB has swap_gg (Pricempire dropped it) | **0** |
+| Neither (swap.gg simply doesn't list this item) | **4** |
+
+**Of the 44 items present in both, every single one has DB `price` and `count` exactly matching Pricempire's current values.** Zero divergence. The dedup gate has correctly suppressed 53 cycles' worth of redundant writes for 43 of those items and 52 cycles' worth for the 44th (USP-S | Kill Confirmed, which moved from $119.78 → $131.18 between 03:19 and 09:19, and has been flat at $131.18 since).
+
+**The 4 "Neither" items** (no swap.gg coverage anywhere) are:
+- `Glock-18 | Fade (Factory New)`
+- `SSG 08 | Death Strike (Factory New)`
+- `Souvenir AWP | Dragon Lore (Battle-Scarred)`
+- `★ Karambit | Doppler (Factory New)`
+
+These are the same four items already flagged in §2 as having partial Pricempire coverage. Pricempire's current swap.gg slice for them is empty; there is no DB row to write. Consistent and expected.
+
+**One Pricempire-side nuance worth recording:** for USP-S | Kill Confirmed, Pricempire's current response shows `updated_at=2026-05-16T16:51` while the price has not changed since 09:19. So Pricempire bumps swap.gg's `updated_at` on each poll even when the underlying price is unchanged — another data point reinforcing §5's recommendation that Phase 2b drift logic should ignore `updated_at` and gate on `last_checked_at` (or, simpler, gate on dedup-row count over a window).
+
+**Conclusion: swap_gg is behaving correctly.** The collector is not dropping data; the dedup gate is correctly suppressing redundant writes for what is genuinely a low-liquidity sub-marketplace whose listed prices essentially never move within a 15-minute window. The §4 "max_age_min = 815 min" observation for swap_gg is the same finding viewed from the freshness side.
+
+Phase 2b implication: any "is swap.gg's view fresh?" surface that the bot exposes MUST drive off Pricempire's `raw_response->>'last_checked_at'` (which is real-time per cycle) — NOT off our local `timestamp` (which can legitimately be 13+ hours old for an unchanged price).
+
+## 7. Errors / unexpected during the first cycles **[invariant]**
 
 - The first cycle (01:32 UTC, pre-`swapgg` fix) returned HTTP 400. Pricempire's accepted-source list included `swapgg` not `swap.gg`. Fixed in commit `2917c71`. The collector logged the 400 and exited cleanly per the failure-handling design (ADR 019 §6); the next cycle attempted again.
 - The second cycle (after the `swapgg` fix, before `use_float=True`) hit a `TypeError: Object of type Decimal is not JSON serializable` mid-stream after 14 items, 0 rows written. Caused by ijson's default `Decimal` decoding tripping psycopg's JSON encoder when persisting `raw_response`. Fixed in the same commit by passing `use_float=True` to `ijson.items()`; pinned by a regression test (`test_jsonb_safe_for_float_fields`).
 - 4 of the 6 dev API calls in the Phase 2a discretionary budget were consumed during the wire-key probe + verification.
 - After both fixes, every cycle has been clean: HTTP 200, ~4-7s wall time, no errors.
 
-## 7. Open Phase 2b inputs flagged by this validation
+## 8. Open Phase 2b inputs flagged by this validation
 
 1. **Doppler-pattern items** (Karambit Doppler FN, Flip Knife Doppler FN, M9 Bayonet Doppler FN). Direct Skinport vs `pricempire_skinport` drift exceeds 60% — these are upstream taxonomy mismatches, not bugs. Phase 2b drift detection needs an explicit "Doppler items can show large drift" rule, OR these items should be removed from the watchlist and replaced with non-phase-bearing equivalents. Item-level decision for Step 6's watchlist proposal.
-2. **`pricempire_swapgg` placeholder rate of 29.5%**. Phase 2b drift logic must use `last_checked_at`, not `updated_at`, for at least these two providers (skinport + swapgg). Simpler still: `last_checked_at` for all providers.
+2. **`pricempire_swapgg` placeholder rate of 28.9%** (refreshed from initial 29.5%; the count is stable because dedup froze the sample). Phase 2b drift logic must use `last_checked_at`, not `updated_at`, for at least these two providers (skinport + swapgg). Simpler still: `last_checked_at` for all providers.
 3. **Souvenir Dragon Lore BS has only 2 Pricempire providers covering it.** Liquid market for it is essentially nonexistent. Keep as a Tier-3 (illiquid premium) canary or remove — decision deferred to Step 6.
 4. **No observation_log analog for Pricempire yet.** Phase 2a's dedup gate compares against `pricempire_observations` itself. Phase 2b drift logic can either (a) treat Pricempire's `last_checked_at` as the freshness signal directly, or (b) introduce a `pricempire_observation_log` for the project-canonical "last cycle that touched (item, source)" semantic. ADR 019 §4 documents the deferral.
+5. **Dedup-driven freshness blindness generalizes beyond swap_gg.** §4's `max_age_min = 815` (= the full 13.5 h window) shows up on at least one (item, source) pair for *every* provider, not just swap_gg. §6 establishes that for swap_gg this is normal (low liquidity, prices don't move, Pricempire still polling). The same logic almost certainly applies to the long-tail items on the moderate-liquidity providers (skinport at avg 341 min, dmarket at avg 252 min). Phase 2b cannot use `pricempire_observations.timestamp` as a "is Pricempire still polling X?" signal in any form; the only honest signal is `raw_response->>'last_checked_at'`. Worth a one-line note in ADR 019 §4 or an addendum.
 
 ---
 
 ## 24h-amendment checklist
 
-When re-running this validation against a 24h window, the queries to re-execute are:
+When re-running this validation against a wider window (the original snapshot was at +17 min; this refresh was at +13.5 h), the queries to re-execute are:
 
-- §1: total row count, oldest/newest. Expected total: ~5,000-10,000 rows.
-- §2: per-provider coverage (should remain stable; the watchlist composition is the invariant).
-- §4: freshness distribution. Expected: every `max_age_min ≤ 15` for active providers in steady state.
-- §5: placeholder frequencies. Expected: ~5-10% on Skinport, ~25-35% on swapgg.
+- §1: total row count, oldest/newest. ~14 h sample: 2,441 rows. ~24 h sample expected: ~4,500-5,500 rows.
+- §2: per-provider coverage (the items_with_data counts are stable; the row counts grow at provider-specific rates documented in §2).
+- §4: freshness distribution. Steady-state pattern established at +13.5 h; further widening pushes the max upward proportionally as more (item, source) pairs hit the dedup wall.
+- §5: placeholder frequencies. ~14 h sample: 1.3% on Skinport, 28.9% on swapgg. The swapgg figure is essentially frozen by dedup; the skinport figure trends down as more non-placeholder rows accumulate.
+- §6: swap_gg coverage characterization. Reads from `/tmp/swapgg-check.json` if still fresh, or burns one Pricempire API call with `sources=swapgg`.
 
-The interpretive paragraphs in §3, §6, and §7 should remain accurate — they describe structural findings rather than time-sensitive numbers.
+The interpretive paragraphs in §3, §6, §7, and §8 should remain accurate — they describe structural findings rather than time-sensitive numbers.
