@@ -64,6 +64,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pathlib import Path
+
 from collectors.base import (
     DECLINED,
     Collector,
@@ -79,6 +81,8 @@ from collectors.skinport import SkinportCollector
 from collectors.steam import SteamCollector
 from db.connection import get_engine
 from db.models import Item, Source
+from db.naming import normalize_name
+from scripts.seed_watchlist import DEFAULT_WATCHLIST_PATH, load_watchlist
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,14 @@ _state_lock = threading.Lock()
 _active_source_specs: dict[str, SourceJobSpec] = {}
 _scheduler_ref: BlockingScheduler | None = None
 
+# Phase 2b Step 6 (ADR 012 §7): DMarket alias map loaded at scheduler
+# start; immutable for the process lifetime. Operators edit the
+# `dmarket_alias:` field in data/watchlist.yaml and restart the
+# COLLECTOR service (not analytics — alias map is collector-owned)
+# for changes to take effect. Empty dict on import; populated by
+# build_scheduler().
+_DMARKET_ALIAS_MAP: dict[str, frozenset[str]] = {}
+
 
 # Source name → (collector class, log label, per-cycle watchlist limit).
 # Adding a fourth source is a config change: insert row in `sources`,
@@ -142,6 +154,33 @@ SOURCE_REGISTRY: dict[str, tuple[type[Collector], str, int | None]] = {
     "skinport": (SkinportCollector, "Skinport", None),
     "dmarket": (DMarketCollector, "DMarket", None),
 }
+
+
+def _load_dmarket_alias_map(
+    watchlist_path: Path = DEFAULT_WATCHLIST_PATH,
+) -> dict[str, frozenset[str]]:
+    """Read watchlist.yaml, return ``{normalize_name(market_hash_name):
+    frozenset of normalize_name(alias)}`` for deep-tier items with a
+    non-empty ``dmarket_alias`` list.
+
+    Phase 2b Step 6 (ADR 012 §7). Called once at scheduler start.
+    Broad-tier items with ``dmarket_alias`` are silently skipped here
+    — the watchlist loader already logged a WARN at YAML-load time.
+    Items without the field don't appear in the result.
+    """
+    data = load_watchlist(watchlist_path)
+    alias_map: dict[str, frozenset[str]] = {}
+    for item in data["items"]:
+        if item.get("tier") != "deep":
+            continue
+        aliases = item.get("dmarket_alias")
+        if not aliases:
+            continue
+        canonical = normalize_name(item["market_hash_name"])
+        alias_map[canonical] = frozenset(
+            normalize_name(a) for a in aliases
+        )
+    return alias_map
 
 
 def _load_enabled_sources(session: Session) -> list[SourceJobSpec]:
@@ -168,11 +207,72 @@ def _load_enabled_sources(session: Session) -> list[SourceJobSpec]:
     ]
 
 
-def _load_watchlist(session: Session, limit: int | None = None) -> list[str]:
-    rows = session.execute(
-        select(Item.market_hash_name).order_by(Item.market_hash_name)
-    ).all()
-    names = [row[0] for row in rows]
+# Phase 2b Step 7.1.5 (ADR 024): collectors filter the active
+# watchlist by tier from data/watchlist.yaml. Phase 1's items-table-
+# only read polled every row regardless of YAML state, which meant
+# items orphaned by a Step 7.1-style re-seed still got polled. The
+# gap surfaced at Step 7.2's Gate 1 verification — collectors were
+# polling 70 items (28 of them orphans) instead of the intended 42.
+#
+# Per-source tier filter:
+#   steam_market, dmarket → deep tier ONLY (rate-limit math; ADR 024)
+#   skinport              → deep + broad (bulk-fetch, free to expand)
+#   pricempire            → bypasses this function entirely
+#                           (collect_snapshot() reads items table
+#                           directly, preserving orphan refresh)
+_DEEP_ONLY_SOURCES: frozenset[str] = frozenset(
+    {"steam_market", "dmarket"}
+)
+
+
+def _load_watchlist(
+    session: Session,
+    *,
+    source_name: str,
+    limit: int | None = None,
+    watchlist_path: Path = DEFAULT_WATCHLIST_PATH,
+) -> list[str]:
+    """Return the active watchlist for ``source_name``, filtered by
+    tier per ADR 024.
+
+    Reads from ``data/watchlist.yaml`` (NOT the items table). Items
+    orphaned by a re-seed — present in items but absent from YAML —
+    are silently excluded. The ``session`` parameter is retained for
+    signature stability but no longer used; future revisions can drop
+    it once all call sites are updated.
+
+    Tier filtering:
+    - source_name in {"steam_market", "dmarket"} → deep tier only
+      (rate-limit math: 5s/item × 500 items > 60-min cycle for Steam;
+      3s/item × 500 items > 15-min cycle for DMarket).
+    - source_name == "skinport" → deep + broad (bulk-fetch endpoint;
+      filtering happens in Python after a single HTTP call).
+    - Pricempire bypasses this function entirely; its collect_snapshot
+      reads the items table directly so orphan-row data continues to
+      accumulate (ADR 024's orphan-preservation invariant).
+
+    Loaded ONCE per cycle by ``_run_cycle`` (confirmed at the call
+    site). Future operator YAML edits require a collector restart to
+    take effect, matching the alias-map reload discipline (ADR 012
+    §7). No per-item YAML re-read.
+    """
+    # session is reserved for future use (e.g. an alternative
+    # tier-from-DB path); ignored under the current YAML-driven shape.
+    del session
+    data = load_watchlist(watchlist_path)
+    if source_name in _DEEP_ONLY_SOURCES:
+        names = [
+            item["market_hash_name"]
+            for item in data["items"]
+            if item.get("tier") == "deep"
+        ]
+    else:
+        names = [
+            item["market_hash_name"]
+            for item in data["items"]
+            if item.get("tier") in {"deep", "broad"}
+        ]
+    names.sort()  # alphabetical, matches prior items-table ORDER BY
     if limit is not None and len(names) > limit:
         # TODO(watchlist-rotation): naive slice always picks the first
         # `limit` items, starving the rest if watchlist grows past 50.
@@ -289,7 +389,9 @@ def _run_cycle(
 
     with Session(engine) as session:
         watchlist: Iterable[str] = _load_watchlist(
-            session, limit=watchlist_limit
+            session,
+            source_name=collector.source_name,
+            limit=watchlist_limit,
         )
 
     watchlist = list(watchlist)
@@ -435,7 +537,12 @@ def _run_named_source(source_name: str) -> None:
         return
     collector_cls, source_label, watchlist_limit = SOURCE_REGISTRY[source_name]
     try:
-        collector = collector_cls()
+        # Phase 2b Step 6 (ADR 012 §7): DMarket gets the alias map
+        # loaded at scheduler start. Other collectors are unparameterized.
+        if source_name == "dmarket":
+            collector = collector_cls(alias_map=_DMARKET_ALIAS_MAP)
+        else:
+            collector = collector_cls()
         # Per-item delay from DB; instance-attr shadows the class
         # attribute used by Collector.collect_cycle.
         collector.inter_request_delay = float(spec.per_item_delay_seconds)
@@ -524,6 +631,19 @@ def build_scheduler(
     # Reset active-specs cache. Module-level dict — a subsequent
     # build_scheduler in the same process (e.g. tests) gets a clean view.
     _active_source_specs.clear()
+
+    # Phase 2b Step 6: load the DMarket alias map ONCE per scheduler
+    # build. Held for the process lifetime; operators must restart the
+    # collector service for YAML edits to take effect. Failure to load
+    # the YAML (file missing, schema_version drift) is a fail-fast
+    # since the collector can't run without a valid watchlist anyway.
+    global _DMARKET_ALIAS_MAP
+    _DMARKET_ALIAS_MAP = _load_dmarket_alias_map()
+    if _DMARKET_ALIAS_MAP:
+        logger.info(
+            "Loaded DMarket alias map: %d items with aliases",
+            len(_DMARKET_ALIAS_MAP),
+        )
 
     scheduler = BlockingScheduler(
         timezone="UTC",
