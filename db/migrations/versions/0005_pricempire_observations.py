@@ -235,11 +235,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # DROP TABLE first — the sub-provider sources rows are referenced
+    # by pricempire_observations.source_id, and Postgres won't let us
+    # DELETE those rows while the FK exists. CASCADE on DROP TABLE
+    # also tears down any chunks the hypertable accumulated. This
+    # order is load-bearing once the table has live data; the
+    # original DELETE-first order worked only because the table was
+    # empty at first-ever downgrade. Phase 2a-follow-up fix.
+    op.execute("DROP TABLE IF EXISTS pricempire_observations CASCADE")
     op.execute(
         "DELETE FROM sources WHERE name IN "
         "('pricempire', 'pricempire_buff163', 'pricempire_buff163_buy', "
         " 'pricempire_skinport', 'pricempire_dmarket', "
         " 'pricempire_csmoney', 'pricempire_swap_gg')"
     )
-    # Dropping a hypertable also drops its chunks.
-    op.execute("DROP TABLE IF EXISTS pricempire_observations CASCADE")
