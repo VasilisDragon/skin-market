@@ -84,23 +84,26 @@ skinmarket-analytics   Up 2 days
 
 Postgres password rotation is a known footgun, called out in the compose file header — `POSTGRES_PASSWORD` is only read on first init of the data volume; later changes require `ALTER USER` inside the running container.
 
-**Migrations** — Alembic head is `0004` (`SELECT version_num FROM alembic_version`). Migrations checked into `db/migrations/versions/`:
+**Migrations** — Alembic head is `0006`. Migrations checked into `db/migrations/versions/`:
 
 1. `0001_initial_schema.py`
 2. `0002_phase5_schema_additions.py`
 3. `0003_rate_limit_policy.py` — added `interval_minutes`, `per_item_delay_seconds` to `sources`
 4. `0004_observation_log.py` — added `observation_log` table
+5. `0005_pricempire_observations.py` — Phase 2a: new hypertable for Pricempire ingest, plus 7 new `sources` rows (6 sub-providers + 1 `pricempire` pseudo-source). ADR 018/019.
+6. `0006_enable_pricempire_subproviders.py` — flips the six `pricempire_*` rows from `enabled=FALSE` to `enabled=TRUE` once the collector goes live.
 
-**Tables (all in `public`)** — 6 total, 5 application tables + `alembic_version`:
+**Tables (all in `public`)** — 7 total, 6 application tables + `alembic_version`:
 
 | Table | Cols (PK / important) | Rows now | Indexes / notes |
 |---|---|---|---|
 | `items` | `id UUID PK (gen_random_uuid)`, `market_hash_name TEXT UNIQUE`, `display_name`, `slug TEXT UNIQUE`, `item_type`, `weapon_name`, `skin_name`, `wear`, `is_stattrak BOOL`, `is_souvenir BOOL`, `created_at` | **48** | `items_pkey`, `items_market_hash_name_key`, `items_slug_key` |
-| `sources` | `id SERIAL PK`, `name TEXT UNIQUE`, `base_url`, `rate_limit_per_minute`, `enabled BOOL`, `denomination TEXT`, `interval_minutes`, `per_item_delay_seconds` | **3** | `sources_name_key` |
+| `sources` | `id SERIAL PK`, `name TEXT UNIQUE`, `base_url`, `rate_limit_per_minute`, `enabled BOOL`, `denomination TEXT`, `interval_minutes`, `per_item_delay_seconds` | **10** | `sources_name_key`. Now: 3 direct collectors + 6 Pricempire sub-providers + 1 `pricempire` pseudo-source. |
 | `prices` | composite PK `(item_id, source_id, timestamp)`; `price NUMERIC(12,2)`, `volume INT`, `currency VARCHAR(8) DEFAULT 'USD'`, `raw_response JSONB` | **5,564** | Indexes: `prices_pkey`, `prices_timestamp_idx (timestamp DESC)`. **TimescaleDB hypertable, 8 chunks.** |
-| `observation_log` | composite PK `(item_id, source_id)`, `last_observed_at TIMESTAMPTZ` | **126** | Phase 7a addition (migration 0004). Upserted unconditionally on every successful poll; **decoupled from dedup-on-write** of `prices`. |
+| `pricempire_observations` | composite PK `(item_id, source_id, timestamp)`; `price NUMERIC(12,2)`, `count INT`, `updated_at TIMESTAMPTZ`, `last_checked_at TIMESTAMPTZ`, `currency VARCHAR(8) DEFAULT 'USD'`, `raw_response JSONB` | **281** (initial cycle) | **TimescaleDB hypertable, 7-day chunks**. Three timestamps live here on purpose (ADR 019 §1): `timestamp` = local write clock; `last_checked_at` = Pricempire's poll claim; `updated_at` = Pricempire's price-moved claim. No compression policy in Phase 2a. |
+| `observation_log` | composite PK `(item_id, source_id)`, `last_observed_at TIMESTAMPTZ` | **126** | Phase 7a addition (migration 0004). Upserted unconditionally on every successful direct-collector poll; **decoupled from dedup-on-write** of `prices`. Pricempire does NOT write to this table in Phase 2a. |
 | `insights` | `id BIGSERIAL`, `item_id`, `computed_at`, `insight_type TEXT`, `value NUMERIC`, `text_value TEXT`, `meta_info JSONB` | **34,270** | `ix_insights_item_type_computed_desc(item_id, insight_type, computed_at DESC)` |
-| `alembic_version` | `version_num` | 1 row (`0004`) | — |
+| `alembic_version` | `version_num` | 1 row (`0006`) | — |
 
 **Sources currently configured**:
 
@@ -109,8 +112,15 @@ Postgres password rotation is a known footgun, called out in the compose file he
 | 1 | steam_market | t | wallet_credit | 60 | 5 | 12 |
 | 2 | skinport | t | usd | 15 | 0 | 60 |
 | 27 | dmarket | t | usd | 15 | 3 | 20 |
+| 28 | pricempire | t | (null) | 15 | 0 | (null) |
+| 29 | pricempire_buff163 | t | usd | 0 | 0 | (null) |
+| 30 | pricempire_buff163_buy | t | usd | 0 | 0 | (null) |
+| 31 | pricempire_skinport | t | usd | 0 | 0 | (null) |
+| 32 | pricempire_dmarket | t | usd | 0 | 0 | (null) |
+| 33 | pricempire_csmoney | t | usd | 0 | 0 | (null) |
+| 34 | pricempire_swap_gg | t | usd | 0 | 0 | (null) |
 
-The dmarket `id=27` is a tell that the sources row was rewritten at some point (not a problem; just background context).
+The dmarket `id=27` is a tell that the sources row was rewritten at some point (not a problem; just background context). The `pricempire_*` rows are NOT independently scheduled — the `pricempire` pseudo-source's job services them all in one bulk HTTP call (ADR 018 §3). `interval_minutes=0` on those rows is a sentinel for "not independently scheduled."
 
 **Insight type distribution** (`SELECT insight_type, COUNT(*) FROM insights GROUP BY 1`):
 
@@ -133,7 +143,7 @@ Only 4 `daily_narrative` rows exist — the 02:00 UTC narrative job has only suc
 
 ---
 
-## 3. Upstream price-source integration (Steam / Skinport / DMarket — see §0)
+## 3. Upstream price-source integration (Steam / Skinport / DMarket / Pricempire)
 
 **Files & endpoints**
 
@@ -142,12 +152,14 @@ Only 4 `daily_narrative` rows exist — the 02:00 UTC narrative job has only suc
 | Steam | `collectors/steam.py:77` | `GET https://steamcommunity.com/market/priceoverview/` with `country=US, currency=1, appid=730, market_hash_name=…` | **Per-item** — one GET per item |
 | Skinport | `collectors/skinport.py:64` | `GET https://api.skinport.com/v1/items?app_id=730&currency=USD` | **Bulk** — one GET returns the full ~6000-item catalog; we filter to our 48 in Python |
 | DMarket | `collectors/dmarket.py:80` | `GET https://api.dmarket.com/exchange/v1/market/items?gameId=a8db&title=<name>&currency=USD&limit=100&orderBy=price&orderDir=asc` | **Per-item** — one GET per item |
+| Pricempire | `collectors/pricempire.py` | `GET https://api.pricempire.com/v4/paid/items/prices?app_id=730&sources=buff163,buff163_buy,csmoney,dmarket,skinport,swapgg` (Bearer auth) | **Bulk-snapshot** — one GET returns the full ~39,400-item CS2 catalog with up to 6 nested provider rows per item. Phase 2a (ADR 018/019). |
 
-**Scheduling** — DB-driven via `collectors/scheduler.py`. At startup, `_load_enabled_sources` (`scheduler.py:147`) reads `SELECT … FROM sources WHERE enabled=TRUE`, then `build_scheduler` (`scheduler.py:476`) registers one APScheduler `interval` job per enabled source. Per-source cadence with current DB values:
+**Scheduling** — DB-driven via `collectors/scheduler.py`. At startup, `_load_enabled_sources` (`scheduler.py:147`) reads `SELECT … FROM sources WHERE enabled=TRUE`, then `build_scheduler` (`scheduler.py:476`) registers one APScheduler `interval` job per enabled source — except the `pricempire_*` sub-provider rows, which are skipped (they're not independently scheduled; the `pricempire` pseudo-source's job services them all). Per-source cadence with current DB values:
 
 - `steam_market`: every **60 minutes**, 5s between items per cycle (50-item ceiling, never reached because watchlist is 48)
 - `skinport`: every **15 minutes**, single bulk fetch (per-item delay = 0)
 - `dmarket`: every **15 minutes**, 3s between items per cycle
+- `pricempire` (pseudo-source): every **15 minutes**, single bulk fetch. Calls `collectors.pricempire.collect_snapshot()` which writes per-provider rows into `pricempire_observations` for all six sub-providers. ADR 018 §3 documents the pseudo-source pattern.
 
 Job defaults are `max_instances=1, coalesce=True, misfire_grace_time=300`. A still-running cycle whose next tick fires is skipped (logged) rather than running concurrently.
 
@@ -163,6 +175,7 @@ Job defaults are `max_instances=1, coalesce=True, misfire_grace_time=300`. A sti
 - Skinport: 1 HTTP call per cycle → all 48 items resolved from the bulk response.
 - Steam: 48 HTTP calls per cycle, serialized with `inter_request_delay=5s` (cycle wall time ≈ 4 minutes).
 - DMarket: 48 HTTP calls per cycle, serialized with `inter_request_delay=3s` (cycle wall time ≈ 2.5 minutes).
+- Pricempire: 1 HTTP call per cycle → all 39,400 CS2 items in one ~64 MB response, six nested provider rows per item where available. Cycle wall time ≈ 4-7s. The collector skips items not in our 48-item watchlist for Phase 2a (Phase 2b adds the long-tail layer).
 
 **Estimated monthly request volume**
 
@@ -171,7 +184,10 @@ Job defaults are `max_instances=1, coalesce=True, misfire_grace_time=300`. A sti
 | Steam | 1 | 48 | 48 | **34,560** |
 | Skinport | 4 | 1 | 4 | **2,880** |
 | DMarket | 4 | 48 | 192 | **138,240** |
-| **Total** | | | **244** | **~175,680** |
+| Pricempire | 4 | 1 | 4 | **2,880** |
+| **Total** | | | **248** | **~178,560** |
+
+Pricempire's Developer-tier budget is 10,000 calls/month; 2,880 used at 15-min cadence = 28.8% of budget, comfortable headroom for the Phase 2b inventory-lookups path.
 
 (The "API budget" framing in the brief is a Pricempire concept; for these three upstreams the relevant budgets are anti-abuse thresholds, not metered quotas.)
 

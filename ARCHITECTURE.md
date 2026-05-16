@@ -53,7 +53,10 @@ A locally-hosted, eventually-public CS2 skin market data aggregation service wit
 
 Layers and their responsibilities:
 
-- **Collectors:** Pure data ingestion. One Python module per source (Steam, Skinport, CSFloat later). Each runs on its own schedule via APScheduler. No business logic; just fetch, normalize, write.
+- **Collectors:** Pure data ingestion. Two families:
+  - **Per-item collectors** (Steam, Skinport, DMarket) — one Python module per source, one HTTP call per item per cycle, written to `prices`. Each runs on its own APScheduler-driven schedule via the `BaseCollector` abstraction. Used for the curated 48-item watchlist.
+  - **Bulk-snapshot collector** (Pricempire, Phase 2a) — one Python module that pulls the entire ~39,400-item CS2 catalog in one HTTP call and writes per-provider rows to a separate `pricempire_observations` hypertable. Does NOT extend `BaseCollector`; ADR 018/019 document why. Provides breadth coverage layered on top of the curated direct-poll collectors.
+  Both families share no business logic; just fetch, normalize, write.
 - **Database (Postgres + TimescaleDB extension):** Source of truth. Hypertables for time-series price data, regular tables for items and metadata.
 - **Analytics jobs:** Cron-triggered Python that computes derived data — moving averages, volume anomalies, price velocity, news-correlated moves. Output to `insights` tables.
 - **FastAPI app:** Read-only API. The bot doesn't touch Postgres directly; it goes through this layer. This is also the future SaaS API surface.
