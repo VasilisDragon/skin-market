@@ -1,8 +1,8 @@
-# skin-market v1 watchlist
+# skin-market watchlist
 #
-# This file is the single source of truth for the items the collectors poll.
-# scripts/seed_watchlist.py reads it and writes to the `items` and `sources`
-# tables.
+# This file is the single source of truth for the items the collectors poll
+# and for tier membership. scripts/seed_watchlist.py reads it and writes to
+# the `items` and `sources` tables.
 #
 # Mix targets (CS2-liquidity-weighted, not equal):
 #   ~25% rifles, ~20% snipers, ~25% knives, ~15% gloves, ~10% pistols, ~5% other
@@ -12,10 +12,49 @@
 # Knives and gloves are always "★"-prefixed in market_hash_name (U+2605).
 # StatTrak™ items use the real U+2122 character.
 #
-# Schema version 1. If field names/structure change incompatibly, bump
-# `schema_version` and update the loader.
+# Two-tier architecture (Phase 2b, ADR 024):
+#   tier: deep   — Polled by all four collectors (Steam, Skinport, DMarket,
+#                  Pricempire). Eligible for drift detection.
+#   tier: broad  — Polled by Skinport and Pricempire only. No drift detection.
+#                  Rate-limit math: Steam at 5s/item × 500 items = 41 min
+#                  (no margin in 60-min cycle); DMarket at 3s/item × 500
+#                  items = 25 min (exceeds 15-min cycle). Bulk-fetch sources
+#                  (Skinport, Pricempire) are free to expand.
+#
+# Per-file schema_version: data/watchlist.yaml and data/pattern_sensitivity.yaml
+# each carry their own schema_version field; the versions are independent and
+# bumped on their own file-level schema changes. NOT lockstep. See ADR 021.
+#
+# Schema version 2 (Phase 2b): added `tier:` field, required on every item.
 
-schema_version: 1
+schema_version: 2
+
+# Broad-tier exclusion list (Phase 2b Step 7.1, ADR 024). Items listed here
+# are NEVER added to the broad tier by scripts/seed_broad_tier.py, even
+# when they would otherwise rank in the top-N by Pricempire rank.
+#
+# Add an item here when:
+#   - Pricempire ranks it high but it's a non-skin (sticker, music kit,
+#     patch) the v1 system doesn't poll meaningfully.
+#   - It's known-problematic (e.g. inconsistent Pricempire wire format
+#     that causes parser issues).
+#   - You explicitly don't want it tracked for any other reason.
+#
+# What does NOT go here:
+#   - Deep-tier composition lives in the items: block below.
+#   - Items dropped from deep tier do NOT need to be excluded — they're
+#     simply removed from items: when they get curated out. They MAY,
+#     however, get re-promoted to broad tier by the seeder if they rank
+#     in the top-N by popularity. Add them to broad_tier_exclusions
+#     ONLY if you want to veto that re-promotion.
+#
+# Hand-maintained. seed_broad_tier.py reads this list and NEVER writes to
+# it. Phase 2b Step 7.1 ships this empty — broad-tier population is
+# deferred to a future phase (the bootstrap mechanism for picking
+# top-N-by-rank from Pricempire's full 39k-item catalog rather than
+# from our 42-item items table has a chicken-and-egg gap that needs
+# its own design pass). ADR 024 documents the deferral.
+broad_tier_exclusions: []
 
 sources:
   - name: steam_market
@@ -40,66 +79,95 @@ sources:
     enabled: true
     denomination: usd
 
-# 50 items total. Re-ordered by item_type so the mix is visually obvious.
+# 42 deep-tier items (Phase 2b Step 7.1, ADR 024).
+#
+# Composition: proposal Tier 1 (15) + Tier 2 (12) + Tier 3 (6) + Tier 5
+# (8) = 41 stated, but 2 items appear in BOTH Tier 1 and Tier 5
+# (Desert Eagle Blaze FN, ★ Butterfly Knife Fade FN), so the unique
+# proposal count is 39. Plus 3 Dopplers re-introduced as phase_based
+# per ADR 021's classifier = 42 total. The proposal-to-implementation
+# reconciliation lives in ADR 024.
+#
+# 28 items from the prior 48-item watchlist were dropped; 22 new items
+# were added. Dropped items' rows in prices / pricempire_observations /
+# observation_log / pricempire_observation_log / pricempire_item_metadata
+# / insights are PRESERVED in the DB (no orphan-cleanup migration). If
+# a dropped item is re-introduced later, the existing items row is
+# reused via seed_watchlist.py's ON CONFLICT DO NOTHING upsert.
+# ADR 024's orphan-row strategy section documents this.
+#
+# Broad tier (~500 items) is deferred — see broad_tier_exclusions:
+# block above for the rationale.
 items:
-  # --- Rifles: 12 ---
-  - { market_hash_name: "AK-47 | Redline (Field-Tested)",     item_type: rifle, weapon_name: "AK-47",   skin_name: "Redline",       wear: "Field-Tested" }
-  - { market_hash_name: "AK-47 | Redline (Minimal Wear)",     item_type: rifle, weapon_name: "AK-47",   skin_name: "Redline",       wear: "Minimal Wear" }
-  - { market_hash_name: "AK-47 | Asiimov (Battle-Scarred)",   item_type: rifle, weapon_name: "AK-47",   skin_name: "Asiimov",       wear: "Battle-Scarred" }
-  - { market_hash_name: "AK-47 | Vulcan (Factory New)",       item_type: rifle, weapon_name: "AK-47",   skin_name: "Vulcan",        wear: "Factory New" }
-  - { market_hash_name: "AK-47 | Fire Serpent (Field-Tested)", item_type: rifle, weapon_name: "AK-47",  skin_name: "Fire Serpent",  wear: "Field-Tested" }
-  - { market_hash_name: "AK-47 | Slate (Field-Tested)",       item_type: rifle, weapon_name: "AK-47",   skin_name: "Slate",         wear: "Field-Tested" }
-  - { market_hash_name: "M4A1-S | Hyper Beast (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Hyper Beast",   wear: "Field-Tested" }
-  - { market_hash_name: "M4A1-S | Cyrex (Field-Tested)",      item_type: rifle, weapon_name: "M4A1-S",  skin_name: "Cyrex",         wear: "Field-Tested" }
-  - { market_hash_name: "M4A1-S | Printstream (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Printstream",   wear: "Field-Tested" }
-  - { market_hash_name: "M4A4 | Howl (Factory New)",          item_type: rifle, weapon_name: "M4A4",    skin_name: "Howl",          wear: "Factory New" }
-  - { market_hash_name: "M4A4 | Asiimov (Field-Tested)",      item_type: rifle, weapon_name: "M4A4",    skin_name: "Asiimov",       wear: "Field-Tested" }
-  # Test fixture: exercises the U+2122 ™ glyph in the market_hash_name.
-  - { market_hash_name: "StatTrak™ AK-47 | Redline (Field-Tested)", item_type: rifle, weapon_name: "AK-47", skin_name: "Redline", wear: "Field-Tested", is_stattrak: true }
+  # ── Rifles: 16 ──
+  # Kept from prior watchlist
+  - {market_hash_name: "AK-47 | Redline (Field-Tested)", item_type: rifle, weapon_name: "AK-47", skin_name: "Redline", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "AK-47 | Vulcan (Factory New)", item_type: rifle, weapon_name: "AK-47", skin_name: "Vulcan", wear: "Factory New", tier: deep}
+  - {market_hash_name: "M4A1-S | Cyrex (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Cyrex", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "M4A1-S | Printstream (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Printstream", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "M4A4 | Howl (Factory New)", item_type: rifle, weapon_name: "M4A4", skin_name: "Howl", wear: "Factory New", tier: deep}
+  # New (proposal Tier 1)
+  - {market_hash_name: "M4A4 | Buzz Kill (Field-Tested)", item_type: rifle, weapon_name: "M4A4", skin_name: "Buzz Kill", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "M4A1-S | Hot Rod (Factory New)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Hot Rod", wear: "Factory New", tier: deep}
+  - {market_hash_name: "AK-47 | Hydroponic (Factory New)", item_type: rifle, weapon_name: "AK-47", skin_name: "Hydroponic", wear: "Factory New", tier: deep}
+  - {market_hash_name: "M4A1-S | Blue Phosphor (Factory New)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Blue Phosphor", wear: "Factory New", tier: deep}
+  - {market_hash_name: "AK-47 | Neon Revolution (Field-Tested)", item_type: rifle, weapon_name: "AK-47", skin_name: "Neon Revolution", wear: "Field-Tested", tier: deep}
+  # New (proposal Tier 2)
+  - {market_hash_name: "AK-47 | Bloodsport (Minimal Wear)", item_type: rifle, weapon_name: "AK-47", skin_name: "Bloodsport", wear: "Minimal Wear", tier: deep}
+  - {market_hash_name: "M4A4 | Poseidon (Factory New)", item_type: rifle, weapon_name: "M4A4", skin_name: "Poseidon", wear: "Factory New", tier: deep}
+  - {market_hash_name: "M4A4 | Neo-Noir (Field-Tested)", item_type: rifle, weapon_name: "M4A4", skin_name: "Neo-Noir", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "AK-47 | Gold Arabesque (Factory New)", item_type: rifle, weapon_name: "AK-47", skin_name: "Gold Arabesque", wear: "Factory New", tier: deep}
+  - {market_hash_name: "M4A1-S | Mecha Industries (Field-Tested)", item_type: rifle, weapon_name: "M4A1-S", skin_name: "Mecha Industries", wear: "Field-Tested", tier: deep}
+  # New (proposal Tier 3 — illiquid premium)
+  - {market_hash_name: "AK-47 | Wild Lotus (Factory New)", item_type: rifle, weapon_name: "AK-47", skin_name: "Wild Lotus", wear: "Factory New", tier: deep}
 
-  # --- Snipers (AWP + SSG): 10 ---
-  - { market_hash_name: "AWP | Asiimov (Field-Tested)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Asiimov",       wear: "Field-Tested" }
-  - { market_hash_name: "AWP | Hyper Beast (Field-Tested)",   item_type: sniper, weapon_name: "AWP",    skin_name: "Hyper Beast",   wear: "Field-Tested" }
-  - { market_hash_name: "AWP | Dragon Lore (Field-Tested)",   item_type: sniper, weapon_name: "AWP",    skin_name: "Dragon Lore",   wear: "Field-Tested" }
-  - { market_hash_name: "AWP | Lightning Strike (Factory New)", item_type: sniper, weapon_name: "AWP",  skin_name: "Lightning Strike", wear: "Factory New" }
-  - { market_hash_name: "AWP | Wildfire (Factory New)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Wildfire",      wear: "Factory New" }
-  - { market_hash_name: "AWP | Neo-Noir (Field-Tested)",      item_type: sniper, weapon_name: "AWP",    skin_name: "Neo-Noir",      wear: "Field-Tested" }
-  - { market_hash_name: "AWP | Containment Breach (Field-Tested)", item_type: sniper, weapon_name: "AWP", skin_name: "Containment Breach", wear: "Field-Tested" }
-  - { market_hash_name: "AWP | Redline (Field-Tested)",       item_type: sniper, weapon_name: "AWP",    skin_name: "Redline",       wear: "Field-Tested" }
-  - { market_hash_name: "SSG 08 | Death Strike (Factory New)", item_type: sniper, weapon_name: "SSG 08", skin_name: "Death Strike", wear: "Factory New" }
-  # Test fixture: exercises the Souvenir prefix.
-  - { market_hash_name: "Souvenir AWP | Dragon Lore (Battle-Scarred)", item_type: sniper, weapon_name: "AWP", skin_name: "Dragon Lore", wear: "Battle-Scarred", is_souvenir: true }
+  # ── Snipers (AWP + SSG): 8 ──
+  # Kept from prior watchlist
+  - {market_hash_name: "SSG 08 | Death Strike (Factory New)", item_type: sniper, weapon_name: "SSG 08", skin_name: "Death Strike", wear: "Factory New", tier: deep}
+  - {market_hash_name: "Souvenir AWP | Dragon Lore (Battle-Scarred)", item_type: sniper, weapon_name: "AWP", skin_name: "Dragon Lore", wear: "Battle-Scarred", is_souvenir: true, tier: deep}
+  # New (proposal Tier 1)
+  - {market_hash_name: "SSG 08 | Dragonfire (Field-Tested)", item_type: sniper, weapon_name: "SSG 08", skin_name: "Dragonfire", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "AWP | Dragon Lore (Factory New)", item_type: sniper, weapon_name: "AWP", skin_name: "Dragon Lore", wear: "Factory New", tier: deep}
+  - {market_hash_name: "AWP | Gungnir (Factory New)", item_type: sniper, weapon_name: "AWP", skin_name: "Gungnir", wear: "Factory New", tier: deep}
+  # New (proposal Tier 2)
+  - {market_hash_name: "AWP | Fade (Factory New)", item_type: sniper, weapon_name: "AWP", skin_name: "Fade", wear: "Factory New", tier: deep}
+  - {market_hash_name: "AWP | Desert Hydra (Factory New)", item_type: sniper, weapon_name: "AWP", skin_name: "Desert Hydra", wear: "Factory New", tier: deep}
+  # New (proposal Tier 3 — illiquid premium / Souvenir Lore FN)
+  - {market_hash_name: "Souvenir AWP | Dragon Lore (Factory New)", item_type: sniper, weapon_name: "AWP", skin_name: "Dragon Lore", wear: "Factory New", is_souvenir: true, tier: deep}
 
-  # --- Knives: 12 (all ★-prefixed, exercises U+2605) ---
-  - { market_hash_name: "★ Karambit | Doppler (Factory New)",          item_type: knife, weapon_name: "Karambit",         skin_name: "Doppler",      wear: "Factory New" }
-  - { market_hash_name: "★ Karambit | Fade (Factory New)",             item_type: knife, weapon_name: "Karambit",         skin_name: "Fade",         wear: "Factory New" }
-  - { market_hash_name: "★ Karambit | Tiger Tooth (Factory New)",      item_type: knife, weapon_name: "Karambit",         skin_name: "Tiger Tooth",  wear: "Factory New" }
-  - { market_hash_name: "★ Karambit | Marble Fade (Factory New)",      item_type: knife, weapon_name: "Karambit",         skin_name: "Marble Fade",  wear: "Factory New" }
-  - { market_hash_name: "★ M9 Bayonet | Doppler (Factory New)",        item_type: knife, weapon_name: "M9 Bayonet",       skin_name: "Doppler",      wear: "Factory New" }
-  - { market_hash_name: "★ M9 Bayonet | Crimson Web (Field-Tested)",   item_type: knife, weapon_name: "M9 Bayonet",       skin_name: "Crimson Web",  wear: "Field-Tested" }
-  - { market_hash_name: "★ Butterfly Knife | Tiger Tooth (Factory New)", item_type: knife, weapon_name: "Butterfly Knife", skin_name: "Tiger Tooth", wear: "Factory New" }
-  - { market_hash_name: "★ Butterfly Knife | Fade (Factory New)",      item_type: knife, weapon_name: "Butterfly Knife",  skin_name: "Fade",         wear: "Factory New" }
-  - { market_hash_name: "★ Butterfly Knife | Marble Fade (Factory New)", item_type: knife, weapon_name: "Butterfly Knife", skin_name: "Marble Fade", wear: "Factory New" }
-  - { market_hash_name: "★ Bayonet | Marble Fade (Factory New)",       item_type: knife, weapon_name: "Bayonet",          skin_name: "Marble Fade",  wear: "Factory New" }
-  - { market_hash_name: "★ Flip Knife | Doppler (Factory New)",        item_type: knife, weapon_name: "Flip Knife",       skin_name: "Doppler",      wear: "Factory New" }
-  - { market_hash_name: "★ Huntsman Knife | Fade (Factory New)",       item_type: knife, weapon_name: "Huntsman Knife",   skin_name: "Fade",         wear: "Factory New" }
+  # ── Knives: 8 (all ★-prefixed, exercises U+2605) ──
+  # 3 Dopplers re-introduced (Phase 2b: classifier handles drift via
+  # pattern_skip — ADR 021). Despite the proposal originally dropping
+  # them, they stay in deep tier because the classifier mechanism
+  # addresses the noise concern.
+  - {market_hash_name: "★ Karambit | Doppler (Factory New)", item_type: knife, weapon_name: "Karambit", skin_name: "Doppler", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ M9 Bayonet | Doppler (Factory New)", item_type: knife, weapon_name: "M9 Bayonet", skin_name: "Doppler", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ Flip Knife | Doppler (Factory New)", item_type: knife, weapon_name: "Flip Knife", skin_name: "Doppler", wear: "Factory New", tier: deep}
+  # Kept from prior watchlist (T3 + T5)
+  - {market_hash_name: "★ Karambit | Fade (Factory New)", item_type: knife, weapon_name: "Karambit", skin_name: "Fade", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ Karambit | Tiger Tooth (Factory New)", item_type: knife, weapon_name: "Karambit", skin_name: "Tiger Tooth", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ Karambit | Marble Fade (Factory New)", item_type: knife, weapon_name: "Karambit", skin_name: "Marble Fade", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ Butterfly Knife | Fade (Factory New)", item_type: knife, weapon_name: "Butterfly Knife", skin_name: "Fade", wear: "Factory New", tier: deep}
+  - {market_hash_name: "★ Huntsman Knife | Fade (Factory New)", item_type: knife, weapon_name: "Huntsman Knife", skin_name: "Fade", wear: "Factory New", tier: deep}
 
-  # --- Gloves: 7 (all ★-prefixed) ---
-  - { market_hash_name: "★ Sport Gloves | Pandora's Box (Field-Tested)",    item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Pandora's Box",  wear: "Field-Tested" }
-  - { market_hash_name: "★ Sport Gloves | Vice (Field-Tested)",             item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Vice",           wear: "Field-Tested" }
-  - { market_hash_name: "★ Sport Gloves | Hedge Maze (Field-Tested)",       item_type: glove, weapon_name: "Sport Gloves",      skin_name: "Hedge Maze",     wear: "Field-Tested" }
-  - { market_hash_name: "★ Specialist Gloves | Crimson Kimono (Field-Tested)", item_type: glove, weapon_name: "Specialist Gloves", skin_name: "Crimson Kimono", wear: "Field-Tested" }
-  - { market_hash_name: "★ Driver Gloves | King Snake (Field-Tested)",      item_type: glove, weapon_name: "Driver Gloves",     skin_name: "King Snake",     wear: "Field-Tested" }
-  - { market_hash_name: "★ Hand Wraps | Cobalt Skulls (Field-Tested)",      item_type: glove, weapon_name: "Hand Wraps",        skin_name: "Cobalt Skulls",  wear: "Field-Tested" }
-  - { market_hash_name: "★ Moto Gloves | Spearmint (Field-Tested)",         item_type: glove, weapon_name: "Moto Gloves",       skin_name: "Spearmint",      wear: "Field-Tested" }
+  # ── Gloves: 3 (all ★-prefixed) ──
+  # Kept from prior watchlist (Tier 1 + Tier 3)
+  - {market_hash_name: "★ Sport Gloves | Pandora's Box (Field-Tested)", item_type: glove, weapon_name: "Sport Gloves", skin_name: "Pandora's Box", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "★ Sport Gloves | Hedge Maze (Field-Tested)", item_type: glove, weapon_name: "Sport Gloves", skin_name: "Hedge Maze", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "★ Sport Gloves | Vice (Field-Tested)", item_type: glove, weapon_name: "Sport Gloves", skin_name: "Vice", wear: "Field-Tested", tier: deep}
 
-  # --- Pistols: 5 ---
-  - { market_hash_name: "Glock-18 | Fade (Factory New)",            item_type: pistol, weapon_name: "Glock-18",     skin_name: "Fade",            wear: "Factory New" }
-  - { market_hash_name: "Desert Eagle | Blaze (Factory New)",       item_type: pistol, weapon_name: "Desert Eagle", skin_name: "Blaze",           wear: "Factory New" }
-  - { market_hash_name: "Desert Eagle | Printstream (Factory New)", item_type: pistol, weapon_name: "Desert Eagle", skin_name: "Printstream",     wear: "Factory New" }
-  - { market_hash_name: "USP-S | Kill Confirmed (Field-Tested)",    item_type: pistol, weapon_name: "USP-S",        skin_name: "Kill Confirmed",  wear: "Field-Tested" }
-  - { market_hash_name: "USP-S | Neo-Noir (Factory New)",           item_type: pistol, weapon_name: "USP-S",        skin_name: "Neo-Noir",        wear: "Factory New" }
+  # ── Pistols: 3 ──
+  # Kept from prior watchlist (Tier 1 + Tier 5)
+  - {market_hash_name: "Desert Eagle | Blaze (Factory New)", item_type: pistol, weapon_name: "Desert Eagle", skin_name: "Blaze", wear: "Factory New", tier: deep}
+  # New (proposal Tier 2)
+  - {market_hash_name: "USP-S | Orion (Factory New)", item_type: pistol, weapon_name: "USP-S", skin_name: "Orion", wear: "Factory New", tier: deep}
+  - {market_hash_name: "USP-S | Neo-Noir (Field-Tested)", item_type: pistol, weapon_name: "USP-S", skin_name: "Neo-Noir", wear: "Field-Tested", tier: deep}
 
-  # --- Other (SMGs): 2 ---
-  - { market_hash_name: "P90 | Death by Kitty (Field-Tested)",      item_type: smg,    weapon_name: "P90",          skin_name: "Death by Kitty",  wear: "Field-Tested" }
-  - { market_hash_name: "MP9 | Hot Rod (Factory New)",              item_type: smg,    weapon_name: "MP9",          skin_name: "Hot Rod",         wear: "Factory New" }
+  # ── Other (SMGs): 4 ──
+  # Kept from prior watchlist (Tier 5)
+  - {market_hash_name: "MP9 | Hot Rod (Factory New)", item_type: smg, weapon_name: "MP9", skin_name: "Hot Rod", wear: "Factory New", tier: deep}
+  # New (proposal Tier 1)
+  - {market_hash_name: "P90 | Asiimov (Field-Tested)", item_type: smg, weapon_name: "P90", skin_name: "Asiimov", wear: "Field-Tested", tier: deep}
+  # New (proposal Tier 2)
+  - {market_hash_name: "MP7 | Bloodsport (Field-Tested)", item_type: smg, weapon_name: "MP7", skin_name: "Bloodsport", wear: "Field-Tested", tier: deep}
+  - {market_hash_name: "MP9 | Starlight Protector (Field-Tested)", item_type: smg, weapon_name: "MP9", skin_name: "Starlight Protector", wear: "Field-Tested", tier: deep}
