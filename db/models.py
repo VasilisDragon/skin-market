@@ -204,6 +204,46 @@ class PricempireObservation(Base):
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
+class PricempireItemMetadata(Base):
+    """Per-item slow-changing metadata Pricempire returns alongside
+    prices: rank, liquidity, marketcap, Steam-side trade volumes.
+
+    Phase 2a follow-up to ADR 018/019; ADR 020 documents the
+    side-effect-of-price-ingest pattern. Lifted out of
+    ``pricempire_observations.raw_response`` JSONB into typed columns
+    so they're queryable / indexable. The dedup gate compares the
+    full metadata tuple against the most-recent existing row; most
+    cycles write zero rows because rank/liquidity/etc. shift slowly.
+
+    ``steam_last_24h`` is reserved for a future Pricempire ``/metas``
+    cron — the Phase 2a collector reads only ``/prices``, which does
+    not carry that field, so the column is always NULL today.
+    """
+
+    __tablename__ = "pricempire_item_metadata"
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), primary_key=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        nullable=False,
+        server_default=func.now(),
+    )
+    rank: Mapped[int | None] = mapped_column(Integer)
+    liquidity: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    marketcap: Mapped[int | None] = mapped_column(BigInteger)
+    count: Mapped[int | None] = mapped_column(Integer)
+    trades_7d: Mapped[int | None] = mapped_column(Integer)
+    trades_30d: Mapped[int | None] = mapped_column(Integer)
+    trades_90d: Mapped[int | None] = mapped_column(Integer)
+    steam_last_24h: Mapped[int | None] = mapped_column(Integer)
+    steam_last_7d: Mapped[int | None] = mapped_column(Integer)
+    steam_last_30d: Mapped[int | None] = mapped_column(Integer)
+    steam_last_90d: Mapped[int | None] = mapped_column(Integer)
+
+
 class Insight(Base):
     __tablename__ = "insights"
 
