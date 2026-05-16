@@ -141,7 +141,7 @@ def test_migration_roundtrip_then_seed() -> None:
         # Migration 0010: compression policies on both Pricempire
         # hypertables. compression_enabled and the segment_by config
         # both pin the migration's effects.
-        for hypertable, expected_segmentby in (
+        for hypertable, _expected_segmentby in (
             ("pricempire_observations", "item_id, source_id"),
             ("pricempire_item_metadata", "item_id"),
         ):

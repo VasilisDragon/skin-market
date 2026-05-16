@@ -30,12 +30,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from db.connection import get_engine
-from db.models import Item, PricempireItemMetadata
 from scripts import seed_broad_tier
 from scripts.seed_broad_tier import (
     BroadTierCandidate,
@@ -45,9 +44,13 @@ from scripts.seed_broad_tier import (
     detect_flags,
     diff_against_current,
     load_exclusions,
-    main as seed_main,
     partition_yaml_items,
     print_summary,
+)
+from scripts.seed_broad_tier import (
+    main as seed_main,
+)
+from scripts.seed_broad_tier import (
     run as seed_run,
 )
 
@@ -97,8 +100,18 @@ sources:
   - { name: skinport, base_url: https://example, rate_limit_per_minute: 60, enabled: true }
 
 items:
-  - { market_hash_name: "AK-47 | Redline (Field-Tested)", item_type: rifle, weapon_name: "AK-47", skin_name: "Redline", wear: "Field-Tested", tier: deep }
-  - { market_hash_name: "M4A4 | Howl (Factory New)", item_type: rifle, weapon_name: "M4A4", skin_name: "Howl", wear: "Factory New", tier: deep }
+  - market_hash_name: "AK-47 | Redline (Field-Tested)"
+    item_type: rifle
+    weapon_name: "AK-47"
+    skin_name: "Redline"
+    wear: "Field-Tested"
+    tier: deep
+  - market_hash_name: "M4A4 | Howl (Factory New)"
+    item_type: rifle
+    weapon_name: "M4A4"
+    skin_name: "Howl"
+    wear: "Factory New"
+    tier: deep
   - { market_hash_name: "Currently Broad A (Field-Tested)", tier: broad }
   - { market_hash_name: "Currently Broad B (Minimal Wear)", tier: broad }
 """

@@ -291,10 +291,11 @@ def decide_verdict(
     drift = (
         (curated_price - pricempire_price) / pricempire_price
     ).quantize(_DRIFT_QUANTUM)
-    if abs(drift) > effective_threshold:
-        verdict = VERDICT_DRIFT_ALERT
-    else:
-        verdict = VERDICT_NO_DRIFT
+    verdict = (
+        VERDICT_DRIFT_ALERT
+        if abs(drift) > effective_threshold
+        else VERDICT_NO_DRIFT
+    )
     return VerdictResult(
         verdict=verdict,
         drift=drift,

@@ -57,14 +57,13 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import FrameType
 
 from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from pathlib import Path
 
 from collectors.base import (
     DECLINED,
@@ -80,7 +79,7 @@ from collectors.dmarket import DMarketCollector
 from collectors.skinport import SkinportCollector
 from collectors.steam import SteamCollector
 from db.connection import get_engine
-from db.models import Item, Source
+from db.models import Source
 from db.naming import normalize_name
 from scripts.seed_watchlist import DEFAULT_WATCHLIST_PATH, load_watchlist
 

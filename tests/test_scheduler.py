@@ -965,11 +965,11 @@ class TestPricempirePathBypassesLoadWatchlist:
     def test_pricempire_uses_load_item_index(self) -> None:
         """Belt-and-braces: confirm Pricempire's actual item-loading
         helper is the items-table reader, NOT a YAML reader."""
-        from collectors.pricempire import _load_item_index
-
         # _load_item_index is the items-table reader; signature
         # takes a Session and returns the {canonical: item_id} map.
         import inspect
+
+        from collectors.pricempire import _load_item_index
 
         params = list(inspect.signature(_load_item_index).parameters)
         assert params == ["session"], (

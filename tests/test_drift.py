@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from analytics import drift
 from analytics.drift import (
+    _MEANINGFUL_PAIRS,
     BASELINE_DRIFT_THRESHOLD,
     STALE_CURATED_MINUTES,
     STALE_PRICEMPIRE_MINUTES,
@@ -40,7 +41,6 @@ from analytics.drift import (
     VERDICT_STALE_BOTH,
     VERDICT_STALE_CURATED,
     VERDICT_STALE_PRICEMPIRE,
-    _MEANINGFUL_PAIRS,
     compute_and_store,
     decide_verdict,
 )
@@ -862,7 +862,7 @@ class TestModuleConstants:
         end-to-end. Future tunes to this constant should preserve the
         Decimal type."""
         assert isinstance(BASELINE_DRIFT_THRESHOLD, Decimal)
-        assert BASELINE_DRIFT_THRESHOLD == Decimal("0.10")
+        assert Decimal("0.10") == BASELINE_DRIFT_THRESHOLD
 
     def test_stale_thresholds_match_cadence(self) -> None:
         """Both stale thresholds at 30 min; matches the detector's

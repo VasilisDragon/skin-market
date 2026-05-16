@@ -492,9 +492,8 @@ class TestPhase2bIterateObjectsLogic:
         collector = DMarketCollector()
         with caplog.at_level(
             _logging.WARNING, logger="collectors.dmarket"
-        ):
-            with collector.make_client() as client:
-                obs = collector.collect_one(client, self._CANONICAL)
+        ), collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
         assert obs is None
         # New log message includes "no accept-set match" + ADR pointer.
         msgs = [r.getMessage() for r in caplog.records]

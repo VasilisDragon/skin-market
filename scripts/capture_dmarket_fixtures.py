@@ -62,7 +62,6 @@ from collectors.dmarket import (
 )
 from db.naming import normalize_name, slugify
 
-
 _FAILING_ITEMS: list[str] = [
     "Desert Eagle | Blaze (Factory New)",
     "M4A1-S | Cyrex (Field-Tested)",

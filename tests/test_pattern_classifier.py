@@ -27,7 +27,6 @@ from analytics.pattern_classifier import (
     parse_pattern_yaml,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────
@@ -115,7 +114,11 @@ class TestParsePatternYaml:
     def test_rejects_wrong_schema_version(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
-            "schema_version: 2\nitems:\n  - { market_hash_name: \"X (FN)\", classification: phase_based }\n",
+            """\
+schema_version: 2
+items:
+  - { market_hash_name: "X (FN)", classification: phase_based }
+""",
         )
         with pytest.raises(ValueError, match="schema_version is 2"):
             parse_pattern_yaml(path)
@@ -127,7 +130,11 @@ class TestParsePatternYaml:
         without anyone noticing."""
         path = _write_yaml(
             tmp_path,
-            "schema_version: 1\nitems:\n  - { market_hash_name: \"X (FN)\", classification: foobar }\n",
+            """\
+schema_version: 1
+items:
+  - { market_hash_name: "X (FN)", classification: foobar }
+""",
         )
         with pytest.raises(ValueError) as exc_info:
             parse_pattern_yaml(path)
@@ -142,7 +149,11 @@ class TestParsePatternYaml:
     def test_rejects_explicit_pattern_agnostic(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
-            "schema_version: 1\nitems:\n  - { market_hash_name: \"X (FN)\", classification: pattern_agnostic }\n",
+            """\
+schema_version: 1
+items:
+  - { market_hash_name: "X (FN)", classification: pattern_agnostic }
+""",
         )
         with pytest.raises(
             ValueError, match="implicit default; remove this entry"
@@ -152,9 +163,12 @@ class TestParsePatternYaml:
     def test_rejects_duplicate_market_hash_name(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
-            "schema_version: 1\nitems:\n"
-            "  - { market_hash_name: \"X (FN)\", classification: phase_based }\n"
-            "  - { market_hash_name: \"X (FN)\", classification: pattern_seed }\n",
+            """\
+schema_version: 1
+items:
+  - { market_hash_name: "X (FN)", classification: phase_based }
+  - { market_hash_name: "X (FN)", classification: pattern_seed }
+""",
         )
         with pytest.raises(ValueError, match="duplicate market_hash_name"):
             parse_pattern_yaml(path)
@@ -170,7 +184,11 @@ class TestParsePatternYaml:
         ):
             path = _write_yaml(
                 tmp_path,
-                f"schema_version: 1\nitems:\n  - {{ market_hash_name: \"X (FN)\", classification: {category} }}\n",
+                f"""\
+schema_version: 1
+items:
+  - {{ market_hash_name: "X (FN)", classification: {category} }}
+""",
                 name=f"pattern_{category}.yaml",
             )
             entries = parse_pattern_yaml(path)
@@ -179,7 +197,13 @@ class TestParsePatternYaml:
     def test_rejects_non_numeric_multiplier(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
-            "schema_version: 1\nitems:\n  - { market_hash_name: \"X (FN)\", classification: pattern_seed, drift_threshold_multiplier: \"two\" }\n",
+            """\
+schema_version: 1
+items:
+  - market_hash_name: "X (FN)"
+    classification: pattern_seed
+    drift_threshold_multiplier: "two"
+""",
         )
         with pytest.raises(ValueError, match="drift_threshold_multiplier"):
             parse_pattern_yaml(path)
@@ -187,7 +211,13 @@ class TestParsePatternYaml:
     def test_rejects_negative_multiplier(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
-            "schema_version: 1\nitems:\n  - { market_hash_name: \"X (FN)\", classification: pattern_seed, drift_threshold_multiplier: -0.5 }\n",
+            """\
+schema_version: 1
+items:
+  - market_hash_name: "X (FN)"
+    classification: pattern_seed
+    drift_threshold_multiplier: -0.5
+""",
         )
         with pytest.raises(ValueError, match="must be positive"):
             parse_pattern_yaml(path)
