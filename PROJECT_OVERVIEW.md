@@ -84,7 +84,7 @@ skinmarket-analytics   Up 2 days
 
 Postgres password rotation is a known footgun, called out in the compose file header — `POSTGRES_PASSWORD` is only read on first init of the data volume; later changes require `ALTER USER` inside the running container.
 
-**Migrations** — Alembic head is `0006`. Migrations checked into `db/migrations/versions/`:
+**Migrations** — Alembic head is `0007`. Migrations checked into `db/migrations/versions/`:
 
 1. `0001_initial_schema.py`
 2. `0002_phase5_schema_additions.py`
@@ -92,8 +92,9 @@ Postgres password rotation is a known footgun, called out in the compose file he
 4. `0004_observation_log.py` — added `observation_log` table
 5. `0005_pricempire_observations.py` — Phase 2a: new hypertable for Pricempire ingest, plus 7 new `sources` rows (6 sub-providers + 1 `pricempire` pseudo-source). ADR 018/019.
 6. `0006_enable_pricempire_subproviders.py` — flips the six `pricempire_*` rows from `enabled=FALSE` to `enabled=TRUE` once the collector goes live.
+7. `0007_pricempire_item_metadata.py` — Phase 2a follow-up: new hypertable for per-item slow-changing metadata (rank, liquidity, marketcap, trade counters) extracted from each Pricempire cycle's wire response. ADR 020.
 
-**Tables (all in `public`)** — 7 total, 6 application tables + `alembic_version`:
+**Tables (all in `public`)** — 8 total, 7 application tables + `alembic_version`:
 
 | Table | Cols (PK / important) | Rows now | Indexes / notes |
 |---|---|---|---|
@@ -101,9 +102,10 @@ Postgres password rotation is a known footgun, called out in the compose file he
 | `sources` | `id SERIAL PK`, `name TEXT UNIQUE`, `base_url`, `rate_limit_per_minute`, `enabled BOOL`, `denomination TEXT`, `interval_minutes`, `per_item_delay_seconds` | **10** | `sources_name_key`. Now: 3 direct collectors + 6 Pricempire sub-providers + 1 `pricempire` pseudo-source. |
 | `prices` | composite PK `(item_id, source_id, timestamp)`; `price NUMERIC(12,2)`, `volume INT`, `currency VARCHAR(8) DEFAULT 'USD'`, `raw_response JSONB` | **5,564** | Indexes: `prices_pkey`, `prices_timestamp_idx (timestamp DESC)`. **TimescaleDB hypertable, 8 chunks.** |
 | `pricempire_observations` | composite PK `(item_id, source_id, timestamp)`; `price NUMERIC(12,2)`, `count INT`, `updated_at TIMESTAMPTZ`, `last_checked_at TIMESTAMPTZ`, `currency VARCHAR(8) DEFAULT 'USD'`, `raw_response JSONB` | **281** (initial cycle) | **TimescaleDB hypertable, 7-day chunks**. Three timestamps live here on purpose (ADR 019 §1): `timestamp` = local write clock; `last_checked_at` = Pricempire's poll claim; `updated_at` = Pricempire's price-moved claim. No compression policy in Phase 2a. |
+| `pricempire_item_metadata` | composite PK `(item_id, timestamp)`; `rank INT`, `liquidity NUMERIC(6,2)`, `marketcap BIGINT`, `count INT`, `trades_7d INT`, `trades_30d INT`, `trades_90d INT`, `steam_last_24h INT`, `steam_last_7d INT`, `steam_last_30d INT`, `steam_last_90d INT` (all nullable) | **48** (initial cycle) | **TimescaleDB hypertable, 7-day chunks**. Per-item slow-changing metadata extracted as a side effect of the Pricempire price cycle. Dedup gate suppresses most cycles' writes; steady-state row volume ~1-5 per item per day. `steam_last_24h` is reserved for a future `/metas` cron (always NULL today). ADR 020. |
 | `observation_log` | composite PK `(item_id, source_id)`, `last_observed_at TIMESTAMPTZ` | **126** | Phase 7a addition (migration 0004). Upserted unconditionally on every successful direct-collector poll; **decoupled from dedup-on-write** of `prices`. Pricempire does NOT write to this table in Phase 2a. |
 | `insights` | `id BIGSERIAL`, `item_id`, `computed_at`, `insight_type TEXT`, `value NUMERIC`, `text_value TEXT`, `meta_info JSONB` | **34,270** | `ix_insights_item_type_computed_desc(item_id, insight_type, computed_at DESC)` |
-| `alembic_version` | `version_num` | 1 row (`0006`) | — |
+| `alembic_version` | `version_num` | 1 row (`0007`) | — |
 
 **Sources currently configured**:
 
