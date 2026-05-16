@@ -165,6 +165,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Phase 2b Step 5 feature flag (ADR 022). Defaults to "" (falsy)
+      # so a stale .env doesn't accidentally turn the drift detector
+      # on before the Step 7 re-seed gate. Set to "true" in .env to
+      # enable; analytics/scheduler.py's run_drift_cycle no-ops when
+      # this is empty or any non-truthy value.
+      DRIFT_DETECTION_ENABLED: ${DRIFT_DETECTION_ENABLED:-}
       # Narrative job calls a local Ollama instance. The Spark host runs
       # Ollama at 127.0.0.1:11434; host.docker.internal maps to the host
       # gateway via the extra_hosts entry below. See the bot service
