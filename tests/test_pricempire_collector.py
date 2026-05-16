@@ -41,7 +41,7 @@ from collectors.pricempire import (
     collect_snapshot,
 )
 from db.connection import get_engine
-from db.models import Item, PricempireObservation
+from db.models import Item, PricempireItemMetadata, PricempireObservation
 
 
 def _db_reachable() -> bool:
@@ -100,6 +100,13 @@ def sentinel_item():
                 {"i": existing},
             )
             session.execute(
+                text(
+                    "DELETE FROM pricempire_item_metadata "
+                    "WHERE item_id = :i"
+                ),
+                {"i": existing},
+            )
+            session.execute(
                 text("DELETE FROM items WHERE id = :i"), {"i": existing}
             )
 
@@ -130,6 +137,13 @@ def sentinel_item():
         session.execute(
             text(
                 "DELETE FROM pricempire_observations "
+                "WHERE item_id = :i"
+            ),
+            {"i": item_id},
+        )
+        session.execute(
+            text(
+                "DELETE FROM pricempire_item_metadata "
                 "WHERE item_id = :i"
             ),
             {"i": item_id},
@@ -618,6 +632,270 @@ class TestCollectSnapshot:
         assert any(
             "500" in r.getMessage() for r in caplog.records
         ), "expected a warning logging the 500 status"
+
+
+# ────────────────────────────────────────────────────────────────────
+# Item-metadata extraction (Phase 2a follow-up, ADR 020)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _wire_item_full_metadata(
+    name: str,
+    *,
+    rank: object = "554",
+    liquidity: object = 62.802508437142585,
+    marketcap: object = "215473980",
+    count: object = "9060",
+    trades_7d: object = "29",
+    trades_30d: object = "42",
+    trades_90d: object = "29",
+    steam_last_7d: object = "64",
+    steam_last_30d: object = "757",
+    steam_last_90d: object = "1691",
+    prices: list[dict] | None = None,
+) -> dict:
+    """A wire item with the full metadata field set the collector
+    extracts. Defaults mirror the Glock-18 | Gamma Doppler (FN)
+    sample in ``docs/pre-phase2-pricempire-samples/filtered-sources.json``
+    — all integer-valued metadata as numeric strings, ``liquidity`` as
+    a native float. Override individual fields to exercise the
+    defensive parser. ``steam_last_24h`` is intentionally absent (per
+    ADR 020: ``/prices`` doesn't carry it; only ``/metas`` does).
+    """
+    return {
+        "market_hash_name": name,
+        "rank": rank,
+        "liquidity": liquidity,
+        "marketcap": marketcap,
+        "count": count,
+        "trades_7d": trades_7d,
+        "trades_30d": trades_30d,
+        "trades_90d": trades_90d,
+        "steam_last_7d": steam_last_7d,
+        "steam_last_30d": steam_last_30d,
+        "steam_last_90d": steam_last_90d,
+        "prices": prices
+        or [
+            _wire_price_row(provider_key="buff163", price_cents=17316)
+        ],
+    }
+
+
+@_db_required
+class TestMetadataExtraction:
+    """Per-item metadata writes to pricempire_item_metadata (ADR 020).
+
+    Five test cases mirroring the structure of TestCollectSnapshot:
+
+    1. Full extraction from a realistic wire item.
+    2. Dedup gate suppresses an identical second cycle.
+    3. Null fields stay null (defensive parsing handles missing).
+    4. Numeric strings + native numbers are both coerced cleanly.
+    5. A changed field cycles writes a new row.
+    """
+
+    _MOCK_URL = (
+        f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+        f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
+        f"%2Cdmarket%2Cskinport%2Cswapgg"
+    )
+
+    def _mock(self, httpx_mock, items: list[dict]) -> None:
+        httpx_mock.add_response(
+            url=self._MOCK_URL,
+            content=_make_response(items),
+            headers={"Content-Type": "application/json"},
+        )
+
+    def test_full_extraction_from_realistic_wire_item(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        self._mock(
+            httpx_mock,
+            [_wire_item_full_metadata(_SENTINEL_NAME)],
+        )
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            row = session.execute(
+                select(
+                    PricempireItemMetadata.rank,
+                    PricempireItemMetadata.liquidity,
+                    PricempireItemMetadata.marketcap,
+                    PricempireItemMetadata.count,
+                    PricempireItemMetadata.trades_7d,
+                    PricempireItemMetadata.trades_30d,
+                    PricempireItemMetadata.trades_90d,
+                    PricempireItemMetadata.steam_last_24h,
+                    PricempireItemMetadata.steam_last_7d,
+                    PricempireItemMetadata.steam_last_30d,
+                    PricempireItemMetadata.steam_last_90d,
+                ).where(
+                    PricempireItemMetadata.item_id == sentinel_item
+                )
+            ).first()
+        assert row is not None
+        # Numeric-string fields all become typed ints.
+        assert row.rank == 554
+        assert row.marketcap == 215473980
+        assert row.count == 9060
+        assert row.trades_7d == 29
+        assert row.trades_30d == 42
+        assert row.trades_90d == 29
+        assert row.steam_last_7d == 64
+        assert row.steam_last_30d == 757
+        assert row.steam_last_90d == 1691
+        # Native float quantizes to NUMERIC(6,2).
+        assert row.liquidity == Decimal("62.80")
+        # /prices doesn't carry steam_last_24h — always NULL today.
+        assert row.steam_last_24h is None
+
+    def test_dedup_gate_skips_identical_cycle(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Two cycles with identical metadata yield one row, not two.
+        The dedup tuple comparison is the load-bearing piece — without
+        it, every cycle would write 48 rows for nothing."""
+        for _ in range(2):
+            self._mock(
+                httpx_mock,
+                [_wire_item_full_metadata(_SENTINEL_NAME)],
+            )
+        collect_snapshot()
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            rows = session.execute(
+                select(PricempireItemMetadata).where(
+                    PricempireItemMetadata.item_id == sentinel_item
+                )
+            ).all()
+        assert len(rows) == 1, (
+            f"dedup should keep this at 1 row; got {len(rows)}"
+        )
+
+    def test_null_fields_persist_as_null(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Pricempire returns null for several fields on low-liquidity
+        items (e.g. ``trades_*`` are commonly null for Souvenir
+        Dragon Lores). The parser must accept None without crashing
+        and persist NULL — not zero, not Decimal('0')."""
+        self._mock(
+            httpx_mock,
+            [
+                _wire_item_full_metadata(
+                    _SENTINEL_NAME,
+                    rank=None,
+                    liquidity=None,
+                    marketcap=None,
+                    trades_7d=None,
+                    trades_30d=None,
+                    trades_90d=None,
+                )
+            ],
+        )
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            row = session.execute(
+                select(
+                    PricempireItemMetadata.rank,
+                    PricempireItemMetadata.liquidity,
+                    PricempireItemMetadata.marketcap,
+                    PricempireItemMetadata.trades_7d,
+                    PricempireItemMetadata.trades_30d,
+                    PricempireItemMetadata.trades_90d,
+                    PricempireItemMetadata.count,  # NOT nulled; sanity
+                ).where(
+                    PricempireItemMetadata.item_id == sentinel_item
+                )
+            ).first()
+        assert row is not None
+        assert row.rank is None
+        assert row.liquidity is None
+        assert row.marketcap is None
+        assert row.trades_7d is None
+        assert row.trades_30d is None
+        assert row.trades_90d is None
+        # Non-nulled control: count stays populated.
+        assert row.count == 9060
+
+    def test_numeric_string_and_native_number_both_coerced(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Pricempire's wire types are inconsistent across endpoints:
+        /prices delivers integers as numeric strings, /metas as native
+        numbers. The collector reads /prices today, but the parser is
+        tolerant of both forms for forward-compat with a metas-cron."""
+        self._mock(
+            httpx_mock,
+            [
+                _wire_item_full_metadata(
+                    _SENTINEL_NAME,
+                    rank="554",          # numeric string (/prices form)
+                    marketcap=215473980, # native int (/metas form)
+                    trades_7d=29,        # native int (/metas form)
+                    count="9060",        # numeric string (/prices form)
+                    liquidity=75,        # native int as liquidity (/metas form)
+                )
+            ],
+        )
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            row = session.execute(
+                select(
+                    PricempireItemMetadata.rank,
+                    PricempireItemMetadata.marketcap,
+                    PricempireItemMetadata.trades_7d,
+                    PricempireItemMetadata.count,
+                    PricempireItemMetadata.liquidity,
+                ).where(
+                    PricempireItemMetadata.item_id == sentinel_item
+                )
+            ).first()
+        assert row is not None
+        assert row.rank == 554
+        assert row.marketcap == 215473980
+        assert row.trades_7d == 29
+        assert row.count == 9060
+        # Liquidity 75 (int) → Decimal('75.00') after quantize.
+        assert row.liquidity == Decimal("75.00")
+
+    def test_changed_field_writes_new_row(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """A second cycle where any single field differs writes a
+        second row — the dedup gate must catch only *identical*
+        tuples, not approximately-equal ones."""
+        self._mock(
+            httpx_mock,
+            [_wire_item_full_metadata(_SENTINEL_NAME, rank="554")],
+        )
+        collect_snapshot()
+        # Cycle 2: rank shifts one position. Everything else same.
+        self._mock(
+            httpx_mock,
+            [_wire_item_full_metadata(_SENTINEL_NAME, rank="555")],
+        )
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            rows = session.execute(
+                select(
+                    PricempireItemMetadata.rank
+                ).where(
+                    PricempireItemMetadata.item_id == sentinel_item
+                ).order_by(PricempireItemMetadata.timestamp)
+            ).all()
+        ranks = [r.rank for r in rows]
+        assert ranks == [554, 555]
 
 
 # Reference unused import to keep ruff happy if a later edit removes

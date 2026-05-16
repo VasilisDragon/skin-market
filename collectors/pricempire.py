@@ -75,7 +75,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from db.connection import get_engine
-from db.models import Item, PricempireObservation, Source
+from db.models import (
+    Item,
+    PricempireItemMetadata,
+    PricempireObservation,
+    Source,
+)
 from db.naming import normalize_name
 
 logger = logging.getLogger(__name__)
@@ -178,6 +183,10 @@ def collect_snapshot() -> None:
     rows_unchanged = 0
     rows_unknown_provider = 0
     unknown_providers_seen: set[str] = set()
+    # Metadata-extraction counters (ADR 020). Metadata fields change
+    # slowly so the dedup gate suppresses most writes in steady state.
+    metadata_written = 0
+    metadata_unchanged = 0
 
     try:
         with _make_client(api_key) as client:
@@ -213,6 +222,20 @@ def collect_snapshot() -> None:
                             rows_unchanged += 1
                         else:  # unknown_provider
                             rows_unknown_provider += 1
+
+                    # Phase 2a follow-up: lift item-level metadata out
+                    # of the wire dict into pricempire_item_metadata.
+                    # ADR 020 documents the side-effect-of-price-ingest
+                    # pattern; the dedup gate makes this near-free in
+                    # steady state.
+                    if _persist_metadata(
+                        session=session,
+                        item_id=item_id,
+                        wire_item=item,
+                    ):
+                        metadata_written += 1
+                    else:
+                        metadata_unchanged += 1
 
                     # Commit per item so a mid-cycle SIGKILL keeps
                     # partial progress, matching the prices
@@ -256,12 +279,15 @@ def collect_snapshot() -> None:
     logger.info(
         "Pricempire cycle complete: %d items seen, %d skipped "
         "(not in watchlist), %d rows written, %d unchanged, "
-        "%d skipped (unknown provider), elapsed %.1fs",
+        "%d skipped (unknown provider); metadata: %d written, "
+        "%d unchanged; elapsed %.1fs",
         items_seen,
         items_skipped_unknown,
         rows_written,
         rows_unchanged,
         rows_unknown_provider,
+        metadata_written,
+        metadata_unchanged,
         cycle_seconds,
     )
 
@@ -434,6 +460,158 @@ def _persist_row(
     )
     session.execute(insert_stmt)
     return "written"
+
+
+# Item-level metadata fields lifted from each Pricempire wire item
+# into typed columns on ``pricempire_item_metadata``. Order matters
+# only for the dedup tuple (which compares the full column set in a
+# stable order); the column names match the schema 1:1.
+_METADATA_INT_FIELDS: tuple[str, ...] = (
+    "rank",
+    "marketcap",
+    "count",
+    "trades_7d",
+    "trades_30d",
+    "trades_90d",
+    "steam_last_24h",  # always absent on /prices today (ADR 020)
+    "steam_last_7d",
+    "steam_last_30d",
+    "steam_last_90d",
+)
+
+
+def _persist_metadata(
+    *,
+    session: Session,
+    item_id: Any,
+    wire_item: dict[str, Any],
+) -> bool:
+    """Extract slow-changing metadata from one wire item and persist a
+    row to ``pricempire_item_metadata`` IF any field changed since the
+    most recent row. Returns True if a row was written, False if the
+    dedup gate caught a no-op.
+
+    Pricempire's wire types are inconsistent across endpoints: most
+    integer-valued fields arrive as numeric strings on /prices
+    (``"rank": "554"``) but as native numbers on /metas
+    (``"rank": 23219``). The parser handles int, float, numeric str,
+    and None uniformly. Malformed values fall back to None rather
+    than crashing the cycle.
+    """
+    extracted = {
+        field: _coerce_int(wire_item.get(field))
+        for field in _METADATA_INT_FIELDS
+    }
+    extracted["liquidity"] = _coerce_decimal(wire_item.get("liquidity"))
+
+    # Dedup gate: tuple-compare against the most recent row for this
+    # item. Order matters for the comparison; we use the column list
+    # plus liquidity, all in the same canonical order both here and
+    # in the latest-row SELECT below.
+    latest = session.execute(
+        select(
+            PricempireItemMetadata.rank,
+            PricempireItemMetadata.liquidity,
+            PricempireItemMetadata.marketcap,
+            PricempireItemMetadata.count,
+            PricempireItemMetadata.trades_7d,
+            PricempireItemMetadata.trades_30d,
+            PricempireItemMetadata.trades_90d,
+            PricempireItemMetadata.steam_last_24h,
+            PricempireItemMetadata.steam_last_7d,
+            PricempireItemMetadata.steam_last_30d,
+            PricempireItemMetadata.steam_last_90d,
+        )
+        .where(PricempireItemMetadata.item_id == item_id)
+        .order_by(PricempireItemMetadata.timestamp.desc())
+        .limit(1)
+    ).first()
+
+    if latest is not None:
+        new_tuple = (
+            extracted["rank"],
+            extracted["liquidity"],
+            extracted["marketcap"],
+            extracted["count"],
+            extracted["trades_7d"],
+            extracted["trades_30d"],
+            extracted["trades_90d"],
+            extracted["steam_last_24h"],
+            extracted["steam_last_7d"],
+            extracted["steam_last_30d"],
+            extracted["steam_last_90d"],
+        )
+        if tuple(latest) == new_tuple:
+            return False  # unchanged — dedup gate caught it
+
+    insert_stmt = (
+        pg_insert(PricempireItemMetadata)
+        .values(
+            item_id=item_id,
+            timestamp=datetime.now(UTC),
+            **extracted,
+        )
+        # Race-safety on the (item_id, timestamp) PK.
+        .on_conflict_do_nothing(
+            index_elements=["item_id", "timestamp"]
+        )
+    )
+    session.execute(insert_stmt)
+    return True
+
+
+def _coerce_int(raw: Any) -> int | None:
+    """Coerce a Pricempire wire value to an int, or None.
+
+    Handles the three formats Pricempire mixes across endpoints:
+    - native int / float (``742``, ``742.0``) → int
+    - numeric string (``"742"``) → int
+    - None / missing / non-numeric (``"abc"``, ``""``) → None
+
+    Floats are truncated via ``int()``; Pricempire's int-shaped fields
+    don't have fractional parts in practice (you can't have 2.5
+    trades), but the truncation is the right move if one ever shows
+    up. ``False`` is treated as a non-numeric, not 0 — Pricempire
+    doesn't return booleans for these fields, and silently coercing
+    one would mask a wire-format change.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float):
+        try:
+            return int(raw)
+        except (ValueError, OverflowError):
+            return None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        try:
+            return int(s)
+        except ValueError:
+            # Try float-then-int for "742.0"-style strings.
+            try:
+                return int(float(s))
+            except (ValueError, OverflowError):
+                return None
+    return None
+
+
+def _coerce_decimal(raw: Any) -> Decimal | None:
+    """Coerce Pricempire's ``liquidity`` (0-100 float) to a Decimal
+    fitting NUMERIC(6,2). None / malformed → None.
+
+    Quantize to two decimals so the dedup-tuple comparison is stable
+    (otherwise a wire float of 62.8025... would never match a stored
+    62.80 and we'd write every cycle)."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return Decimal(str(raw)).quantize(Decimal("0.01"))
+    except Exception:
+        return None
 
 
 # ────────────────────────────────────────────────────────────────────
