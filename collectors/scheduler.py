@@ -463,6 +463,28 @@ def run_dmarket_cycle() -> None:
     _run_named_source("dmarket")
 
 
+def run_pricempire_cycle() -> None:
+    """APScheduler job wrapper for the Pricempire bulk snapshot.
+
+    Unlike per-item collectors, Pricempire's cycle is one HTTP call
+    servicing all six sub-providers (ADR 018/019). The actual work
+    lives in ``collectors.pricempire.collect_snapshot`` — that
+    function already handles its own logging, dedup, and failure
+    paths. This wrapper just guards against any unhandled exception
+    so APScheduler doesn't drop the next cycle's summary line.
+    """
+    # Import lazily so a missing PRICEMPIRE_API_KEY at module-import
+    # time doesn't break the rest of the scheduler.
+    from collectors import pricempire
+
+    try:
+        pricempire.collect_snapshot()
+    except Exception:
+        logger.exception(
+            "Pricempire cycle failed with unhandled exception"
+        )
+
+
 # Maps source name → the job callable APScheduler registers. Module-level
 # so tests can locate them by string and so dynamic dispatch in
 # _run_named_source stays out of APScheduler's job-pickling path.
@@ -470,7 +492,16 @@ _SOURCE_CALLABLES: dict[str, object] = {
     "steam_market": run_steam_cycle,
     "skinport": run_skinport_cycle,
     "dmarket": run_dmarket_cycle,
+    "pricempire": run_pricempire_cycle,
 }
+
+
+# Pseudo-sources are scheduled like real sources but don't go through
+# the per-item Collector / _run_named_source path. They live directly
+# in _SOURCE_CALLABLES and bypass SOURCE_REGISTRY entirely. The
+# pricempire bulk-snapshot is the only one today (ADR 018 §3); future
+# bulk-import sources would join this set.
+_PSEUDO_SOURCES: frozenset[str] = frozenset({"pricempire"})
 
 
 def build_scheduler(
@@ -511,6 +542,42 @@ def build_scheduler(
     soon = datetime.now(UTC) + timedelta(seconds=1)
 
     for spec in source_jobs:
+        # Skip the six pricempire sub-provider rows — they're not
+        # independently scheduled (ADR 018/019). One Pricempire HTTP
+        # call services them all under the `pricempire` pseudo-source.
+        if spec.name.startswith("pricempire_"):
+            continue
+
+        if spec.name in _PSEUDO_SOURCES:
+            # Pseudo-sources bypass SOURCE_REGISTRY — they don't have
+            # a per-item Collector class. The callable is wired
+            # directly in _SOURCE_CALLABLES.
+            callable_ = _SOURCE_CALLABLES.get(spec.name)
+            if callable_ is None:
+                logger.error(
+                    "Pseudo-source %r has no callable — skipping "
+                    "(this is a programming error)",
+                    spec.name,
+                )
+                continue
+            scheduler.add_job(
+                callable_,
+                trigger="interval",
+                minutes=spec.interval_minutes,
+                next_run_time=soon,
+                id=f"{spec.name}_cycle",
+                name=(
+                    f"{spec.name} pseudo-cycle "
+                    f"(every {spec.interval_minutes}m)"
+                ),
+            )
+            logger.info(
+                "Registered %s pseudo-cycle: interval=%dm",
+                spec.name,
+                spec.interval_minutes,
+            )
+            continue
+
         if spec.name not in SOURCE_REGISTRY:
             logger.warning(
                 "Source %r enabled in DB but no collector registered — "

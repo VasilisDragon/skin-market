@@ -51,6 +51,11 @@ services:
       # repo root via compose's variable interpolation.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Phase 2a — the Pricempire bulk-snapshot collector needs the
+      # Developer-tier bearer token. Read at the start of each cycle;
+      # collectors.pricempire.collect_snapshot fails fast (logs ERROR,
+      # returns without HTTP call) when this is empty.
+      PRICEMPIRE_API_KEY: ${PRICEMPIRE_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -106,10 +106,14 @@ _PROVIDER_KEY_TO_SOURCE_NAME: dict[str, str] = {
     "skinport": "pricempire_skinport",
     "dmarket": "pricempire_dmarket",
     "csmoney": "pricempire_csmoney",
-    # Pricempire's wire key uses a dot ("swap.gg") but our source name
-    # follows the Postgres-friendly underscore convention. The mapping
-    # here is the single point of normalization.
-    "swap.gg": "pricempire_swap_gg",
+    # Pricempire's wire key is "swapgg" (no dot, no underscore).
+    # Verified empirically — `sources=swap.gg` returns HTTP 400 with
+    # the accepted-values list; `sources=swapgg` returns 200. Our
+    # source name "pricempire_swap_gg" stays in underscore form for
+    # Postgres consistency. This dict is the single point of
+    # translation between Pricempire's wire vocabulary and our
+    # internal source names.
+    "swapgg": "pricempire_swap_gg",
 }
 
 # Comma-joined wire keys for the request's `sources=` query param.
@@ -310,7 +314,17 @@ def _stream_prices(client: httpx.Client) -> Iterator[dict[str, Any]]:
         params={"app_id": _APP_ID, "sources": _SOURCES_PARAM},
     )
     response.raise_for_status()
-    yield from ijson.items(io.BytesIO(response.content), "item")
+    # ``use_float=True`` returns native Python floats for JSON numbers
+    # with a fractional part (e.g. ``liquidity``, ``meta.rate``). Default
+    # behavior produces ``Decimal``, which isn't JSON-serializable when
+    # we round-trip the wire row into the ``raw_response`` JSONB column.
+    # Native float is fine for the raw_response use case (we store, we
+    # don't arithmetic on these values). Our own ``price`` field is
+    # parsed separately into Decimal via Decimal(str(...)) to preserve
+    # precision regardless of int/float on the wire.
+    yield from ijson.items(
+        io.BytesIO(response.content), "item", use_float=True
+    )
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -351,14 +365,19 @@ def _persist_row(
     if raw_price is None:
         return "unchanged"  # Pricempire knows the provider but has no price; nothing to record.
 
-    # Wire prices are cents; persist as dollars to match prices.price.
+    # Wire prices are integer cents in practice (empirically confirmed
+    # in the diagnostic). Defensively, parse through ``Decimal(str(...))``
+    # so we survive a future Pricempire change that switches to dollar
+    # floats — Decimal(str(173.16)) preserves precision, whereas
+    # int(173.16) would truncate the cents.
     try:
-        price = (Decimal(int(raw_price)) / _CENTS_PER_DOLLAR).quantize(
+        price_cents = Decimal(str(raw_price))
+        price = (price_cents / _CENTS_PER_DOLLAR).quantize(
             Decimal("0.01")
         )
-    except (TypeError, ValueError):
-        # Malformed numeric — log once at the cycle level via the
-        # unknown counter (cheaper than warning per row), but bail.
+    except Exception:
+        # Malformed numeric — bail. Logging per row is too noisy at
+        # 40k items × 6 providers; the row just doesn't get persisted.
         return "unchanged"
 
     count = wire_row.get("count")

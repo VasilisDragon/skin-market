@@ -153,12 +153,17 @@ def _wire_item(
     prices: list[dict] | None = None,
 ) -> dict:
     """Build a minimal Pricempire response item with the keys the
-    collector reads. Other fields (liquidity, marketcap, etc.) live in
-    real responses but are ignored on ingest."""
+    collector reads. ``liquidity`` is intentionally an irrational-style
+    float (62.802508437142585) and ``rank`` is a numeric string,
+    mirroring the real response shape. These shapes used to silently
+    fail when stored as JSONB because ijson decoded them as Decimal
+    and psycopg's JSON encoder rejected Decimal — fixed by passing
+    ``use_float=True`` to ijson. Tests now keep this path live."""
     return {
         "market_hash_name": name,
-        "liquidity": 50.0,
+        "liquidity": 62.802508437142585,
         "rank": "100",
+        "marketcap": "215473980",
         "prices": prices or [],
     }
 
@@ -170,8 +175,16 @@ def _wire_price_row(
     count: int | None = 10,
     updated_at: str = "2026-05-15T20:00:00.000Z",
     last_checked_at: str = "2026-05-15T20:30:00.000Z",
+    include_meta: bool = False,
 ) -> dict:
-    return {
+    """Build one entry of an item's nested ``prices`` array.
+
+    ``include_meta`` adds a realistic ``meta`` dict carrying a float
+    exchange ``rate`` — that field tripped a Decimal-not-JSON-
+    serializable error in the first live cycle. Keep the path
+    exercised in tests.
+    """
+    row = {
         "price": price_cents,
         "count": count,
         "updated_at": updated_at,
@@ -181,6 +194,13 @@ def _wire_price_row(
         "original_price": None,
         "exchange_rate": None,
     }
+    if include_meta:
+        row["meta"] = {
+            "rate": 0.1468709151526723,
+            "original_price": 117900,
+            "original_currency": "CNY",
+        }
+    return row
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -199,13 +219,19 @@ class TestProviderKeyMapping:
             "pricempire_swap_gg",
         }
 
-    def test_swap_gg_dot_to_underscore(self) -> None:
-        """Pricempire's wire key has a dot; our source name has an
-        underscore. The mapping is the single place this normalization
+    def test_swapgg_to_underscore_form(self) -> None:
+        """Pricempire's wire key is 'swapgg' (no dot, no underscore —
+        empirically verified after a 400 with the alternative); our
+        source name uses 'pricempire_swap_gg' for Postgres-friendly
+        readability. The mapping is the single place this normalization
         happens — guard against regressions."""
         assert (
-            _PROVIDER_KEY_TO_SOURCE_NAME["swap.gg"]
+            _PROVIDER_KEY_TO_SOURCE_NAME["swapgg"]
             == "pricempire_swap_gg"
+        )
+        assert "swap.gg" not in _PROVIDER_KEY_TO_SOURCE_NAME, (
+            "swap.gg is NOT Pricempire's wire key — see "
+            "_PROVIDER_KEY_TO_SOURCE_NAME for the verified form."
         )
 
 
@@ -251,7 +277,7 @@ class TestCollectSnapshot:
             url=(
                 f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                 f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
             ),
             content=body,
             headers={"Content-Type": "application/json"},
@@ -297,7 +323,7 @@ class TestCollectSnapshot:
                 url=(
                     f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                     f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                    f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                    f"%2Cdmarket%2Cskinport%2Cswapgg"
                 ),
                 content=body,
                 headers={"Content-Type": "application/json"},
@@ -354,7 +380,7 @@ class TestCollectSnapshot:
                 url=(
                     f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                     f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                    f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                    f"%2Cdmarket%2Cskinport%2Cswapgg"
                 ),
                 content=body,
                 headers={"Content-Type": "application/json"},
@@ -395,7 +421,7 @@ class TestCollectSnapshot:
             url=(
                 f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                 f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
             ),
             content=body,
             headers={"Content-Type": "application/json"},
@@ -441,7 +467,7 @@ class TestCollectSnapshot:
             url=(
                 f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                 f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
             ),
             content=body,
             headers={"Content-Type": "application/json"},
@@ -490,7 +516,7 @@ class TestCollectSnapshot:
             url=(
                 f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                 f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
             ),
             content=body,
             headers={"Content-Type": "application/json"},
@@ -511,6 +537,57 @@ class TestCollectSnapshot:
             2026, 5, 15, 23, 51, 58, 798000, tzinfo=UTC
         )
 
+    def test_jsonb_safe_for_float_fields(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Regression: ijson's default decoder maps JSON floats to
+        Decimal, which psycopg's JSON encoder rejects. The first live
+        cycle blew up on liquidity/meta.rate floats. Pinned via
+        ``use_float=True`` to ijson + a wire_row carrying those float
+        fields here.
+        """
+        body = _make_response(
+            [
+                _wire_item(
+                    _SENTINEL_NAME,
+                    prices=[
+                        _wire_price_row(
+                            provider_key="buff163",
+                            price_cents=17316,
+                            count=593,
+                            include_meta=True,  # meta.rate is a float
+                        )
+                    ],
+                )
+            ]
+        )
+        httpx_mock.add_response(
+            url=(
+                f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+                f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
+            ),
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+        collect_snapshot()  # must not raise
+
+        # Confirm the row landed and raw_response carries the floats.
+        engine = get_engine()
+        with Session(engine) as session:
+            row = session.execute(
+                select(
+                    PricempireObservation.price,
+                    PricempireObservation.raw_response,
+                ).where(PricempireObservation.item_id == sentinel_item)
+            ).first()
+        assert row is not None
+        assert row.price == Decimal("173.16")
+        # meta.rate round-trips through JSONB as a float.
+        assert row.raw_response["meta"]["rate"] == pytest.approx(
+            0.1468709151526723
+        )
+
     def test_non_200_exits_cleanly_no_rows(
         self, httpx_mock, sentinel_item, caplog
     ) -> None:
@@ -521,7 +598,7 @@ class TestCollectSnapshot:
             url=(
                 f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
                 f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
-                f"%2Cdmarket%2Cskinport%2Cswap.gg"
+                f"%2Cdmarket%2Cskinport%2Cswapgg"
             ),
             status_code=500,
             content=b'{"error":"upstream"}',

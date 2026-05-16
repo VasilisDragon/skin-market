@@ -432,9 +432,12 @@ class TestBuildSchedulerFromDB:
 
     def test_disabled_source_not_scheduled(self) -> None:
         engine = get_engine()
-        # Pick a currently-enabled source, flip it disabled, assert
-        # build_scheduler omits it. Snapshot the original state so the
-        # live DB is preserved regardless of which sources are enabled.
+        # Pick a currently-enabled, *independently-scheduled* source,
+        # flip it disabled, assert build_scheduler omits it. The
+        # Pricempire sub-providers (pricempire_buff163 etc.) are
+        # enabled but explicitly NOT independently scheduled — they
+        # share the `pricempire` pseudo-source's job (ADR 018/019).
+        # Exclude them from this test.
         with Session(engine) as session:
             enabled_names = [
                 row[0]
@@ -443,6 +446,7 @@ class TestBuildSchedulerFromDB:
                     .where(Source.enabled.is_(True))
                     .order_by(Source.id)
                 ).all()
+                if not row[0].startswith("pricempire_")
             ]
             if not enabled_names:
                 pytest.skip("no enabled sources in test DB")
@@ -458,7 +462,8 @@ class TestBuildSchedulerFromDB:
                 scheduler = build_scheduler()
                 ids = {job.id for job in scheduler.get_jobs()}
                 assert f"{victim}_cycle" not in ids
-                # Other previously-enabled sources still scheduled.
+                # Other previously-enabled, independently-scheduled
+                # sources still scheduled.
                 for other in enabled_names[1:]:
                     assert f"{other}_cycle" in ids
             finally:
