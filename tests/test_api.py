@@ -290,12 +290,18 @@ class TestAuth:
         resp = client.get("/items")
         assert resp.status_code == 200
 
+    @_db_required
     def test_health_bypasses_auth(self) -> None:
         """``/health`` must respond without any Authorization header —
         Docker healthchecks have no credentials and an operator
         running ``curl http://localhost:8000/health`` against a
         misconfigured auth state must still see the API's actual
-        status. ADR 014 §10."""
+        status. ADR 014 §10.
+
+        Marked ``@_db_required`` because the /health route reports
+        DB reachability (see TestHealth), so it issues a SELECT 1
+        through the engine; without a reachable Postgres the route
+        raises rather than returning 200."""
         c = TestClient(app)  # no Authorization header
         resp = c.get("/health")
         assert resp.status_code == 200
@@ -328,13 +334,19 @@ class TestAuth:
             "Token comparison must use secrets.compare_digest"
         )
 
+    @_db_required
     def test_multiple_tokens_all_authenticate(
         self, monkeypatch
     ) -> None:
         """SKIN_MARKET_API_TOKENS (plural) is comma-separated; any
         token in the set authenticates. v1 single-consumer uses the
         singular alias; Phase 8+ multi-consumer uses this knob.
-        ADR 014 §10."""
+        ADR 014 §10.
+
+        Marked ``@_db_required`` because the test asserts a 200 on
+        ``/items``, which lists from the DB; without a reachable
+        Postgres the route raises before auth's behavior can be
+        observed."""
         monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
         monkeypatch.setenv(
             "SKIN_MARKET_API_TOKENS",
@@ -372,10 +384,15 @@ class TestAuth:
         assert resp.status_code == 500
         assert "auth is not configured" in resp.json()["detail"].lower()
 
+    @_db_required
     def test_plural_and_singular_unioned(self, monkeypatch) -> None:
         """If both env vars are set, the accepted set is their union —
         useful when an operator phases in a new client without
-        disrupting the existing one."""
+        disrupting the existing one.
+
+        Marked ``@_db_required`` for the same reason as
+        ``test_multiple_tokens_all_authenticate``: asserts on a
+        DB-touching ``/items`` response."""
         monkeypatch.setenv("SKIN_MARKET_API_TOKEN", "primary")
         monkeypatch.setenv("SKIN_MARKET_API_TOKENS", "secondary,tertiary")
         for token in ("primary", "secondary", "tertiary"):
