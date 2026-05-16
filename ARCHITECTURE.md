@@ -21,34 +21,37 @@ A locally-hosted, eventually-public CS2 skin market data aggregation service wit
 ## The architecture, briefly
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                       DGX Spark (Ubuntu)                       │
-│                                                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐  │
-│  │ Collectors  │─▶│  Postgres   │◀─│ Analytics jobs (cron)  │  │
-│  │ (poll APIs) │  │  (timescale)│  │ Pre-compute insights   │  │
-│  └─────────────┘  └─────────────┘  └────────────────────────┘  │
-│         │                │                       │             │
-│         │                ▼                       │             │
-│         │       ┌─────────────────┐              │             │
-│         └──────▶│  FastAPI app    │◀─────────────┘             │
-│                 │  (read-only)    │                            │
-│                 └─────────────────┘                            │
-│                          ▲                                     │
-│                          │ HTTP                                │
-│                          │                                     │
-│                 ┌─────────────────┐                            │
-│                 │ Hermes Discord  │ ─── calls skill ──┐        │
-│                 │ bot (skill)     │                   │        │
-│                 └─────────────────┘                   ▼        │
-│                                          ┌──────────────────┐  │
-│                                          │ Ollama (existing)│  │
-│                                          │ qwen3-coder, etc │  │
-│                                          └──────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
-                          │
+   Steam   Skinport   DMarket   Pricempire
+     │        │          │          │
+     └────────┴─────┬────┴──────────┘   HTTPS
+                    ▼
+┌────────────────────── DGX Spark (Ubuntu) ─────────────────────┐
+│ ┌──── docker compose ───────────────────────────────────────┐ │
+│ │  ┌─────────────┐   ┌─────────────┐   ┌─────────────────┐  │ │
+│ │  │ collector   │──▶│  postgres   │◀──│ analytics       │  │ │
+│ │  │ (scheduler) │   │ (timescale) │   │ (hourly+daily)  │  │ │
+│ │  └─────────────┘   └─────────────┘   └─────────────────┘  │ │
+│ │                           ▲                               │ │
+│ │                   ┌───────┴───────┐                       │ │
+│ │                   │ api (uvicorn, │                       │ │
+│ │                   │ read-only)    │                       │ │
+│ │                   └───────▲───────┘                       │ │
+│ │                           │ HTTP + bearer                 │ │
+│ │                   ┌───────┴───────┐                       │ │
+│ │                   │ bot           │                       │ │
+│ │                   │ (discord.py)  │                       │ │
+│ │                   └───┬───────┬───┘                       │ │
+│ └───────────────────────┼───────┼───────────────────────────┘ │
+│                         │       │ Ollama HTTP                 │
+│                         │       ▼                             │
+│                         │  ┌─────────────────────────────┐    │
+│                         │  │ Ollama (host process)       │    │
+│                         │  │ host.docker.internal:11434  │    │
+│                         │  │ huihui_ai/Qwen3.6-abliter.. │    │
+│                         │  └─────────────────────────────┘    │
+└─────────────────────────┼─────────────────────────────────────┘
                           ▼
-                     Discord users
+                     Discord (outbound)
 ```
 
 Layers and their responsibilities:
@@ -60,11 +63,11 @@ Layers and their responsibilities:
 - **Database (Postgres + TimescaleDB extension):** Source of truth. Hypertables for time-series price data, regular tables for items and metadata.
 - **Analytics jobs:** Cron-triggered Python that computes derived data — moving averages, volume anomalies, price velocity, news-correlated moves. Output to `insights` tables.
 - **FastAPI app:** Read-only API. The bot doesn't touch Postgres directly; it goes through this layer. This is also the future SaaS API surface.
-- **Hermes skill:** A skill bundle (SKILL.md + tool definitions) that gives the Discord bot capabilities like `query_current_price(item)`, `query_price_history(item, days)`, `render_chart(item, days)`, `evaluate_deal(item, float, price)`.
+- **Bot:** A `discord.py` event loop running as a compose service (Phase 7c, ADR 016). Reads from the FastAPI app only — never touches Postgres directly, never scrapes upstreams. Tool functions (`list_watchlist`, `query_current_price`, `query_price_history`, `render_chart`, `evaluate_deal`, `narrative_today`, `whats_interesting`) are thin `httpx` wrappers over the read API; the LLM chooses which to call.
 
 The LLM only enters the picture in two places:
-1. The Hermes bot parses the user's Discord message and decides which skill tools to call (query path)
-2. The analytics jobs occasionally use Ollama to generate market commentary from news + price data (enrichment path, async)
+1. The bot calls local Ollama via `ollama.AsyncClient.chat(model=…, tools=TOOL_DEFINITIONS)` — i.e. the standard chat-completion endpoint with `tools=[…]` in the request payload. This is the **Default** tool-calling path, NOT Ollama's **Native** variant; ADR 016 documents the choice as load-bearing for the `huihui_ai/Qwen3.6-abliterated:27b` model in use.
+2. The analytics narrative job uses the same Ollama instance nightly at 02:00 UTC to generate a one-paragraph market summary (enrichment path, async).
 
 It does NOT do data fetching, scraping, parsing, or math. Those are deterministic Python.
 
