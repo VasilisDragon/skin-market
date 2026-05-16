@@ -633,6 +633,136 @@ class TestCollectSnapshot:
             "500" in r.getMessage() for r in caplog.records
         ), "expected a warning logging the 500 status"
 
+    def test_cycle_log_per_provider_breakdown(
+        self, httpx_mock, sentinel_item, caplog
+    ) -> None:
+        """Cycle 1 writes one row per (resolved) provider; cycle 2
+        re-issues the same prices and everything dedup's. The
+        cycle-complete log line must surface BOTH the aggregate counts
+        AND the per-provider breakdown in a stable alphabetical order
+        with zero-row providers explicit, so operators can spot
+        provider-specific quiet periods (e.g. swap_gg per §6 of
+        docs/phase2a-ingest-validation.md).
+        """
+        # Cycle 1: one row for two distinct providers. The other four
+        # providers contribute zero writes — they MUST still appear in
+        # the breakdown as `=0` so the line is shape-stable.
+        body_c1 = _make_response(
+            [
+                _wire_item(
+                    _SENTINEL_NAME,
+                    prices=[
+                        _wire_price_row(
+                            provider_key="buff163",
+                            price_cents=17316,
+                            count=593,
+                        ),
+                        _wire_price_row(
+                            provider_key="skinport",
+                            price_cents=2800,
+                            count=27,
+                        ),
+                    ],
+                ),
+            ]
+        )
+        # Cycle 2: identical body so both rows dedup. The per-provider
+        # unchanged breakdown should show buff163=1, skinport=1 and
+        # zeros for the other four.
+        body_c2 = _make_response(
+            [
+                _wire_item(
+                    _SENTINEL_NAME,
+                    prices=[
+                        _wire_price_row(
+                            provider_key="buff163",
+                            price_cents=17316,
+                            count=593,
+                        ),
+                        _wire_price_row(
+                            provider_key="skinport",
+                            price_cents=2800,
+                            count=27,
+                        ),
+                    ],
+                ),
+            ]
+        )
+        url = (
+            f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+            f"?app_id=730&sources=buff163%2Cbuff163_buy%2Ccsmoney"
+            f"%2Cdmarket%2Cskinport%2Cswapgg"
+        )
+        httpx_mock.add_response(
+            url=url,
+            content=body_c1,
+            headers={"Content-Type": "application/json"},
+        )
+        httpx_mock.add_response(
+            url=url,
+            content=body_c2,
+            headers={"Content-Type": "application/json"},
+        )
+
+        with caplog.at_level("INFO", logger="collectors.pricempire"):
+            collect_snapshot()
+            collect_snapshot()
+
+        cycle_messages = [
+            r.getMessage()
+            for r in caplog.records
+            if "cycle complete" in r.getMessage()
+        ]
+        assert len(cycle_messages) == 2, (
+            f"expected 2 cycle-complete lines, got {len(cycle_messages)}"
+        )
+        c1, c2 = cycle_messages
+
+        # Aggregate counts preserved.
+        assert "2 rows written" in c1
+        assert "0 unchanged" in c1
+        assert "0 rows written" in c2
+        assert "2 unchanged" in c2
+
+        # Per-provider breakdown present in both cycles.
+        # Cycle 1: rows-written breakdown has buff163=1 and skinport=1.
+        expected_c1_written = (
+            "rows written (buff163=1, buff163_buy=0, csmoney=0, "
+            "dmarket=0, skinport=1, swap_gg=0)"
+        )
+        assert expected_c1_written in c1, (
+            f"cycle 1 missing per-provider written breakdown\n"
+            f"got: {c1}"
+        )
+        # Cycle 1 unchanged breakdown: all zeros (everything was written).
+        expected_c1_unchanged = (
+            "unchanged (buff163=0, buff163_buy=0, csmoney=0, "
+            "dmarket=0, skinport=0, swap_gg=0)"
+        )
+        assert expected_c1_unchanged in c1, (
+            f"cycle 1 missing per-provider unchanged breakdown\n"
+            f"got: {c1}"
+        )
+
+        # Cycle 2: rows-written all zeros, unchanged has the two
+        # providers we sent.
+        expected_c2_written = (
+            "rows written (buff163=0, buff163_buy=0, csmoney=0, "
+            "dmarket=0, skinport=0, swap_gg=0)"
+        )
+        expected_c2_unchanged = (
+            "unchanged (buff163=1, buff163_buy=0, csmoney=0, "
+            "dmarket=0, skinport=1, swap_gg=0)"
+        )
+        assert expected_c2_written in c2, (
+            f"cycle 2 missing per-provider written breakdown\n"
+            f"got: {c2}"
+        )
+        assert expected_c2_unchanged in c2, (
+            f"cycle 2 missing per-provider unchanged breakdown\n"
+            f"got: {c2}"
+        )
+
 
 # ────────────────────────────────────────────────────────────────────
 # Item-metadata extraction (Phase 2a follow-up, ADR 020)
