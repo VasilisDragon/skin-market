@@ -1,47 +1,64 @@
 # Phase 2a Pricempire ingest validation
 
-**Status:** Initial snapshot — 2026-05-16 ~01:52 UTC, ~17 min and 2 scheduled cycles after the first clean ingest cycle. The sections marked **[awaits 24h]** require re-running against a fuller window before the Phase 2a record is complete. Sections marked **[invariant]** are already meaningful.
+**Status:** Refreshed 2026-05-16 ~16:49 UTC, ~13.5 h and ~54 scheduled cycles after the first clean ingest cycle. Sections that were marked **[awaits 24h]** in the initial snapshot (§1, §2 row-count, §4) have been updated in place against the wider window. Sections marked **[invariant]** were correct on first write and were left structurally unchanged; their counts were refreshed where relevant.
 
-> **TBD-amend after 24h.** Re-run the queries in §1, §2 row-count, and §4 against the same DB at ~2026-05-17 01:37 UTC and update the corresponding numbers below. The interpretive paragraphs probably won't need changes — the structural findings are stable across cycles.
+> Original `TBD-amend after 24h` marker resolved by this pass. The intended 24h re-run was performed earlier than 24h — 13.5 h was enough for the structural patterns to stabilize and for one important new finding (swap_gg row sparsity) to be diagnosable. See §6 for the swap_gg characterization.
 
-## 1. Row volume **[awaits 24h]**
+## 1. Row volume
 
 ```
-rows | items_covered | providers_seen |     oldest      |     newest
------+---------------+----------------+-----------------+-----------------
- 301 |       48      |        6       | 2026-05-16 01:37| 2026-05-16 01:52
+rows | items_covered | providers_seen |     oldest          |     newest
+-----+---------------+----------------+---------------------+---------------------
+2441 |       48      |        6       | 2026-05-16 03:19:46 | 2026-05-16 16:49:47
 ```
 
-Two scheduled cycles have completed (01:37 and 01:52 UTC); 301 rows total. All 48 watchlist items are covered by at least one provider. All six sub-providers have written rows.
+54 scheduled cycles have completed (one every 15 min between 03:19 and 16:49 UTC); 2,441 rows total. All 48 watchlist items are still covered by at least one provider. All six sub-providers have written rows.
 
-Per-cycle write counts:
-- Cycle 1 (01:37): 281 rows written. Initial bulk — every (item, provider) pair gets a row.
-- Cycle 2 (01:52): 20 rows written. The remaining 281 were dedup'd out (price + count unchanged). The 20 writes are items whose prices moved between cycles on buff163, buff163_buy, or csmoney (which trade actively across the 15-min window); dmarket, skinport, and swapgg dedup'd entirely.
+Per-hour write distribution (UTC):
 
-Projection to 24h: 96 cycles × ~20 cycle-2-style writes after the initial 281 ≈ **~2,200 rows/day** in steady state, far below the 27k/day ceiling. The dedup gate is doing its job.
-
-**24h validation queries:** rerun
-```sql
-SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM pricempire_observations;
 ```
+03:00  315  ← initial bulk cycle (~281 rows) + cycle 2's 34 movement writes
+04:00  132
+05:00  184
+06:00  156
+07:00  148
+08:00  195
+09:00  186
+10:00  193
+11:00  139
+12:00  157
+13:00  144
+14:00  183
+15:00  147
+16:00  162 (partial hour at query time)
+```
+
+Steady-state is ~150-190 rows/hour after the initial-bulk hour. Extrapolated: **~3,800-4,500 rows/day** in steady state — roughly double the original ~2,200/day projection (which extrapolated from cycle 2's atypically quiet 20-write window). Still well below the 27k/day worst-case ceiling.
+
+**Re-validation query:** the same `SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM pricempire_observations;` shown originally.
 
 ## 2. Per-provider coverage **[invariant on watchlist composition]**
 
 ```
           name          | items_with_data | rows | latest cycle
 ------------------------+-----------------+------+--------------
- pricempire_buff163     |       48        |  56  | 01:52
- pricempire_buff163_buy |       48        |  55  | 01:52
- pricempire_csmoney     |       47        |  52  | 01:52
- pricempire_dmarket     |       47        |  47  | 01:37 (dedup'd in c2)
- pricempire_skinport    |       47        |  47  | 01:37 (dedup'd in c2)
- pricempire_swap_gg     |       44        |  44  | 01:37 (dedup'd in c2)
+ pricempire_buff163     |       48        |  737 | 16:49
+ pricempire_buff163_buy |       48        |  452 | 16:49
+ pricempire_csmoney     |       47        |  849 | 16:49
+ pricempire_dmarket     |       47        |  121 | 16:34
+ pricempire_skinport    |       47        |  237 | 16:49
+ pricempire_swap_gg     |       44        |   45 | 09:19 (then full dedup)
 ```
 
-Coverage by provider, of the 48 watchlist items:
+Coverage by provider, of the 48 watchlist items (unchanged from initial snapshot — every provider's `items_with_data` count is stable across the 13.5 h window):
 - buff163, buff163_buy: 100% (48/48)
 - csmoney, dmarket, skinport: 97.9% (47/48)
 - swap_gg: 91.7% (44/48)
+
+Row-count rate per provider (rows / 13.5 h) reveals a steep activity gradient:
+- csmoney (~63 rows/h), buff163 (~55), buff163_buy (~33) — actively-trading book-data markets, lots of (price, count) movement within 15-min windows.
+- skinport (~17), dmarket (~9) — moderate movement; dedup absorbs most cycles.
+- swap_gg (~3.3) — essentially flat; only ONE non-initial write across the full 13.5 h window (USP-S | Kill Confirmed at 09:19). §6 characterizes this in detail.
 
 Items with partial coverage:
 
@@ -92,24 +109,31 @@ Our direct Skinport collector apparently picks a high-phase variant from Skinpor
 
 **Action for Phase 2b drift detection:** Doppler-pattern items need either (a) a per-phase split that our schema doesn't currently support, or (b) an explicit "skip Doppler aggregation" rule in the drift logic. Flag for the watchlist-revision proposal in Step 6.
 
-## 4. Freshness distribution **[awaits 24h]**
+## 4. Freshness distribution
 
-Minutes since the latest row per `(item, source)` pair:
+Minutes since the latest row per `(item, source)` pair (snapshot at 16:49 UTC, 13.5 h after first cycle):
 
 ```
           name          | min | max | avg | items
 ------------------------+-----+-----+-----+-------
- pricempire_buff163     |  2  | 17  | 15  |  48
- pricempire_buff163_buy |  2  | 17  | 15  |  48
- pricempire_csmoney     |  2  | 17  | 16  |  47
- pricempire_dmarket     | 17  | 17  | 17  |  47
- pricempire_skinport    | 17  | 17  | 17  |  47
- pricempire_swap_gg     | 17  | 17  | 17  |  44
+ pricempire_buff163     |  5  | 815 |  90 |  48
+ pricempire_buff163_buy |  5  | 815 | 116 |  48
+ pricempire_csmoney     |  5  | 815 |  65 |  47
+ pricempire_dmarket     | 20  | 815 | 252 |  47
+ pricempire_skinport    |  5  | 815 | 341 |  47
+ pricempire_swap_gg     | 455 | 815 | 807 |  44
 ```
 
-This snapshot is too early to be representative — the 17-minute max simply reflects "we've only been ingesting for 17 minutes and the rows dedup'd-out in the second cycle." After 24h the distribution should cluster within 0-15 minutes for active providers (buff163/buff163_buy/csmoney) and within 0-30 minutes for the inactive-in-our-window providers, with outliers flagging individual items whose dedup gate keeps suppressing writes.
+The original snapshot expected steady-state max_age_min ≤ 15 min for active providers and 0-30 min for the inactive-in-our-window providers. **The actual 13.5 h pattern violates that expectation for every provider** — max_age_min sits at 815 min (= the full window since the first cycle) on at least one (item, source) pair per provider. The interpretation is NOT that Pricempire stopped refreshing those pairs — see §6's swap_gg characterization, which establishes that Pricempire is still polling these items in real-time but the prices are flat, so our dedup gate correctly suppresses the redundant writes.
 
-**24h validation query:** rerun
+The pattern by provider matches the row-count gradient in §2:
+- csmoney (avg 65 min), buff163 (avg 90), buff163_buy (avg 116) — the actively-trading providers churn through dedup on most items within a few cycles.
+- dmarket (avg 252), skinport (avg 341) — moderate liquidity; many items have dedup-held the same row for hours.
+- swap_gg (avg 807) — dedup holds essentially every item's first-cycle row for the full window. The one item that ever passed dedup (USP-S | Kill Confirmed at 09:19) is the source of the min=455 min figure; every other swap_gg pair is the full 815 min.
+
+**Implication for the original "max_age_min > 60 → investigate" rule:** it was wrong. Dedup-driven freshness on `pricempire_observations` alone cannot distinguish "Pricempire stopped polling" from "price hasn't moved." Phase 2b drift detection that wants to gate on Pricempire-side freshness should drive off `raw_response->>'last_checked_at'` (Pricempire's own claim about when it last polled the upstream), not `timestamp` (our local write clock).
+
+**Re-validation query:** rerun (same shape as initially)
 ```sql
 SELECT s.name,
   MIN(EXTRACT(EPOCH FROM (NOW() - latest_ts))/60)::int AS min_age_min,
@@ -123,8 +147,6 @@ FROM (
 JOIN sources s ON s.id = latest.source_id
 GROUP BY s.name ORDER BY s.name;
 ```
-
-The expected pattern is: every provider's max_age_min stays ≤ 15 min over a 24h window, because every cycle produces at least *some* movement and the dedup gate doesn't suppress an entire (item, source) pair for >1 cycle in steady state. If max_age_min exceeds 60 minutes for any provider for any (item, source) pair, that's worth investigating — Pricempire may have stopped refreshing that pair entirely.
 
 ## 5. Skinport's `updated_at: 2025-01-01` placeholder frequency — and a SURPRISE on swapgg **[invariant]**
 
