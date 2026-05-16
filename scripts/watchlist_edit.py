@@ -116,6 +116,12 @@ def cmd_add(args: argparse.Namespace) -> int:
         fields["is_stattrak"] = True
     if args.is_souvenir:
         fields["is_souvenir"] = True
+    # Schema v2 (Phase 2b, ADR 024) requires a `tier:` field on every
+    # item. cmd_add is the manual operator-add path; new manual items
+    # default to deep tier. The broad tier is populated separately by
+    # scripts/seed_broad_tier.py (Phase 2b Step 3) — broad items
+    # shouldn't go through cmd_add.
+    fields["tier"] = "deep"
 
     data["items"].append(_flow_entry(fields))
     _save(args.watchlist, data)

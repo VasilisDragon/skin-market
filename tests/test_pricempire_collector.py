@@ -41,7 +41,12 @@ from collectors.pricempire import (
     collect_snapshot,
 )
 from db.connection import get_engine
-from db.models import Item, PricempireItemMetadata, PricempireObservation
+from db.models import (
+    Item,
+    PricempireItemMetadata,
+    PricempireObservation,
+    PricempireObservationLog,
+)
 
 
 def _db_reachable() -> bool:
@@ -107,6 +112,13 @@ def sentinel_item():
                 {"i": existing},
             )
             session.execute(
+                text(
+                    "DELETE FROM pricempire_observation_log "
+                    "WHERE item_id = :i"
+                ),
+                {"i": existing},
+            )
+            session.execute(
                 text("DELETE FROM items WHERE id = :i"), {"i": existing}
             )
 
@@ -144,6 +156,13 @@ def sentinel_item():
         session.execute(
             text(
                 "DELETE FROM pricempire_item_metadata "
+                "WHERE item_id = :i"
+            ),
+            {"i": item_id},
+        )
+        session.execute(
+            text(
+                "DELETE FROM pricempire_observation_log "
                 "WHERE item_id = :i"
             ),
             {"i": item_id},
@@ -1026,6 +1045,216 @@ class TestMetadataExtraction:
             ).all()
         ranks = [r.rank for r in rows]
         assert ranks == [554, 555]
+
+
+class TestObservationLogInvariant:
+    """Phase 2b (ADR 023): pricempire_observation_log advances
+    UNCONDITIONALLY on every successful wire-row parse, BEFORE the
+    dedup gate. These tests pin the invariant so a future refactor
+    that moves the upsert inside the dedup branch fails loudly —
+    that refactor would silently reproduce Phase 1's observed_at bug
+    at one level up.
+    """
+
+    @_db_required
+    def test_observation_log_upserts_before_dedup(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Two cycles with IDENTICAL (price, count) — the dedup gate
+        suppresses the second pricempire_observations write, but the
+        observation_log must still advance to the second cycle's
+        last_checked_at.
+        """
+        # Cycle 1: write a row.
+        body_v1 = _make_response(
+            [
+                _wire_item(
+                    _SENTINEL_NAME,
+                    prices=[
+                        _wire_price_row(
+                            provider_key="buff163",
+                            price_cents=2800,
+                            count=27,
+                            last_checked_at="2026-05-17T10:00:00.000Z",
+                        )
+                    ],
+                ),
+            ]
+        )
+        # Cycle 2: SAME price/count, NEW last_checked_at.
+        body_v2 = _make_response(
+            [
+                _wire_item(
+                    _SENTINEL_NAME,
+                    prices=[
+                        _wire_price_row(
+                            provider_key="buff163",
+                            price_cents=2800,
+                            count=27,
+                            last_checked_at="2026-05-17T10:15:00.000Z",
+                        )
+                    ],
+                ),
+            ]
+        )
+        for body in (body_v1, body_v2):
+            httpx_mock.add_response(
+                url=(
+                    f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+                    f"?app_id=730&sources=buff163%2Cbuff163_buy"
+                    f"%2Ccsmoney%2Cdmarket%2Cskinport%2Cswapgg"
+                ),
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+
+        collect_snapshot()
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            # pricempire_observations should have exactly 1 row (dedup
+            # suppressed the second cycle's write).
+            obs_rows = session.execute(
+                select(PricempireObservation).where(
+                    PricempireObservation.item_id == sentinel_item
+                )
+            ).all()
+            assert len(obs_rows) == 1, (
+                f"dedup should suppress second write; got {len(obs_rows)}"
+            )
+
+            # pricempire_observation_log should have ONE row per pair
+            # (upserted), and its last_observed_at must reflect the
+            # SECOND cycle's last_checked_at — proving the upsert ran
+            # despite the dedup suppression.
+            log_row = session.execute(
+                select(PricempireObservationLog).where(
+                    PricempireObservationLog.item_id == sentinel_item
+                )
+            ).scalar_one()
+            assert log_row.last_observed_at == datetime(
+                2026, 5, 17, 10, 15, 0, tzinfo=UTC
+            ), (
+                "observation_log did not advance to cycle 2's "
+                "last_checked_at — the upsert is firing inside the "
+                "dedup branch (load-bearing invariant violated)"
+            )
+
+    @_db_required
+    def test_observation_log_skipped_on_null_last_checked_at(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Wire row with last_checked_at: null → no log upsert, no
+        exception. The collector treats this as 'we polled but
+        Pricempire didn't tell us when'; the drift detector reads
+        absent-log-row as stale."""
+        body = json.dumps(
+            [
+                {
+                    "market_hash_name": _SENTINEL_NAME,
+                    "liquidity": 50.0,
+                    "rank": "100",
+                    "marketcap": "1000000",
+                    "prices": [
+                        {
+                            "price": 2800,
+                            "count": 27,
+                            "updated_at": "2026-05-17T10:00:00.000Z",
+                            "last_checked_at": None,
+                            "provider_key": "buff163",
+                            "meta": None,
+                            "original_price": None,
+                            "exchange_rate": None,
+                        }
+                    ],
+                }
+            ]
+        ).encode("utf-8")
+        httpx_mock.add_response(
+            url=(
+                f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+                f"?app_id=730&sources=buff163%2Cbuff163_buy"
+                f"%2Ccsmoney%2Cdmarket%2Cskinport%2Cswapgg"
+            ),
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+
+        collect_snapshot()
+
+        engine = get_engine()
+        with Session(engine) as session:
+            log_rows = session.execute(
+                select(PricempireObservationLog).where(
+                    PricempireObservationLog.item_id == sentinel_item
+                )
+            ).all()
+            assert len(log_rows) == 0, (
+                "observation_log should not be written when "
+                "last_checked_at is null"
+            )
+
+    @_db_required
+    def test_observation_log_advances_on_price_change(
+        self, httpx_mock, sentinel_item
+    ) -> None:
+        """Happy path: two cycles, price changes between them, both
+        the prices table and the log advance correctly."""
+        for cycle_idx, (price_cents, last_checked) in enumerate(
+            [
+                (2800, "2026-05-17T10:00:00.000Z"),
+                (2850, "2026-05-17T10:15:00.000Z"),
+            ]
+        ):
+            body = _make_response(
+                [
+                    _wire_item(
+                        _SENTINEL_NAME,
+                        prices=[
+                            _wire_price_row(
+                                provider_key="skinport",
+                                price_cents=price_cents,
+                                count=27,
+                                last_checked_at=last_checked,
+                            )
+                        ],
+                    ),
+                ]
+            )
+            httpx_mock.add_response(
+                url=(
+                    f"{PRICEMPIRE_BASE_URL}{PRICEMPIRE_PRICES_PATH}"
+                    f"?app_id=730&sources=buff163%2Cbuff163_buy"
+                    f"%2Ccsmoney%2Cdmarket%2Cskinport%2Cswapgg"
+                ),
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+            collect_snapshot()
+            del cycle_idx  # unused
+
+        engine = get_engine()
+        with Session(engine) as session:
+            obs_count = len(
+                session.execute(
+                    select(PricempireObservation).where(
+                        PricempireObservation.item_id == sentinel_item
+                    )
+                ).all()
+            )
+            assert obs_count == 2, (
+                f"price changed each cycle, expected 2 prices rows, "
+                f"got {obs_count}"
+            )
+            log_row = session.execute(
+                select(PricempireObservationLog).where(
+                    PricempireObservationLog.item_id == sentinel_item
+                )
+            ).scalar_one()
+            assert log_row.last_observed_at == datetime(
+                2026, 5, 17, 10, 15, 0, tzinfo=UTC
+            )
 
 
 # Reference unused import to keep ruff happy if a later edit removes

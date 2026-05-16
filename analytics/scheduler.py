@@ -24,6 +24,7 @@ hour.
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import sys
 from datetime import UTC, datetime, timedelta
@@ -38,6 +39,7 @@ from sqlalchemy.orm import Session
 from analytics import (
     anomaly_detection,
     cross_source,
+    drift,
     moving_averages,
     narrative,
     unavailability_streak,
@@ -89,6 +91,79 @@ def run_hourly_cycle() -> None:
     logger.info("Hourly analytics cycle complete")
 
 
+def run_drift_cycle() -> None:
+    """30-minute pattern-aware drift detection cycle (Phase 2b, ADR 022).
+
+    Compares each deep-tier item's direct-collector latest price
+    against the corresponding Pricempire sub-provider latest price.
+    Emits one drift_verdict insights row per (item, meaningful-pair).
+    The classifier (ADR 021) decides phase_based skips and pattern-
+    seed elevated thresholds.
+
+    Off-cycle from the hourly cycle to avoid queueing behind MA /
+    cross-source / anomaly jobs; 30 min matches the stale-threshold
+    so each cycle is guaranteed to see at least one fresh poll on
+    each side under normal operation.
+
+    ── Feature flag (Phase 2b Step 5) ────────────────────────────────
+    Gated behind the ``DRIFT_DETECTION_ENABLED`` env var so the
+    detector is dormant until Step 7's re-seed gate validates the
+    deep-tier composition. Defaults to false at every analytics
+    service restart — Step 7 flips it true after sign-off.
+
+    Accepted truthy values (case-insensitive): "true", "1", "yes",
+    "on". Anything else (unset, empty, "false", "0", etc.) means
+    "the cycle fires but no-ops with a single log line."
+
+    ── Runtime reload semantics ──────────────────────────────────────
+    The classifier YAML (data/pattern_sensitivity.yaml) and the
+    watchlist tier filter (data/watchlist.yaml) are loaded ONCE per
+    cycle at the start of ``compute_and_store``. Across cycles, the
+    Python process re-reads both files — but the analytics service's
+    APScheduler keeps the same Python process alive between cycles,
+    so an operator-side YAML edit takes effect on the NEXT 30-min
+    tick after the file is saved. An analytics service restart is
+    NOT required for YAML edits to apply, but a restart IS required
+    if you change module-level constants (BASELINE_DRIFT_THRESHOLD,
+    STALE_*_MINUTES, etc.) — those are bound at import time.
+    """
+    if not _drift_detection_enabled():
+        logger.info(
+            "Drift detection cycle: DRIFT_DETECTION_ENABLED not set "
+            "(or falsy); cycle is a no-op. Set the env var to a "
+            "truthy value to enable. Phase 2b Step 7 flips this."
+        )
+        return
+
+    logger.info("Drift detection cycle starting")
+    engine = get_engine()
+    try:
+        with Session(engine) as session:
+            wrote = drift.compute_and_store(
+                session, now=datetime.now(UTC)
+            )
+            session.commit()
+        logger.info(
+            "Drift detection cycle complete: wrote %d rows", wrote
+        )
+    except Exception:
+        logger.exception(
+            "Drift detection cycle failed with unhandled exception"
+        )
+
+
+def _drift_detection_enabled() -> bool:
+    """Read ``DRIFT_DETECTION_ENABLED`` from the environment. Returns
+    True when the env var is set to one of {"true", "1", "yes", "on"}
+    (case-insensitive). Anything else — including unset — is False.
+
+    Phase 2b Step 5 (feature flag): the drift detector is dormant
+    until Step 7's re-seed gate validates the deep-tier composition.
+    """
+    raw = (os.environ.get("DRIFT_DETECTION_ENABLED") or "").strip().lower()
+    return raw in {"true", "1", "yes", "on"}
+
+
 def run_daily_narrative() -> None:
     """Nightly narrative job. Calls Ollama; stores one ``daily_narrative``
     insights row. Failure (Ollama down, empty response) logs ERROR and
@@ -125,6 +200,17 @@ def build_scheduler() -> BlockingScheduler:
         next_run_time=soon,
         id="hourly_analytics",
         name="Hourly analytics (MAs + cross-source + anomalies)",
+    )
+    # Phase 2b — ADR 022. Off-cycle from hourly so it doesn't queue
+    # behind MA/anomaly computations. 30 min matches the stale
+    # threshold; each cycle sees at least one fresh poll on each
+    # side under normal operation.
+    scheduler.add_job(
+        run_drift_cycle,
+        trigger=IntervalTrigger(minutes=30),
+        next_run_time=soon,
+        id="drift_detection",
+        name="Pattern-aware drift detection (30 min)",
     )
     scheduler.add_job(
         run_daily_narrative,
@@ -166,7 +252,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
     signal.signal(signal.SIGINT, shutdown)
 
     logger.info(
-        "Analytics scheduler entering main loop: hourly cycle + 02:00 UTC narrative"
+        "Analytics scheduler entering main loop: hourly cycle + "
+        "30-min drift detection + 02:00 UTC narrative"
     )
     scheduler.start()
     logger.info("Analytics scheduler stopped cleanly")

@@ -18,6 +18,8 @@ A locally-hosted, eventually-public CS2 skin market data aggregation service wit
 
 **The user is a Systems Engineer at an MSP, not a Python expert.** Code should be readable by someone who knows infrastructure but not the latest Python idioms. Type hints, yes. Docstrings on public functions, yes. Clever metaclass tricks, no.
 
+**Schema-dependent code must not be merged before its migration is applied.** Code that reads or writes a table cannot be on `main` ahead of the migration that creates that table — in every environment where the code runs. In this single-environment dev setup, that collapses to "apply the migration first, then verify the code." For additive migrations bundled with code-using-the-new-schema in one commit, the verification gate is: dry-run the migration SQL → apply migration → verify the expected outcome (row count, schema shape) → run code-level tests → confirm green. Tests-then-migration is the rule for non-additive changes (column drops, type narrowing, anything that could break running readers). Pin the lesson learned during Phase 2b Step 2: the literal rule "tests pass before alembic upgrade" is impossible to satisfy when an additive migration and a code change that depends on it land together — the table must exist for the new code path to succeed.
+
 ## The architecture, briefly
 
 ```

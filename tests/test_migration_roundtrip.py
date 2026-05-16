@@ -24,6 +24,14 @@ from sqlalchemy.exc import OperationalError
 from db.connection import get_engine
 
 _DOMAIN_TABLES = ("items", "sources", "prices", "insights")
+# Phase 2a / 2b additions, in order of introduction. Checked separately
+# from _DOMAIN_TABLES so a failure surfaces "Pricempire schema missing"
+# distinctly from "v1 schema missing."
+_PRICEMPIRE_TABLES = (
+    "pricempire_observations",      # migration 0005
+    "pricempire_item_metadata",     # migration 0007
+    "pricempire_observation_log",   # migration 0008
+)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -107,6 +115,60 @@ def test_migration_roundtrip_then_seed() -> None:
             )
         ).scalar()
         assert policy_exists, "compression policy job not registered"
+
+    # 4b. Phase 2a/2b additions: confirm the Pricempire tables exist.
+    #     pricempire_observations and pricempire_item_metadata are
+    #     hypertables; pricempire_observation_log is a regular table.
+    with engine.connect() as conn:
+        for table in _PRICEMPIRE_TABLES:
+            assert _table_exists(conn, table), (
+                f"{table} missing after upgrade to head"
+            )
+        for hypertable in (
+            "pricempire_observations",
+            "pricempire_item_metadata",
+        ):
+            is_hypertable = conn.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM "
+                    "timescaledb_information.hypertables "
+                    "WHERE hypertable_name = :n)"
+                ),
+                {"n": hypertable},
+            ).scalar()
+            assert is_hypertable, f"{hypertable} is not a hypertable"
+
+        # Migration 0010: compression policies on both Pricempire
+        # hypertables. compression_enabled and the segment_by config
+        # both pin the migration's effects.
+        for hypertable, expected_segmentby in (
+            ("pricempire_observations", "item_id, source_id"),
+            ("pricempire_item_metadata", "item_id"),
+        ):
+            compress_on = conn.execute(
+                text(
+                    "SELECT compression_enabled FROM "
+                    "timescaledb_information.hypertables "
+                    "WHERE hypertable_name = :n"
+                ),
+                {"n": hypertable},
+            ).scalar()
+            assert compress_on, (
+                f"{hypertable}.compression_enabled is False after "
+                f"migration 0010 upgrade"
+            )
+            policy_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM timescaledb_information.jobs "
+                    "WHERE proc_name = 'policy_compression' "
+                    "AND hypertable_name = :n"
+                ),
+                {"n": hypertable},
+            ).scalar()
+            assert policy_count == 1, (
+                f"{hypertable} has {policy_count} policy_compression "
+                f"jobs, expected 1"
+            )
 
     # 5. Re-seed and assert the watchlist landed.
     #    Import inline so pytest collection doesn't fail when the seed

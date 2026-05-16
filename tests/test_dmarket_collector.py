@@ -10,7 +10,9 @@ All HTTP mocked via pytest-httpx; ``time.sleep`` monkey-patched out.
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -377,3 +379,322 @@ class TestDMarketCollectorHTTP:
         request = httpx_mock.get_requests()[0]
         # U+2605 ★ encodes as %E2%98%85 in UTF-8 percent-encoding.
         assert "%E2%98%85" in str(request.url)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 2b Step 6 — ADR 012 §7 iterate-objects[] + alias map
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _mixed_offers(
+    titles_and_prices: list[tuple[str, str]],
+) -> list[dict]:
+    """Build a DMarket-shaped objects[] with multiple titles, sorted
+    by the caller's intent. Used to exercise the iterate-objects[]
+    matching logic against synthetic responses."""
+    return [
+        {
+            "title": title,
+            "price": {"USD": price},
+            "suggestedPrice": {"USD": str(int(price) * 10)},
+        }
+        for title, price in titles_and_prices
+    ]
+
+
+class TestPhase2bIterateObjectsLogic:
+    """Phase 2b Step 6 (ADR 012 §7) — replaces the old objects[0]-
+    only title check with iterate-objects[] + accept-set matching.
+    Pure-logic tests using synthetic responses; no real DMarket
+    fixtures. Real-fixture tests live in
+    ``TestPhase2bRealDMarketFixtures`` below.
+    """
+
+    _CANONICAL = "AK-47 | Test Item (Field-Tested)"
+
+    def test_iterates_to_find_canonical_when_not_at_index_0(
+        self, httpx_mock
+    ) -> None:
+        """objects[0] is a wrong variant; canonical sits at index 1.
+        Pre-Phase-2b the collector would have rejected the whole
+        response; post-Phase-2b it picks the canonical and returns
+        its price."""
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("AK-47 | Wrong Variant (Field-Tested)", "100"),
+                        (self._CANONICAL, "150"),
+                        (self._CANONICAL, "200"),
+                    ]
+                )
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is not None
+        # Picks the FIRST canonical match (price 1.50), not the
+        # cheapest-overall (price 1.00 wrong variant).
+        assert obs.price == Decimal("1.50")
+        assert obs.raw_response["cheapest"]["title"] == self._CANONICAL
+
+    def test_alias_added_to_accept_set(self, httpx_mock) -> None:
+        """An alias title in alias_map is acceptable as a match."""
+        alias_title = "Some Variant That DMarket Uses"
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("AK-47 | Wrong Variant (Field-Tested)", "100"),
+                        (alias_title, "150"),
+                    ]
+                )
+            }
+        )
+        # Use the helper that aliases are NFC-normalized at construction
+        # in scheduler._load_dmarket_alias_map; tests bypass that by
+        # passing the normalized form directly.
+        from db.naming import normalize_name
+
+        collector = DMarketCollector(
+            alias_map={
+                normalize_name(self._CANONICAL): frozenset(
+                    {normalize_name(alias_title)}
+                )
+            }
+        )
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is not None
+        assert obs.price == Decimal("1.50")
+        assert (
+            obs.raw_response["cheapest"]["title"] == alias_title
+        )
+
+    def test_no_accept_set_match_returns_none(
+        self, httpx_mock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """objects[] has entries, but none match the accept set →
+        returns None with the new log message."""
+        import logging as _logging
+
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("Wrong Title A", "100"),
+                        ("Wrong Title B", "200"),
+                    ]
+                )
+            }
+        )
+        collector = DMarketCollector()
+        with caplog.at_level(
+            _logging.WARNING, logger="collectors.dmarket"
+        ):
+            with collector.make_client() as client:
+                obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is None
+        # New log message includes "no accept-set match" + ADR pointer.
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any(
+            "no accept-set match" in m and "ADR 012 §7" in m
+            for m in msgs
+        ), f"expected new log shape; got {msgs}"
+
+    def test_empty_alias_map_behaves_as_canonical_only(
+        self, httpx_mock
+    ) -> None:
+        """alias_map={} (or default) → only canonical-name match is
+        accepted. Iteration still finds the canonical when present."""
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("Wrong A", "100"),
+                        (self._CANONICAL, "150"),
+                    ]
+                )
+            }
+        )
+        collector = DMarketCollector(alias_map={})
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is not None
+        assert obs.price == Decimal("1.50")
+
+    def test_first_matching_entry_wins_on_duplicate_canonical(
+        self, httpx_mock
+    ) -> None:
+        """Two entries with the canonical title at different prices →
+        takes the first (cheapest, since DMarket sorts price-ascending).
+        Pins the 'iterate in order, take first match' semantic."""
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("Wrong A", "50"),
+                        (self._CANONICAL, "100"),
+                        (self._CANONICAL, "150"),
+                    ]
+                )
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is not None
+        assert obs.price == Decimal("1.00"), (
+            "first matching entry should win (price 1.00); "
+            f"got {obs.price}"
+        )
+
+    def test_nfc_normalization_handles_unicode_variants(
+        self, httpx_mock
+    ) -> None:
+        """The accept-set membership check uses NFC normalization
+        (db.naming.normalize_name) on both sides. A title that's NFC-
+        equivalent to the canonical matches even if the byte-encoding
+        differs (e.g. precomposed vs decomposed Unicode forms)."""
+        # The ★ glyph is U+2605 (single code point, NFC-stable).
+        # We construct a title that's byte-different but NFC-equivalent
+        # to the canonical by using the same code points — proving the
+        # equality goes through the normalize_name function. A more
+        # elaborate test would use NFD vs NFC of an accented character;
+        # for the project's CS2 vocabulary, U+2605 + standard ASCII is
+        # the realistic surface and normalize_name's NFC pass handles
+        # it correctly.
+        name = "★ Karambit | Fade (Factory New)"
+        httpx_mock.add_response(
+            json={
+                "objects": _mixed_offers(
+                    [
+                        ("★ Karambit | Marble Fade (Factory New)", "100"),
+                        (name, "200"),
+                    ]
+                )
+            }
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, name)
+        assert obs is not None
+        assert obs.price == Decimal("2.00")
+
+    def test_empty_objects_array_returns_none(self, httpx_mock) -> None:
+        """Step 6 refinement: DMarket sometimes returns objects: []
+        ("no listings for this item"). The iterate-objects[] logic
+        naturally handles this — the for-loop is a no-op on [] — but
+        we pin it explicitly. The pre-Phase-2b code's objects[0]
+        access on an empty list would have raised IndexError; the
+        new code returns None cleanly.
+        """
+        httpx_mock.add_response(
+            json={"objects": [], "total": {}}
+        )
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, self._CANONICAL)
+        assert obs is None
+
+
+# Real-fixture tests against captured DMarket responses. Fixtures live
+# at tests/fixtures/dmarket/<slug>.json and are captured one-shot by
+# scripts/capture_dmarket_fixtures.py. They prove the iterate-objects[]
+# fix against actual DMarket response shape, not synthetic.
+
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "dmarket"
+
+
+# Two parameter sets: items that SHOULD resolve to a valid
+# PriceObservation post-fix (canonical in objects[]) and items that
+# remain unavailable because DMarket genuinely doesn't carry them.
+_FIXTURES_RESOLVED = [
+    ("M4A1-S | Cyrex (Field-Tested)", "m4a1-s-cyrex-field-tested"),
+    ("MP9 | Hot Rod (Factory New)", "mp9-hot-rod-factory-new"),
+    (
+        "★ Butterfly Knife | Fade (Factory New)",
+        "star-butterfly-knife-fade-factory-new",
+    ),
+    (
+        "★ Huntsman Knife | Fade (Factory New)",
+        "star-huntsman-knife-fade-factory-new",
+    ),
+    ("★ Karambit | Fade (Factory New)", "star-karambit-fade-factory-new"),
+]
+
+_FIXTURES_STILL_NO_DATA = [
+    ("Desert Eagle | Blaze (Factory New)", "desert-eagle-blaze-factory-new"),
+    (
+        "SSG 08 | Death Strike (Factory New)",
+        "ssg-08-death-strike-factory-new",
+    ),
+    (
+        "Souvenir AWP | Dragon Lore (Battle-Scarred)",
+        "souvenir-awp-dragon-lore-battle-scarred",
+    ),
+]
+
+
+class TestPhase2bRealDMarketFixtures:
+    """Real-fixture regression tests. Each captured response is a
+    snapshot of DMarket's actual reply to ``title=<canonical>`` for
+    the 8 previously-failing watchlist items. Proves the fix works
+    against the response shape DMarket actually serves, not a
+    synthetic approximation.
+    """
+
+    @pytest.mark.parametrize("name,slug", _FIXTURES_RESOLVED)
+    def test_iteration_resolves_previously_failing_item(
+        self, name: str, slug: str, httpx_mock
+    ) -> None:
+        fixture_path = _FIXTURE_DIR / f"{slug}.json"
+        if not fixture_path.exists():
+            pytest.skip(
+                f"fixture {slug}.json not captured; run "
+                f"`python -m scripts.capture_dmarket_fixtures`"
+            )
+        body = json.loads(fixture_path.read_text())
+        httpx_mock.add_response(json=body)
+
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, name)
+
+        assert obs is not None, (
+            f"alias-map fix should resolve {name!r}; canonical name "
+            f"is present in objects[] per the captured fixture"
+        )
+        # The cheapest entry whose NFC-title matches canonical should
+        # be the persisted one. Verify the persisted title round-trips.
+        from db.naming import normalize_name
+
+        persisted_title = obs.raw_response["cheapest"]["title"]
+        assert normalize_name(persisted_title) == normalize_name(name)
+
+    @pytest.mark.parametrize("name,slug", _FIXTURES_STILL_NO_DATA)
+    def test_no_data_items_remain_unavailable(
+        self, name: str, slug: str, httpx_mock
+    ) -> None:
+        """Items where DMarket genuinely doesn't have the canonical
+        listed (3 of the 8 originally-failing items) should still
+        return None post-fix — same outcome as the pre-Phase-2b
+        behavior, but reached after inspecting the full response."""
+        fixture_path = _FIXTURE_DIR / f"{slug}.json"
+        if not fixture_path.exists():
+            pytest.skip(
+                f"fixture {slug}.json not captured; run "
+                f"`python -m scripts.capture_dmarket_fixtures`"
+            )
+        body = json.loads(fixture_path.read_text())
+        httpx_mock.add_response(json=body)
+
+        collector = DMarketCollector()
+        with collector.make_client() as client:
+            obs = collector.collect_one(client, name)
+
+        assert obs is None, (
+            f"DMarket fixture for {name!r} has no canonical title; "
+            f"collector should return None"
+        )

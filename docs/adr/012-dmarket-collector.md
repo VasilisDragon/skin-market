@@ -30,6 +30,14 @@ DMarket adds the third source. It's:
 
 ## Decisions
 
+> **Phase 2b amendment**: title-matching policy moved from
+> "take ``objects[0]``, check title" to "iterate ``objects[]`` for an
+> NFC-normalized match against {canonical name} ∪ aliases." See §7
+> for the rationale, the deploy-time effect on downstream analytics,
+> and the optional ``dmarket_alias`` field in
+> ``data/watchlist.yaml``. Sections 1-6 below are the original
+> decisions and continue to apply.
+
 ### 1. Use `.price.USD`, NOT `.suggestedPrice`
 
 DMarket's API returns two price-like fields per offer:
@@ -111,6 +119,130 @@ Skinport's ``min_price:null``: an empty ``objects`` array means "no
 current listings on DMarket right now", which is real rarity signal,
 not a collector failure. The cycle counter is ``unavailable``, not
 ``lookup_failed``; the log is INFO, not WARNING.
+
+### 7. Iterate ``objects[]`` for title match — Phase 2b alias map
+
+**Added 2026-05-17 in Phase 2b Step 6.** Supersedes the implicit
+"take ``objects[0]``, check title" guard that was added during Phase
+6.5 (and which the original ADR 012 did not document — that's the
+gap this section also retroactively closes).
+
+#### Problem
+
+DMarket's ``title=`` query parameter is a loose tokenized matcher,
+not exact-substring. Asking for ``Desert Eagle | Blaze (Factory New)``
+returns offers for ``Desert Eagle | Oxide Blaze (Factory New)`` at
+``objects[0]`` when the Oxide variant happens to be cheaper. The
+Phase 6.5 guard ("if ``objects[0].title != canonical`` then skip")
+correctly refused to persist Oxide-Blaze listings under the Blaze
+canonical name, but it threw away the response entirely instead of
+looking deeper into ``objects[]`` for an entry whose title DID match
+the canonical name.
+
+PROJECT_OVERVIEW.md §8 gotcha #5 documents the 8 watchlist items
+that consistently fail under this guard. Live capture confirms 5 of
+the 8 have the canonical title present somewhere in ``objects[]``
+(just not at index 0); the iteration fix surfaces it. The other 3
+items genuinely have no listings under their canonical name right
+now (DMarket carries only Souvenir / StatTrak / Oxide variants) —
+the new code emits the same ``None`` outcome for those, but reached
+honestly after inspecting every entry.
+
+#### Decision
+
+Replace the single-element ``objects[0]`` title check with an
+iteration over the full ``objects[]`` array (price-ascending per
+DMarket's default sort). Accept the first entry whose NFC-normalized
+title is in the **accept set** ``{normalize_name(canonical_name)} ∪
+aliases``. Aliases come from an optional ``dmarket_alias`` field in
+``data/watchlist.yaml``:
+
+```yaml
+- market_hash_name: "Some Item (Factory New)"
+  item_type: rifle
+  ...
+  tier: deep
+  dmarket_alias:  # optional list of strings
+    - "Some Item (Factory New)"
+    - "Some-Item Variant (Factory New)"
+```
+
+The watchlist YAML loader (``scripts/seed_watchlist.py``) validates
+the field as a list of non-empty strings; a broad-tier item with
+``dmarket_alias`` set logs a WARN (dead config — DMarket isn't
+polled for broad tier per ADR 024) but does not error.
+
+The collector scheduler (``collectors/scheduler.py``) loads the
+alias map once at ``build_scheduler`` time and threads it into the
+DMarket collector instance via the new ``alias_map`` kwarg. Operators
+restarting the COLLECTOR service (``docker compose restart
+collector``) pick up YAML edits — not the analytics service; the
+alias map is collector-owned.
+
+#### Empirical findings from live capture (2026-05-17)
+
+For each of the 8 currently-failing items, the capture script
+(``scripts/capture_dmarket_fixtures.py``) hit live DMarket and the
+fixtures live at ``tests/fixtures/dmarket/<slug>.json``:
+
+| Item | Canonical in ``objects[]``? | Verdict post-deploy |
+|---|---|---|
+| Desert Eagle \| Blaze (FN) | No (only Oxide variants) | Still "no data" |
+| M4A1-S \| Cyrex (FT) | Yes | Will start producing prices |
+| MP9 \| Hot Rod (FN) | Yes | Will start producing prices |
+| SSG 08 \| Death Strike (FN) | No (only Souvenir variant) | Still "no data" |
+| Souvenir AWP \| Dragon Lore (BS) | No (empty ``objects[]``) | Still "no data" |
+| ★ Butterfly Knife \| Fade (FN) | Yes | Will start producing prices |
+| ★ Huntsman Knife \| Fade (FN) | Yes | Will start producing prices |
+| ★ Karambit \| Fade (FN) | Yes | Will start producing prices |
+
+5 items will start producing prices post-deploy; 3 remain
+unavailable because the canonical item genuinely isn't listed on
+DMarket right now. No aliases were needed for any item — the
+iteration alone resolves every fixable case.
+
+The ``dmarket_alias`` field is added to the YAML schema anyway as
+forward-compat: if DMarket ever ships a Unicode-glyph variant of an
+existing item, or a renamed canonical, the alias map absorbs the
+change without a code edit.
+
+#### Deploy-time effect on downstream analytics
+
+**Drift detector (ADR 022) and ``cross_source_spread`` analytics
+will observe a step-function for the 5 newly-fixed items.** Before
+Step 6's deploy: no DMarket data → ``no_comparable_data`` /
+``unavailable`` rows. After: live DMarket data → real drift numbers
+and real spread values. Retrospective analysis on rows older than
+Step 6's deploy date should NOT correlate the change with any
+market-side event — it's the alias map taking effect.
+
+For the 3 still-unavailable items: no change. The collector emits a
+slightly different log line (``"no accept-set match in N objects[]"``
+instead of ``"DMarket title mismatch"``), but the downstream
+behavior is unchanged.
+
+**Operational WARN-volume drop**: pre-Phase-2b, the DMarket cycle
+log carried ~726 ``"DMarket title mismatch"`` WARN lines per 24h
+(PROJECT_OVERVIEW.md §8 gotcha #5 cited the number). Post-deploy,
+that count drops to roughly ``3 items × ~96 cycles/day ≈ 288/day``
+(the 3 still-unavailable items continue to log; 5 newly-resolving
+items stop). Anyone monitoring WARN counts as a health signal will
+see a step-function decrease coinciding with deploy. Not a problem
+— it's the fix taking effect — but worth being aware of so the
+decrease doesn't get misread as "collector stopped logging properly."
+
+#### Boundary cases pinned by tests
+
+- Empty ``objects[]`` → returns None cleanly (no IndexError on the
+  removed ``objects[0]`` access).
+- Multiple objects[] with the same matching title → takes the first
+  (cheapest by DMarket's default sort).
+- Empty alias list / alias_map missing entry → behaves identically
+  to "accept canonical only."
+- Alias on a broad-tier item → loader WARN, not error.
+
+See ``tests/test_dmarket_collector.py`` (Group A + B + C) for the
+pinned test surface.
 
 ## Consequences
 

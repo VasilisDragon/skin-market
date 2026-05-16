@@ -96,18 +96,48 @@ def test_price_roundtrip() -> None:
 
 def test_stattrak_market_hash_name_roundtrip() -> None:
     """The U+2122 codepoint in a StatTrak market_hash_name must survive a
-    write/read roundtrip — that's the key invariant for the Steam UPSERT."""
+    write/read roundtrip — that's the key invariant for the Steam UPSERT.
+
+    Uses a synthetic insert/delete pattern to avoid coupling the test to
+    watchlist composition. Phase 2b Step 7.1 dropped the
+    "StatTrak™ AK-47 | Redline (Field-Tested)" item from the watchlist;
+    the prior test variant relied on that item being present (with a
+    skip fallback that hid the loss of coverage on fresh deploys).
+    """
     engine = get_engine()
-    expected_name = "StatTrak™ AK-47 | Redline (Field-Tested)"
-    with engine.connect() as conn:
-        row = conn.execute(
-            text("SELECT market_hash_name FROM items WHERE market_hash_name = :n"),
-            {"n": expected_name},
-        ).scalar_one_or_none()
-    # If the seed script has run, this item exists. Otherwise skip — the
-    # roundtrip is also covered by test_price_roundtrip on whatever items
-    # exist.
-    if row is None:
-        pytest.skip("seed not run; StatTrak fixture not present")
-    assert row == expected_name
-    assert "™" in row
+    synthetic_name = "StatTrak™ __Roundtrip_Sentinel__ | Test (Factory New)"
+    synthetic_slug = "stattrak-roundtrip-sentinel-test-factory-new"
+    with Session(engine) as session:
+        # Clean any leftover from a prior failed run.
+        session.execute(
+            text("DELETE FROM items WHERE market_hash_name = :n"),
+            {"n": synthetic_name},
+        )
+        session.execute(
+            text(
+                "INSERT INTO items "
+                "(market_hash_name, display_name, slug, is_stattrak) "
+                "VALUES (:n, :n, :s, true)"
+            ),
+            {"n": synthetic_name, "s": synthetic_slug},
+        )
+        session.commit()
+
+        try:
+            row = session.execute(
+                text(
+                    "SELECT market_hash_name FROM items "
+                    "WHERE market_hash_name = :n"
+                ),
+                {"n": synthetic_name},
+            ).scalar_one()
+            assert row == synthetic_name
+            # U+2122 (™) must survive byte-for-byte through Postgres.
+            assert "™" in row
+            assert row.encode("utf-8").startswith(b"StatTrak\xe2\x84\xa2")
+        finally:
+            session.execute(
+                text("DELETE FROM items WHERE market_hash_name = :n"),
+                {"n": synthetic_name},
+            )
+            session.commit()

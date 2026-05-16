@@ -1,0 +1,79 @@
+# data/pattern_sensitivity.yaml — Phase 2b pattern-sensitivity classifier
+# (ADR 021).
+#
+# Exception list for pattern-aware drift detection. Items not listed
+# here default to pattern_agnostic (baseline threshold). Only deep-tier
+# items can appear; broad-tier items don't get drift detection and the
+# loader fails fast if it sees one.
+#
+# Schema version 1 — this file is new in Phase 2b. Per ADR 021, YAML
+# schema versions are PER-FILE. This file's schema_version: 1 is
+# independent of data/watchlist.yaml's schema_version: 2. Bumping one
+# does not imply bumping the other.
+#
+# Deploy-order dependency: data/watchlist.yaml + scripts/seed_watchlist.py
+# must run BEFORE the analytics service loads this file. The loader
+# cross-references each market_hash_name against (a) the items table
+# (catches typos / unseeded items) and (b) the watchlist.yaml's tier
+# field (catches accidentally classifying a broad-tier item).
+# Reversing the order fails fast with "market_hash_name not in items
+# table" or "market_hash_name has tier: broad."
+#
+# Seeded categories:
+#   phase_based      Upstream taxonomy aggregates phases under one
+#                    market_hash_name. Drift is meaningless; the
+#                    detector emits pattern_skip (no number).
+#   pattern_seed     Specific paint-seed patterns drive listing-level
+#                    price; cross-source aggregation noise dominates.
+#                    Apply drift_threshold_multiplier > 1.0.
+#
+# Implicit default (not present in this file; pattern_agnostic is the
+# fallback the loader returns for any market_hash_name not listed):
+#   pattern_agnostic Baseline drift threshold. Listing it explicitly
+#                    is dead config and the loader rejects it.
+#
+# Extensible-but-not-seeded categories (loader accepts; no items
+# currently use them — add an entry to enable for any item):
+#   pattern_ranked    Case Hardened / Crimson Web tier-ranked patterns.
+#   wear_percentage   Float-driven pricing within a named wear tier
+#                     (Fade gradients, etc.).
+#   sticker_premium   Per-listing sticker craft premium.
+#   float_sensitive   Extreme-float listings dominate one source's
+#                     observed price.
+
+schema_version: 1
+
+items:
+  # ── phase_based: Dopplers (3) ─────────────────────────────────────
+  - market_hash_name: "★ Karambit | Doppler (Factory New)"
+    classification: phase_based
+    note: |
+      Skinport groups Doppler phases (1-4 / Ruby / Sapphire / Black
+      Pearl) under one market_hash_name. Direct Skinport's cheapest-
+      listing pick and Pricempire's normalization disagree by 60-74%
+      structurally (Phase 2a validation §3).
+
+  - market_hash_name: "★ M9 Bayonet | Doppler (Factory New)"
+    classification: phase_based
+
+  - market_hash_name: "★ Flip Knife | Doppler (Factory New)"
+    classification: phase_based
+
+  # ── phase_based: phase-bearing non-Doppler knives (2) ─────────────
+  - market_hash_name: "★ Karambit | Marble Fade (Factory New)"
+    classification: phase_based
+    note: |
+      FFI / FFY / Max-Blue-Tip phases priced differently; same
+      cross-source aggregation noise as Dopplers.
+
+  - market_hash_name: "★ Karambit | Tiger Tooth (Factory New)"
+    classification: phase_based
+
+  # ── pattern_seed: rare-seed gloves (1) ────────────────────────────
+  - market_hash_name: "★ Sport Gloves | Vice (Field-Tested)"
+    classification: pattern_seed
+    drift_threshold_multiplier: 2.0
+    note: |
+      Rare pattern seeds drive listing-level price; cross-source
+      averaging picks different exemplars. Apply 2x baseline drift
+      threshold.

@@ -31,7 +31,14 @@ DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "data" / "watchlist.yaml"
 
 # Bump this if seed_watchlist.py's expectations of the YAML schema change
 # incompatibly. The YAML file declares its own ``schema_version`` we check.
-_SUPPORTED_SCHEMA_VERSION = 1
+# Phase 2b (ADR 024) bumped to 2 — every item now requires a ``tier:``
+# field of value ``deep`` or ``broad``. The tier is YAML-side only; it is
+# NOT denormalized into the items table.
+_SUPPORTED_SCHEMA_VERSION = 2
+
+# Valid values for the per-item ``tier:`` field. Anything else is a
+# fail-fast error at load time.
+_VALID_TIERS: frozenset[str] = frozenset({"deep", "broad"})
 
 
 _INSERT_SOURCE_SQL = text(
@@ -65,7 +72,20 @@ _INSERT_ITEM_SQL = text(
 
 
 def load_watchlist(path: Path) -> dict[str, Any]:
-    """Parse the watchlist YAML and verify its schema_version."""
+    """Parse the watchlist YAML, verify its schema_version, and validate
+    per-item ``tier:`` membership.
+
+    Fail-fast contract (raises ValueError):
+    - Top-level is not a mapping.
+    - schema_version != _SUPPORTED_SCHEMA_VERSION.
+    - Missing top-level ``sources`` or ``items`` keys.
+    - Any item lacks ``market_hash_name``.
+    - Any item lacks ``tier`` or has a value outside _VALID_TIERS.
+
+    The tier is YAML-side only and is NOT propagated into the items
+    table by this loader (ADR 024). Consumers that need tier
+    membership read the YAML directly via this function.
+    """
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -78,6 +98,65 @@ def load_watchlist(path: Path) -> dict[str, Any]:
         )
     if "sources" not in data or "items" not in data:
         raise ValueError(f"{path}: missing required top-level keys 'sources' and 'items'")
+
+    # Per-item tier + dmarket_alias validation. Runs before the seed
+    # phase so a malformed YAML never produces a partial DB write.
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    for idx, item in enumerate(data["items"]):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"{path}: items[{idx}] must be a mapping, got "
+                f"{type(item).__name__}"
+            )
+        mhn = item.get("market_hash_name")
+        if not mhn:
+            raise ValueError(
+                f"{path}: items[{idx}] is missing market_hash_name"
+            )
+        tier = item.get("tier")
+        if tier is None:
+            raise ValueError(
+                f"{path}: items[{idx}] ({mhn!r}) is missing required "
+                f"`tier:` field. Expected one of {sorted(_VALID_TIERS)}."
+            )
+        if tier not in _VALID_TIERS:
+            raise ValueError(
+                f"{path}: items[{idx}] ({mhn!r}) has invalid tier "
+                f"{tier!r}. Expected one of {sorted(_VALID_TIERS)}."
+            )
+
+        # Phase 2b Step 6: optional dmarket_alias field. Must be a
+        # list of non-empty strings when present. Broad-tier items
+        # with this field log a WARN (dead config — DMarket isn't
+        # polled for broad-tier) but don't error.
+        aliases = item.get("dmarket_alias")
+        if aliases is not None:
+            if not isinstance(aliases, list):
+                raise ValueError(
+                    f"{path}: items[{idx}] ({mhn!r}) has "
+                    f"dmarket_alias of type {type(aliases).__name__}; "
+                    f"expected a list of strings."
+                )
+            for a_idx, alias in enumerate(aliases):
+                if not isinstance(alias, str) or not alias:
+                    raise ValueError(
+                        f"{path}: items[{idx}] ({mhn!r}) "
+                        f"dmarket_alias[{a_idx}] is not a non-empty "
+                        f"string (got {alias!r})."
+                    )
+            if tier == "broad":
+                _log.warning(
+                    "%s: items[%d] (%r) has dmarket_alias on a "
+                    "broad-tier item — dead config; DMarket isn't "
+                    "polled for broad tier (ADR 024). Remove the "
+                    "field or move the item to tier: deep.",
+                    path,
+                    idx,
+                    mhn,
+                )
     return data
 
 

@@ -1,0 +1,397 @@
+{
+  "objects": [
+    {
+      "itemId": "2be9e667-f7e0-528e-b690-afa17f48eb08",
+      "type": "offer",
+      "amount": 1,
+      "classId": "6530043044:7993043177",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir SSG 08 | Death Strike (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLijZGwpR1Y-s29e6M9eM-ADWiC0ed5vt5lRi67gVMh6jjTn9ygJSieaAEiAsB2F7Jfshe-xtHkPuvisQLXgt8UmCz523lM8G81tFON4mQ2",
+      "slug": "ssg-08-death-strike",
+      "owner": "85beb6b3-135e-4a1d-ac1d-65acbf937569",
+      "ownersBlockchainId": "6971eb12ff12710fda29acb92673015a1311e61576c12783751fe31a29d76991",
+      "ownerDetails": {
+        "id": "85beb6b3-135e-4a1d-ac1d-65acbf937569",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "6971eb12ff12710fda29acb92673015a1311e61576c12783751fe31a29d76991"
+      },
+      "status": "active",
+      "discount": 16,
+      "price": {
+        "DMC": "",
+        "USD": "23588"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "28306"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d32ce6",
+        "backgroundColor": "d32ce6",
+        "tradable": true,
+        "offerId": "ce1a1f9c-37c1-4892-897a-0feaa94b079a",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "SSG 08 | Death Strike",
+        "categoryPath": "sniper rifle/ssg 08",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199542916360/inventory/#730_2_50414683730",
+        "groupId": "76561199542916360",
+        "withdrawable": true,
+        "linkId": "71948340-bb5a-524c-b81c-9943a9297bac",
+        "exterior": "factory new",
+        "quality": "classified",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "b0d8982c303870b608e0f61af3a6a4774e7922f065c937a6b0f70cd420916bb3",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Perfect World (Gold) | Shanghai 2024",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/sha2024/pw_gold.74e6b5932ee2188f36403e46db661b79785da8c4.png"
+          },
+          {
+            "name": "Dust II (Gold)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/tournament_assets/de_dust2_gold.30c34e3f11c40cf4f44c0577e01f2a9446feb88f.png"
+          },
+          {
+            "name": "Team Spirit (Gold) | Shanghai 2024",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/sha2024/spir_gold.e600cd14f51f1ebd13920e601b43edcf7abe293c.png"
+          },
+          {
+            "name": "Team Liquid (Gold) | Shanghai 2024",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/sha2024/liq_gold.e5c15cb6f0ef993a8013a970bf557107b226f956.png"
+          }
+        ],
+        "charms": [
+          {
+            "name": "Lil' Ava",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/keychains/missinglink/kc_missinglink_ava.f2e1e86e199fc19b9ba2711fce3b19730137fae4.png",
+            "pattern": 91352
+          }
+        ],
+        "itemType": "sniper rifle",
+        "floatValue": 0.06913641095161438,
+        "floatPartValue": "FN-6",
+        "paintIndex": 1052,
+        "paintSeed": 174,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%203A2AE8B6F6DD813B22121AA632123F0A3602DE948CD6397A943B583F323A2AE104583F32392AA037583F323B2ABD04583F32382A990452B9BABABA364A32983B2D323A2A3B07F409237A7F610E430577B712E57A6AE2F33F0670893C",
+        "collection": [
+          "2021 dust 2"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69b9976eb709c05382e27f22",
+        "emissionSerial": "69b9976eb709c05382e27f22",
+        "cheapestBySteamAnalyst": true,
+        "sagaAddress": "0x93c0d613c295e4B99C49E7a9Cb693CB616DAcb87"
+      },
+      "createdAt": 1778546878,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:421f1902b8e1329d313bb14a6ff6947c",
+      "favoriteFor": 2,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 2,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "9839444e-ba49-57de-ae7a-1dd2f266d57b",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8440642986:7993043177",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir SSG 08 | Death Strike (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyLijZGwpR1Y-s29e6M9eM-ADWiC0ed5vt5lRi67gVMh6jjTn9ygJSieaAEiAsB2F7Jfshe-xtHkPuvisQLXgt8UmCz523lM8G81tFON4mQ2",
+      "slug": "ssg-08-death-strike",
+      "owner": "cef09b1a-48c7-4ff1-8cd4-63744ca1eac0",
+      "ownersBlockchainId": "32c888f506e34c878e96a1f26aa64baeede4f0fc04e847069405ba01278f9ed8",
+      "ownerDetails": {
+        "id": "cef09b1a-48c7-4ff1-8cd4-63744ca1eac0",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "32c888f506e34c878e96a1f26aa64baeede4f0fc04e847069405ba01278f9ed8"
+      },
+      "status": "active",
+      "discount": 16,
+      "price": {
+        "DMC": "",
+        "USD": "23599"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "28306"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d32ce6",
+        "backgroundColor": "d32ce6",
+        "tradable": true,
+        "offerId": "8235b099-519a-4101-9654-75aaef13b937",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "SSG 08 | Death Strike",
+        "categoryPath": "sniper rifle/ssg 08",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199495632719/inventory/#730_2_51491223111",
+        "groupId": "76561199495632719",
+        "withdrawable": true,
+        "linkId": "6f27e66a-7fca-5acc-8bdc-1df3abd7c5a1",
+        "exterior": "factory new",
+        "quality": "classified",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "7cdba0b91f9240b5877b4b3830d87f41b9461348c38c4d43b79f045dd61961c3",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "IEM (Gold) | Rio 2022",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/rio2022/iem_gold.3c9fce25cc3685f74877fe71e335b8d3775454e8.png"
+          },
+          {
+            "name": "Dust II (Gold)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/tournament_assets/de_dust2_gold.30c34e3f11c40cf4f44c0577e01f2a9446feb88f.png"
+          },
+          {
+            "name": "Natus Vincere (Gold) | Rio 2022",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/rio2022/navi_gold.44619b9e0487126917115b1645be056d3b30031d.png"
+          },
+          {
+            "name": "BIG (Gold) | Rio 2022",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/rio2022/big_gold.3a8daae101c9a471f5e255456bdba0f6e7433456.png"
+          }
+        ],
+        "itemType": "sniper rifle",
+        "floatValue": 0.037621378898620605,
+        "floatPartValue": "FN-3",
+        "paintIndex": 1052,
+        "paintSeed": 895,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20E4F42308120C5BE5FCCCC478ECCCE1D4E8DC04550C0CE7A41BE286E1ECE5F448CB86E1ECE4F47EE986E1ECE6F43CCA86E1ECE7F410CA8C67646464E894EC29F94678",
+        "collection": [
+          "2021 dust 2"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69f8fb22b5b030205fbe2b78",
+        "emissionSerial": "69f8fb22b5b030205fbe2b78",
+        "cheapestBySteamAnalyst": true,
+        "sagaAddress": "0x2abAd82e75A5EE6D09FD4Fd8BE03Cc051a72D057"
+      },
+      "createdAt": 1778967029,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:421f1902b8e1329d313bb14a6ff6947c",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    }
+  ],
+  "total": {
+    "offers": 0,
+    "targets": 0,
+    "items": 2,
+    "completedOffers": 0,
+    "closedTargets": 0
+  },
+  "cursor": "WzIzNS45OSwiODIzNWIwOTktNTE5YS00MTAxLTk2NTQtNzVhYWVmMTNiOTM3Il0="
+}

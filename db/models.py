@@ -204,6 +204,43 @@ class PricempireObservation(Base):
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
+class PricempireObservationLog(Base):
+    """Per-(item, source) Pricempire-poll-time signal, advanced
+    unconditionally on every successful wire-row parse — BEFORE the
+    dedup gate suppresses an unchanged-row write.
+
+    Phase 2b addition (ADR 023). Mirrors the existing ObservationLog
+    table for the curated collectors. The drift detector reads
+    last_observed_at to gate stale comparisons; without this table,
+    Pricempire's dedup-suppressed cycles would silently age the only
+    available freshness signal (raw_response->>'last_checked_at' from
+    the latest written row), reproducing Phase 1's observed_at bug
+    one level up.
+
+    Composite PK (item_id, source_id) — one row per pair, upserted via
+    INSERT ... ON CONFLICT DO UPDATE. Regular table (NOT hypertable):
+    cardinality is bounded by deep-tier items × Pricempire sub-providers
+    (~44 × 6 ≈ 264 rows total in v1).
+
+    The collector helper collectors.pricempire._upsert_observation_log
+    MUST be called BEFORE the dedup gate's SELECT. Test
+    tests/test_pricempire_collector.py::test_observation_log_upserts_before_dedup
+    pins this invariant.
+    """
+
+    __tablename__ = "pricempire_observation_log"
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), primary_key=True
+    )
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id"), primary_key=True
+    )
+    last_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class PricempireItemMetadata(Base):
     """Per-item slow-changing metadata Pricempire returns alongside
     prices: rank, liquidity, marketcap, Steam-side trade volumes.

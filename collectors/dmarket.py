@@ -46,6 +46,15 @@ Failure modes — same taxonomy as Steam / Skinport (ADR 006):
 
 The price-vs-suggestedPrice trap is the only DMarket-specific gotcha;
 ADR 012 §3 carries the details and a test guards the behavior.
+
+Title-matching policy: Phase 2b Step 6 (ADR 012 §7) replaced the
+"take objects[0], check title" behavior with "iterate objects[] in
+price-ascending order, accept first NFC-normalized-title match
+against {canonical name} ∪ aliases." Aliases come from
+``data/watchlist.yaml``'s optional ``dmarket_alias`` field and are
+threaded into the collector via the ``alias_map`` constructor kwarg.
+Operator workflow for adding an alias: edit watchlist.yaml, restart
+the COLLECTOR service (not analytics — alias map is collector-owned).
 """
 
 from __future__ import annotations
@@ -115,7 +124,26 @@ def parse_dmarket_price(cents_str: str | int | None) -> Decimal | None:
 
 
 class DMarketCollector(Collector):
-    """Collector for the DMarket public market endpoint."""
+    """Collector for the DMarket public market endpoint.
+
+    Title-match policy (ADR 012 §7, Phase 2b Step 6): rather than
+    take ``objects[0]`` blindly, the collector iterates the price-
+    ascending ``objects[]`` array and accepts the first entry whose
+    NFC-normalized title is in the accept set ``{canonical_name} ∪
+    aliases``. Aliases come from ``data/watchlist.yaml``'s optional
+    ``dmarket_alias`` field, loaded at scheduler start and threaded
+    in via the ``alias_map`` constructor kwarg. If no entry in
+    ``objects[]`` matches the accept set, the collector returns None
+    — same outcome as the old title-mismatch path, but reached after
+    inspecting the full response rather than just the first element.
+
+    Reload semantics: ``alias_map`` is bound at instance construction
+    and held for the collector's lifetime. The COLLECTOR service must
+    be restarted (``docker compose restart collector``) for YAML edits
+    to ``dmarket_alias`` entries to take effect. NOT the analytics
+    service — analytics has its own classifier-load discipline (Step 5);
+    the alias map is collector-owned.
+    """
 
     source_name = "dmarket"
     # DMarket is permissive but has no documented rate limit; mirror
@@ -124,6 +152,20 @@ class DMarketCollector(Collector):
     inter_request_delay: float = 3.0
     base_delay: float = 3.0
     max_retries: int = 5
+
+    def __init__(
+        self,
+        *,
+        alias_map: dict[str, frozenset[str]] | None = None,
+    ) -> None:
+        """Construct the collector. ``alias_map`` maps NFC-normalized
+        canonical names to frozensets of NFC-normalized acceptable
+        alias titles. Missing entries (or alias_map=None) mean
+        "accept the canonical name only" — the collector still
+        iterates objects[] to find it.
+        """
+        super().__init__()
+        self.alias_map: dict[str, frozenset[str]] = alias_map or {}
 
     def collect_one(
         self, client: httpx.Client, market_hash_name: str
@@ -254,43 +296,54 @@ class DMarketCollector(Collector):
             )
             return None
 
-        cheapest = objects[0]
-        if not isinstance(cheapest, dict):
-            logger.warning(
-                "DMarket cheapest offer not a dict for %r: %r",
-                market_hash_name,
-                cheapest,
-            )
-            return None
+        # Phase 2b Step 6 (ADR 012 §7): iterate objects[] in DMarket's
+        # default price-ascending order. Accept the first entry whose
+        # NFC-normalized title is in the accept set (canonical name ∪
+        # aliases from data/watchlist.yaml's dmarket_alias field).
+        #
+        # Pre-Phase-2b behavior was to take objects[0] only and check
+        # its title — which failed for 8 watchlist items where DMarket's
+        # loose `title=` matcher returned cheaper-variant listings (e.g.
+        # Oxide Blaze for "Desert Eagle | Blaze (FN)", or the Souvenir
+        # variant for "MP9 | Hot Rod (FN)") at index 0 while the true
+        # canonical sat later in the response. The iteration finds the
+        # canonical when present; for items DMarket genuinely doesn't
+        # carry (3 of the 8), iteration exhausts and the collector
+        # returns None — same outcome as the old code, but reached
+        # honestly. ADR 012 §7 documents the deploy-time effect
+        # (5 items will start producing prices post-deploy; 3 remain
+        # "no data" because DMarket truly doesn't list them).
+        canonical = normalize_name(market_hash_name)
+        accept_set: frozenset[str] = (
+            frozenset({canonical})
+            | self.alias_map.get(canonical, frozenset())
+        )
 
-        # IMPORTANT: DMarket's ``title=`` query is a substring/prefix match,
-        # not an exact match. Asking for ``Desert Eagle | Blaze (Factory
-        # New)`` returns ``Desert Eagle | Oxide Blaze (Factory New)``;
-        # asking for ``M4A1-S | Cyrex (Field-Tested)`` returns the
-        # StatTrak™ variant; asking for ``MP9 | Hot Rod (Factory New)``
-        # returns the Souvenir variant. Cross-source spreads on the
-        # affected items go through the roof (480× on the Blaze case)
-        # because the cheaper-variant listings are being persisted under
-        # the wrong canonical name. Enforce exact NFC-normalized title
-        # equality before persistence; reject anything else. Pollution
-        # surfaced in the Phase 6.5 sweep — 95 rows across 10 items.
-        returned_title = cheapest.get("title")
-        if not isinstance(returned_title, str):
-            logger.warning(
-                "DMarket cheapest offer has no title field for %r — "
-                "skipping (response shape changed?)",
-                market_hash_name,
+        cheapest: dict | None = None
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            title = obj.get("title")
+            if not isinstance(title, str):
+                continue
+            if normalize_name(title) in accept_set:
+                cheapest = obj
+                break
+
+        if cheapest is None:
+            first_title = (
+                objects[0].get("title")
+                if isinstance(objects[0], dict)
+                else None
             )
-            return None
-        if normalize_name(returned_title) != normalize_name(
-            market_hash_name
-        ):
             logger.warning(
-                "DMarket title mismatch: requested %r, got %r — "
-                "skipping (loose substring match on DMarket's `title=` "
-                "parameter; see ADR 012 §4)",
+                "DMarket: no accept-set match in %d objects[] for %r "
+                "(first object title=%r). Neither the canonical name "
+                "nor any alias in data/watchlist.yaml's dmarket_alias "
+                "matched. See ADR 012 §7.",
+                len(objects),
                 market_hash_name,
-                returned_title,
+                first_title,
             )
             return None
 

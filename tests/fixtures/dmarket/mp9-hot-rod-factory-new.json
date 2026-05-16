@@ -1,0 +1,4787 @@
+{
+  "objects": [
+    {
+      "itemId": "52835d88-fb5b-574e-9f4d-e8d2ddbcf523",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8455281003:7993042644",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "67733a2a-f8c9-4ef6-bd92-8001d0545f1e",
+      "ownersBlockchainId": "d5b0ea3872d6cbccac0260beccb9a1297713936ee0131b730d63af0102c855ca",
+      "ownerDetails": {
+        "id": "67733a2a-f8c9-4ef6-bd92-8001d0545f1e",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "d5b0ea3872d6cbccac0260beccb9a1297713936ee0131b730d63af0102c855ca"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "22827"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "19600"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": false,
+        "offerId": "d3e7fd21-4bc1-4115-a39e-0be00d59e065",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199276192848/inventory/#730_2_51590003382",
+        "groupId": "76561199276192848",
+        "linkId": "f9afb12b-ad0a-51d8-a681-f372b32eb1c1",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "souvenir",
+        "tradeLock": 5,
+        "tradeLockDuration": 481840,
+        "settlementTime": "2026-05-17T07:00:00Z",
+        "settlementDuration": 481839,
+        "depositor": "d5b0ea3872d6cbccac0260beccb9a1297713936ee0131b730d63af0102c855ca",
+        "tradeProtectionRemoved": false,
+        "stickers": [
+          {
+            "name": "ELEAGUE (Gold) | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/eleague_gold.007ec300800f7b505a9b45e2cac667feb639a50d.png"
+          },
+          {
+            "name": "Cloud9 (Gold) | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/c9_gold.c9fff43e1398ada2618ec8bd0a6a6142d83d02f5.png"
+          },
+          {
+            "name": "Skadoodle (Gold) | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/sig_skadoodle_gold.6e9c7a9623f2cc1bbf134333bde869a48917c846.png"
+          },
+          {
+            "name": "Virtus.Pro (Gold) | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/vp_gold.b817f9c8df8f81cfe3de586a6b3c7952e961b36b.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.035739749670028687,
+        "floatPartValue": "FN-3",
+        "paintIndex": 33,
+        "paintSeed": 169,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20A0B01655233860A1B882808188A390AC9878676948A3E009A1C2B4A8A0B047B3BDA0A0A0A085A0A0209F8DA0A0A0A0C2B4A8A1B00BB3BDA0A0A0A085A0A0209F8DA0A0A0A0C2B4A8A2B030B5BDA0A0A0A085A0A0209F8DA0A0A0A0C2B4A8A3B033B3BDA0A0A0A085A0A0209F8DA0A0A0A0C823202020ACD0A80FFC0668",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69ff127d8c968a50024dfebc",
+        "emissionSerial": "69ff127d8c968a50024dfebc",
+        "sagaAddress": "0xF0872003931843Dec8192391964da1425CE1E11E"
+      },
+      "createdAt": 1778519360,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": false,
+      "productId": "a8db:c479fc6598949daf50a47080aa39d9d2",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "a544df21-3618-549e-af6b-3c37acd98505",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8447476929:7993042644",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "8af39c37-3993-418e-85f4-9d9674b2a45c",
+      "ownersBlockchainId": "dd414739c5ec420085d1f2aabce9b2df3aa04369e31e4a9589f2492e54836ac9",
+      "ownerDetails": {
+        "id": "8af39c37-3993-418e-85f4-9d9674b2a45c",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "dd414739c5ec420085d1f2aabce9b2df3aa04369e31e4a9589f2492e54836ac9"
+      },
+      "status": "active",
+      "discount": 16,
+      "price": {
+        "DMC": "",
+        "USD": "24919"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "29709"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "3f84848e-e33d-4dd0-bbb3-2bb380165def",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199261769443/inventory/#730_2_51528954375",
+        "groupId": "76561199261769443",
+        "withdrawable": true,
+        "linkId": "051bbc7e-13be-5511-8cd2-f0d390390893",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "aeb37676378348cda0ff7369c106d558169f7e766dbe4e9cb1f003dafe21c626",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "ESL (Gold) | Cologne 2016",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/cologne2016/esl_gold.c55dfe10d0a6c3336e471962e13370a2859308e4.png"
+          },
+          {
+            "name": "SK Gaming (Gold) | Cologne 2016",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/cologne2016/sk_gold.dd5acb44b138222eb1c98006b772fab577911aa2.png"
+          },
+          {
+            "name": "byali (Gold) | Cologne 2016",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/cologne2016/sig_byali_gold.6a042370bc847433daf1f9b699b7b516e45b2b95.png"
+          },
+          {
+            "name": "Virtus.Pro (Gold) | Cologne 2016",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/cologne2016/vp_gold.a7b060f653fa342674768c89c299b6e20d332456.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.019665071740746498,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 990,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%202E3EA9CADBD4912F360C0E0F062D1E22168B9FAACB2D6EF0294C3A262E3EC624332E2E2E2E0B2E2EAE11032E2E2E2E4C3A262F3EE224332E2E2E2E0B2E2EAE11032E2E2E2E4C3A262C3EE222332E2E2E2E0B2E2EAE11032E2E2E2E4C3A262D3EE624332E2E2E2E0B2E2EAE11032E2E2E2E46ADAEAEAE225E265AB48743",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69fb6edab5b030205fc269ae",
+        "emissionSerial": "69fb6edab5b030205fc269ae",
+        "sagaAddress": "0x79d71CDC44762D6D838343A22a9cA6857b0e278B"
+      },
+      "createdAt": 1778816462,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:c479fc6598949daf50a47080aa39d9d2",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "7ef95086-0949-5c30-912e-52e82dceb3c4",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8446088583:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "4e841134-7ba4-431b-b4f2-c967a6267dd7",
+      "ownersBlockchainId": "b6d73979a59a40c39ede071f297191842d968ea6b8324d70b145b70157d4681a",
+      "ownerDetails": {
+        "id": "4e841134-7ba4-431b-b4f2-c967a6267dd7",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "b6d73979a59a40c39ede071f297191842d968ea6b8324d70b145b70157d4681a"
+      },
+      "status": "active",
+      "discount": 31,
+      "price": {
+        "DMC": "",
+        "USD": "26827"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "89ee1c75-f47f-4338-a609-39fe502f9b95",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199487634449/inventory/#730_2_51531104087",
+        "groupId": "76561199487634449",
+        "withdrawable": true,
+        "linkId": "698b8d82-14c6-550c-b8c1-913e421d3c00",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "c16d037fde7a43ebbcadac62a00dfa91e88760eb47e34cd1a8126b4546f030f8",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.019508419558405876,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 634,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%207969AE878182C678615B5958517A497D41E6D9869D7A39837D11FAF9F9F9750979F0C7D98A",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69fb7fa70935bce6d31250cf",
+        "emissionSerial": "69fb7fa70935bce6d31250cf",
+        "sagaAddress": "0xbEfCd657036Bf526DAEcC930D111033637b55d53"
+      },
+      "createdAt": 1778967697,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "ab01e87c-44ee-559b-a1d4-009b9b3cfc38",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8419633924:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "7084d45a-9532-4b89-ad78-ec84231def32",
+      "ownersBlockchainId": "442e5fd672bc4b359dc78b18dd15d2a25e5cf5450fd3e20bcf556d3e9684dcd2",
+      "ownerDetails": {
+        "id": "7084d45a-9532-4b89-ad78-ec84231def32",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "442e5fd672bc4b359dc78b18dd15d2a25e5cf5450fd3e20bcf556d3e9684dcd2"
+      },
+      "status": "active",
+      "discount": 31,
+      "price": {
+        "DMC": "",
+        "USD": "26828"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "efb80e3d-d2ee-4a87-ab61-84749e67ad0f",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199490023715/inventory/#730_2_51337050812",
+        "groupId": "76561199490023715",
+        "withdrawable": true,
+        "linkId": "fb9448e1-872d-5a2e-8997-158ff5840673",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "5af9bd392ad3498fb3dc30d9a55a2aa38cb3d33d0c874e15a72a8db85b915b03",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "First Blood (Holo)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/feral_predators/first_blood_holo.9d12612dccd7a1da27d4d308a6ed3e8112fe656d.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.016238944604992867,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 815,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%205545E9A0E1CAEA544D7775747D5665516DDCDAC1B15615FA5337505D5745A44B3DD6D5D5D55925515D62744D",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69eec36aaf2320b18f6f78b8",
+        "emissionSerial": "69eec36aaf2320b18f6f78b8",
+        "sagaAddress": "0xFbB12b728Aa8ad4e95Fbf9c03c411BE8055196B4"
+      },
+      "createdAt": 1778967695,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "e81e9d12-46db-54b8-9dde-ec21d6a30edb",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8434844982:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "13ca9377-beee-4944-b275-86f8b6092263",
+      "ownersBlockchainId": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd",
+      "ownerDetails": {
+        "id": "13ca9377-beee-4944-b275-86f8b6092263",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd"
+      },
+      "status": "active",
+      "discount": 28,
+      "price": {
+        "DMC": "",
+        "USD": "27777"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": false,
+        "offerId": "1f5d56ff-5638-4879-aef4-276d0b5dc673",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199489783580/inventory/#730_2_51453405665",
+        "groupId": "76561199489783580",
+        "withdrawable": true,
+        "linkId": "e4ddf696-a934-5a96-a100-998f11cc442a",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "e763ea67ec54433682b209510f53670eae4a74f28f39491e94942d442532fe39",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.005606913939118385,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 771,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%200D1DECDEFFDBB20C152F2D2C250E3D0935B8F9D3D00E4D8E0B658E8D8D8D017D098D4F55BA",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69f5fe46ab81bd90154cbd97",
+        "emissionSerial": "69f5fe46ab81bd90154cbd97",
+        "sagaAddress": "0x317ED118B651C7Fdbbd00741c43A36a8FEaC930B"
+      },
+      "createdAt": 1778941240,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "8d2d9a49-7c50-504f-bb2e-a235eb394bb7",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8443331884:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "13ca9377-beee-4944-b275-86f8b6092263",
+      "ownersBlockchainId": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd",
+      "ownerDetails": {
+        "id": "13ca9377-beee-4944-b275-86f8b6092263",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd"
+      },
+      "status": "active",
+      "discount": 25,
+      "price": {
+        "DMC": "",
+        "USD": "29179"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "c563cc5d-af0a-4ba8-99d5-56e09da185b8",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199302217044/inventory/#730_2_51497083168",
+        "groupId": "76561199302217044",
+        "withdrawable": true,
+        "linkId": "253ca511-5ce8-563c-b43a-f7a78a84fbbd",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "e6e5314839a94641b76aa89e18713ff230e2c271160b4d34b953d27f7548ccf2",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.046670231968164444,
+        "floatPartValue": "FN-4",
+        "paintIndex": 33,
+        "paintSeed": 468,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20F1E151332D1A4EF0E9D3D1D0D9F2C1F5C938230D18F2B125F29972717171FD81F105AC43B5",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69f9aabfb5b030205f8b0ca6",
+        "emissionSerial": "69f9aabfb5b030205f8b0ca6",
+        "sagaAddress": "0x317ED118B651C7Fdbbd00741c43A36a8FEaC930B"
+      },
+      "createdAt": 1778502083,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "f38235dc-6b11-5cdf-80c1-ad57eb54c563",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8441544513:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "13ca9377-beee-4944-b275-86f8b6092263",
+      "ownersBlockchainId": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd",
+      "ownerDetails": {
+        "id": "13ca9377-beee-4944-b275-86f8b6092263",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "e3511e40d37c43f186a9819ce57d259cdaf72f9c226546f4b8f6448f9dbcefcd"
+      },
+      "status": "active",
+      "discount": 23,
+      "price": {
+        "DMC": "",
+        "USD": "29623"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "fc4d11bc-0856-4f4d-bda1-fdffa03e0328",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199490310559/inventory/#730_2_51486720827",
+        "groupId": "76561199490310559",
+        "withdrawable": true,
+        "linkId": "c1878232-0037-5953-a196-036f17480ac5",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "e6e5314839a94641b76aa89e18713ff230e2c271160b4d34b953d27f7548ccf2",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Gambit Gaming (Holo) | Stockholm 2021",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/stockh2021/gamb_holo.5cead16bc116996c1e81bd4a1e5eda80a6fb7acf.png"
+          },
+          {
+            "name": "Gambit Gaming (Holo) | Stockholm 2021",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/stockh2021/gamb_holo.5cead16bc116996c1e81bd4a1e5eda80a6fb7acf.png"
+          },
+          {
+            "name": "Gambit Gaming (Holo) | Stockholm 2021",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/stockh2021/gamb_holo.5cead16bc116996c1e81bd4a1e5eda80a6fb7acf.png"
+          },
+          {
+            "name": "karrigan | Copenhagen 2024",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/cph2024/sig_karrigan.0fd3da1b3d684fc627272fe329bd43fc30717000.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.03522604703903198,
+        "floatPartValue": "FN-3",
+        "paintIndex": 33,
+        "paintSeed": 705,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%200A1AB18CEEECB50B12282A2B22093A0E32BA98CBE2094ACB0F680F020A1AE52C680F020B1AE52C680F02081AE52C680502091A9D3037DA328AB64FD9A1213462898A8A8A067A0ABA9DB806",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69f8ab1fab81bd9015cda646",
+        "emissionSerial": "69f8ab1fab81bd9015cda646",
+        "sagaAddress": "0x317ED118B651C7Fdbbd00741c43A36a8FEaC930B"
+      },
+      "createdAt": 1778502078,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "59786a06-3ae2-55ca-a539-fd5934c7d8c0",
+      "type": "offer",
+      "amount": 1,
+      "classId": "6298577272:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "adcace1d-4eee-480c-bb7d-b1f3eeffa93c",
+      "ownersBlockchainId": "a850901d2f4995a8e9cdf6ad5b7589da12830be8f43fce84376b126cc7b9089f",
+      "ownerDetails": {
+        "id": "adcace1d-4eee-480c-bb7d-b1f3eeffa93c",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "a850901d2f4995a8e9cdf6ad5b7589da12830be8f43fce84376b126cc7b9089f"
+      },
+      "status": "active",
+      "discount": 23,
+      "price": {
+        "DMC": "",
+        "USD": "29878"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39271"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "7ef3e1ca-7f6c-4d52-9474-55ee804e71c4",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199503436339/inventory/#730_2_47399326623",
+        "groupId": "76561199503436339",
+        "withdrawable": true,
+        "linkId": "77da02cb-7944-573c-9286-57c4c63991b3",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "9952693c503ab237b1217d91447c0e22bc5ea668813f61e43223996cd46da296",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Boom Detonation",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/community/elemental_craft/paper_explosion_two.904f7f8b36fc0e8d758644c38451f58aed8d4caa.png"
+          },
+          {
+            "name": "Boom Detonation",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/community/elemental_craft/paper_explosion_two.904f7f8b36fc0e8d758644c38451f58aed8d4caa.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.01891576312482357,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 943,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%2082921D25634B32839AA0A2A3AA81B286BA3968696681C22D85E09B8A809256BF9FF3BFC8BDAF82822040BF8A1A013FC7025F99BEE09B8A829256BF9F4F4ECEBDAF82821E40BF6A50333CC7C2F50239EA010202028EF282782CB6A5",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "68ff68c8fae1c1de86cc8b37",
+        "emissionSerial": "68ff68c8fae1c1de86cc8b37",
+        "sagaAddress": "0x65E219f4bF91FeF0Ef80EF7E93d2C613FDa79b6D"
+      },
+      "createdAt": 1778485569,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "ca6a540c-d3c4-513b-80a9-bd2de590e3bc",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8434844906:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "e88b3833-2975-458c-8dfb-ed4503c13834",
+      "ownersBlockchainId": "4c241e8a181aae6f430fb48296b9da1fe0a162b596ff805770dc1581fc95280b",
+      "ownerDetails": {
+        "id": "e88b3833-2975-458c-8dfb-ed4503c13834",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "4c241e8a181aae6f430fb48296b9da1fe0a162b596ff805770dc1581fc95280b"
+      },
+      "status": "active",
+      "discount": 23,
+      "price": {
+        "DMC": "",
+        "USD": "29923"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "46e619a5-ef61-4cd3-a93b-7f8c64b5e807",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199303336007/inventory/#730_2_51464862411",
+        "groupId": "76561199303336007",
+        "withdrawable": true,
+        "linkId": "ca8e9c16-7f1e-5bf2-a4ca-553e95eb46f4",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "496cb1f7988bbec051f396a118d58e9daba33afa2b8bcaf0c30b5d3abd2eedfe",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.011546589434146881,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 799,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%207464BF81D9A8CB756C5654555C7744704C93AF80957734EB721CF7F4F4F47804742DC665D8",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69f6d7a8ab81bd90158d083b",
+        "emissionSerial": "69f6d7a8ab81bd90158d083b",
+        "sagaAddress": "0xBa93C028c9352Fa7E3e69fA5Be0aDF9405a9d158"
+      },
+      "createdAt": 1778430021,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "65c01061-b675-503b-b8bf-3be0745d978d",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8446086930:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "b5084ce5-7852-4270-9249-1ee80a5b3d12",
+      "ownersBlockchainId": "4c0642c49c58483fa0bd126c011884857903d8fe810a46aebfe29db32386b007",
+      "ownerDetails": {
+        "id": "b5084ce5-7852-4270-9249-1ee80a5b3d12",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "4c0642c49c58483fa0bd126c011884857903d8fe810a46aebfe29db32386b007"
+      },
+      "status": "active",
+      "discount": 23,
+      "price": {
+        "DMC": "",
+        "USD": "30004"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "d7791718-41b7-477a-bc8f-6894dac998e6",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199262181272/inventory/#730_2_51515820957",
+        "groupId": "76561199262181272",
+        "withdrawable": true,
+        "linkId": "e947d43b-baa1-56a1-a8c7-0fc315b0638f",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "4c0642c49c58483fa0bd126c011884857903d8fe810a46aebfe29db32386b007",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.021178536117076874,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 860,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%2017078A80C3E3A8160F3537363F1427132F8BEAA2F21457CB117F949797971B6713F353D17C",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69fb024cb5b030205f3b33ac",
+        "emissionSerial": "69fb024cb5b030205f3b33ac",
+        "sagaAddress": "0x42511FF58d1bD5F51D1409a95e05f2fBA3B9b5Fc"
+      },
+      "createdAt": 1778057815,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "c6d46204-b9ba-5ede-bbdc-da8b4bc341d7",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8451825958:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "a10a8538-6d31-40d6-85a2-b18950658a0e",
+      "ownersBlockchainId": "72e653601ffa2aa865330e934fc61ec59044d47ae69c4c2fda5ccc79acf7de46",
+      "ownerDetails": {
+        "id": "a10a8538-6d31-40d6-85a2-b18950658a0e",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "72e653601ffa2aa865330e934fc61ec59044d47ae69c4c2fda5ccc79acf7de46"
+      },
+      "status": "active",
+      "discount": 2,
+      "price": {
+        "DMC": "",
+        "USD": "37900"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "75ab7764-03bf-4d34-a519-2874043ec6dd",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199497834160/inventory/#730_2_51570546261",
+        "groupId": "76561199497834160",
+        "withdrawable": true,
+        "linkId": "fbe11b29-dcf3-5204-8d10-1db8bf878e01",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "72e653601ffa2aa865330e934fc61ec59044d47ae69c4c2fda5ccc79acf7de46",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.003228188958019018,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 512,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%204C5C99E0ACC28C4D546E6C6D644F7C4874CBEC82964F0CCC4824CFCCCCCC403C481D833792",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69fdcb1e0935bce6d3065845",
+        "emissionSerial": "69fdcb1e0935bce6d3065845",
+        "sagaAddress": "0x46653222417d87Fd9606E583F3314dE8Afa65297"
+      },
+      "createdAt": 1778933338,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "bcc60af4-ff36-5dfa-a3e0-39b1294087c6",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8377506941:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "7b34ad99-46aa-49e4-9461-6c657ae9f340",
+      "ownersBlockchainId": "04a3a0b06bd6cf4c61555ed09a80b760132e98fa9c156580e841879238476341",
+      "ownerDetails": {
+        "id": "7b34ad99-46aa-49e4-9461-6c657ae9f340",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "04a3a0b06bd6cf4c61555ed09a80b760132e98fa9c156580e841879238476341"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "39900"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "52c4ebd6-4054-4775-94b9-65bb207c191b",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199266860669/inventory/#730_2_51069131477",
+        "groupId": "76561199266860669",
+        "withdrawable": true,
+        "linkId": "6cfa63b1-3b5d-5ae1-b1a2-51340a356b88",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "aa6cce5495964cb1b7f0abfc8123a14d052adf479ec8435391cbf1347c55a9af",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.004995427094399929,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 363,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%205E4E8BEB8AC1E05F467C7E7F765D6E5A66F0BFD0835D1EB55C36DDDEDEDE522E5E63E14681",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69ded0ce0ad49f3869889059",
+        "emissionSerial": "69ded0ce0ad49f3869889059",
+        "sagaAddress": "0x3B4D313D1Aa27F213Fa209B7BB5449c1240452A0"
+      },
+      "createdAt": 1777116200,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "32c9dc36-73cf-5619-a478-95208532f2ec",
+      "type": "offer",
+      "amount": 1,
+      "classId": "7745810527:6276309658",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+      "ownersBlockchainId": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8",
+      "ownerDetails": {
+        "id": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "40500"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "29709"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "67a23e20-f29c-4bc2-918e-d1a480b5320d",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199279405937/inventory/#730_2_47874699298",
+        "groupId": "76561199279405937",
+        "withdrawable": true,
+        "linkId": "8aadecde-4df0-592a-8a84-e52bd1d7c8b3",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "59fe89f055784c40bc7904b47f08b27a34d14e217fcf4e34a721903783f96fd9",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "FaZe Clan (Gold) | Paris 2023",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/paris2023/faze_gold.7103f1dafc0839eb0f19b8973a071c331aef29d7.png"
+          },
+          {
+            "name": "Apeks (Gold) | Paris 2023",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/paris2023/apex_gold.b9d0050ee610fef43e39ecedd057fbea2dd8dfe2.png"
+          },
+          {
+            "name": "paiN Gaming (Gold) | Paris 2023",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/paris2023/pain_gold.022794774c9211739ba7691eb1e5e088ee97473f.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.021927276626229286,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 613,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%205949FBB9EEF5EB58417B7978715A6955618C9897BC5A19BC5D3B56515949CE6D6487FCF8E71C590760633B56515949D26D64E5FA36E71C59FAEF633B56515949DA6D64BDEE47E71C599CC56331DAD9D9D9552951ABC8BD23",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "691afab3cf08d85705f50ff0",
+        "emissionSerial": "691afab3cf08d85705f50ff0",
+        "sagaAddress": "0x7dCF7319208d86E44310BaB0BD2d76423B9a0787"
+      },
+      "createdAt": 1769449472,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:c479fc6598949daf50a47080aa39d9d2",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "0ab1de3e-4f56-54c0-80d4-5bc1b8c33cc7",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8285747295:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "ac3b82fb-7af5-4c45-8b78-f42fab82fce5",
+      "ownersBlockchainId": "21fe7ebea2cb04b5882404b588d970638555df27c09a60d530267c0ea4a031eb",
+      "ownerDetails": {
+        "id": "ac3b82fb-7af5-4c45-8b78-f42fab82fce5",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "21fe7ebea2cb04b5882404b588d970638555df27c09a60d530267c0ea4a031eb"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "41689"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39271"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "dccab051-ca3a-4209-8a02-e4065fd499e2",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199302442471/inventory/#730_2_50470646417",
+        "groupId": "76561199302442471",
+        "withdrawable": true,
+        "linkId": "875546e4-d4a6-58f0-96d1-6efc85893aac",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "21fe7ebea2cb04b5882404b588d970638555df27c09a60d530267c0ea4a031eb",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Stone Scales (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/broken_fang/stone_scales_foil.f4f47e82ce3da7642f28508309d3bf01f18b4cbb.png"
+          },
+          {
+            "name": "Stone Scales (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/broken_fang/stone_scales_foil.f4f47e82ce3da7642f28508309d3bf01f18b4cbb.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.03367147222161293,
+        "floatPartValue": "FN-3",
+        "paintIndex": 33,
+        "paintSeed": 179,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%208696176325043A879EA4A6A7AE85B682BE1F50216E85C63587E4898E86965EA2BB9821B338C3862135BDE4898E86965EA2BB363F3D3BC3861744BDEE050606068AF6869B231B0B",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69bbd055b709c05382b691b3",
+        "emissionSerial": "69bbd055b709c05382b691b3",
+        "sagaAddress": "0x68430dC0200Ee5F11f09F506bc28d373bDD0B958"
+      },
+      "createdAt": 1773916253,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "ee31fac0-43a5-5ea0-8442-bbfcf8b0a3cd",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8307313779:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "327d7a95-ff36-46cf-b79e-fe88a59c97de",
+      "ownersBlockchainId": "5f4cd09a1892ad7fb570d713cf226228f85a444d8383fceab17a6a055b3ce186",
+      "ownerDetails": {
+        "id": "327d7a95-ff36-46cf-b79e-fe88a59c97de",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "5f4cd09a1892ad7fb570d713cf226228f85a444d8383fceab17a6a055b3ce186"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "41837"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "b5495694-c8db-4d63-907b-27cc3280b649",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199303654364/inventory/#730_2_50639606631",
+        "groupId": "76561199303654364",
+        "withdrawable": true,
+        "linkId": "535453eb-093f-5218-b33c-15eb19387c27",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "e6e5314839a94641b76aa89e18713ff230e2c271160b4d34b953d27f7548ccf2",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.029058918356895447,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 741,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%205444B3F2B886E8554C7674757C5764506CACCDECB35714B1513CD7D4D4D45824541CC16F68",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69c4d780b709c05382c71213",
+        "emissionSerial": "69c4d780b709c05382c71213",
+        "sagaAddress": "0x7f0Af370624D7059a2E01BCDA559cfBC7f984eb0"
+      },
+      "createdAt": 1774548066,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "64e34c2d-184e-521a-a6f1-b50f9f4128ee",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8339148250:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "ce23cee6-462a-4d67-99ba-2a47877fb05f",
+      "ownersBlockchainId": "0dfc0ddaf6b67291324482e887dd6e9e184ebe60765b3e235f6832d1d24d6903",
+      "ownerDetails": {
+        "id": "ce23cee6-462a-4d67-99ba-2a47877fb05f",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "0dfc0ddaf6b67291324482e887dd6e9e184ebe60765b3e235f6832d1d24d6903"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "52000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "ccfdd4f5-c7ba-4e86-a678-01854873328b",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199519983428/inventory/#730_2_50816452825",
+        "groupId": "76561199519983428",
+        "withdrawable": true,
+        "linkId": "421e46e5-5f23-5e71-8cec-6c574efab76f",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "870d96dd492b4203b3c15ff0fdaac0288907d787fb594f81939ff48901546f55",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "compLexity Gaming | Katowice 2014",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/emskatowice2014/complexity.917e510e61b99f57e3ddbea6dccbc07724731fd5.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.03545846417546272,
+        "floatPartValue": "FN-3",
+        "paintIndex": 33,
+        "paintSeed": 195,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%2085955C14132238849DA7A5A4AD86B581BD607C416D86C54684E7818D8595B7ED0605050589F585EB1AD541",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69cecd9f0ad49f38697b8805",
+        "emissionSerial": "69cecd9f0ad49f38697b8805",
+        "sagaAddress": "0x2a5f3D41381Df51693f00A81174027bba9A1AC20"
+      },
+      "createdAt": 1778949923,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 1,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 1,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "c3c9574c-fb24-5cce-9d39-5eb85d5f1051",
+      "type": "offer",
+      "amount": 1,
+      "classId": "6277769667:6276573698",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+      "ownersBlockchainId": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8",
+      "ownerDetails": {
+        "id": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "69000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "29709"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "ffd700",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "e2b28cf6-d887-4c5b-bb87-3b9727e85971",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199277227083/inventory/#730_2_45168385681",
+        "groupId": "76561199277227083",
+        "withdrawable": true,
+        "linkId": "3c68e8c7-37b4-58fd-80dd-573b7c8c8cae",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.007464705966413021,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 816,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20E8F87955134940E9F0CAC8C9C0EBD8E4D0165C3A37EBA858EE806B686868E498E0A8D398E3",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "6876b93169151b3fe0fdf3dc",
+        "emissionSerial": "6876b93169151b3fe0fdf3dc",
+        "sagaAddress": "0x7dCF7319208d86E44310BaB0BD2d76423B9a0787"
+      },
+      "createdAt": 1764011050,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:c479fc6598949daf50a47080aa39d9d2",
+      "favoriteFor": 1,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 1,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "bc4fd9b9-ade4-5916-b201-a6d4595e9913",
+      "type": "offer",
+      "amount": 1,
+      "classId": "0:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "49922b46-06dd-454a-8e2d-49be4fcf2c20",
+      "ownersBlockchainId": "3c6086d1a534c9158041e97ef7e304cf493f1525e211ebc9bd8bbf3e06d7cde9",
+      "ownerDetails": {
+        "id": "49922b46-06dd-454a-8e2d-49be4fcf2c20",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "3c6086d1a534c9158041e97ef7e304cf493f1525e211ebc9bd8bbf3e06d7cde9"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "69999"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "2206cfdf-0fba-4cf6-b73f-b503b6d180f1",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199497602658/inventory/#730_2_50397648044",
+        "groupId": "76561199497602658",
+        "withdrawable": true,
+        "linkId": "4bc2f4b0-2746-5f34-b3b9-ebd5487642ab",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "3c6086d1a534c9158041e97ef7e304cf493f1525e211ebc9bd8bbf3e06d7cde9",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.008156916126608849,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 200,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%203828949184E78339201A1819103B083C00AEF1AED83B78F03950BBB8B8B834483804045079",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69b85dabb709c05382569506",
+        "emissionSerial": "69b85dabb709c05382569506",
+        "sagaAddress": "0x6A39B4880733B9E21AcEacb6CC18cf4137Bd61Bf"
+      },
+      "createdAt": 1778529953,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "29006bd0-7ada-54ae-8365-eaaa61416947",
+      "type": "offer",
+      "amount": 1,
+      "classId": "6935314851:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpou6r8FAZu7OHNdQJO5du-gM7SxaGga-2Jkz9Q7ZB0jLuQ89yj2wWx80BqYmimddKUIQE8MgmG-FLo366x0mssJWAR",
+      "slug": "mp9-hot-rod",
+      "owner": "b918ff06-10a4-4c45-be07-aaf72b2acc44",
+      "ownersBlockchainId": "ec8270772f75f0370e41f4425e1875805780c1506789f9625504e9f5d1c708c5",
+      "ownerDetails": {
+        "id": "b918ff06-10a4-4c45-be07-aaf72b2acc44",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "ec8270772f75f0370e41f4425e1875805780c1506789f9625504e9f5d1c708c5"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "69999"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "3b8161c2-0084-4e69-820a-cf55644b9e6d",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199488262073/inventory/#730_2_43254685476",
+        "groupId": "76561199488262073",
+        "withdrawable": true,
+        "linkId": "38fe8e50-20f2-5ee1-b28d-702f22cdf379",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Gambit Gaming (Holo) | Atlanta 2017",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/atlanta2017/gamb_holo.46776b6a34b56246b5e52626eb3d2cd6cc8f99de.png"
+          },
+          {
+            "name": "Astralis (Holo) | Atlanta 2017",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/atlanta2017/astr_holo.1a132fa4b164ea63f673e8056f6fef4a0b48c9f8.png"
+          },
+          {
+            "name": "Gambit Gaming (Foil) | Atlanta 2017",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/atlanta2017/gamb_foil.986be1ecfd5ac4576c8287fd8d4b04f3fea23eeb.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.025824017822742462,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 135,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%208D9D2933351C2C8C95AFADACA58EBD89B56914436B8ECD0A8CEF82858D9D6E80B08D7AC330C88D92A4B6EF82858F9D4680B01D3CA330C8AD1EBD31EF82858F9D6980B04D7E4DB0C8AD529431E50E0D0D0D81FD8B0FB3BC8D",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "67fb6274aabbec891dc06a6b",
+        "emissionSerial": "67fb6274aabbec891dc06a6b",
+        "sagaAddress": "0x64c3f1Fd172330850b03e620624065E525C4df4F"
+      },
+      "createdAt": 1771431423,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 1,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 1,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "5d356f7b-4098-5853-94e6-2471f13e6dbb",
+      "type": "offer",
+      "amount": 1,
+      "classId": "7163940442:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgpou6r8FAZu7OHNdQJO5du-gM7SxaGga-2Jkz9Q7ZB0jLuQ89yj2wWx80BqYmimddKUIQE8MgmG-FLo366x0mssJWAR",
+      "slug": "mp9-hot-rod",
+      "owner": "b918ff06-10a4-4c45-be07-aaf72b2acc44",
+      "ownersBlockchainId": "ec8270772f75f0370e41f4425e1875805780c1506789f9625504e9f5d1c708c5",
+      "ownerDetails": {
+        "id": "b918ff06-10a4-4c45-be07-aaf72b2acc44",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "ec8270772f75f0370e41f4425e1875805780c1506789f9625504e9f5d1c708c5"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "69999"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "f68983a6-9f17-4f31-8ffd-fc6960926685",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199262238201/inventory/#730_2_44636846449",
+        "groupId": "76561199262238201",
+        "withdrawable": true,
+        "linkId": "b889e093-2b07-5501-a18a-8e1dd6de0ad5",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Battle Scarred (Holo)",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/broken_fang/battle_scarred_holo.c750322c63efc7d935471b8b34da575ca6210162.png"
+          },
+          {
+            "name": "Battle Scarred (Holo)",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/broken_fang/battle_scarred_holo.c750322c63efc7d935471b8b34da575ca6210162.png"
+          },
+          {
+            "name": "Battle Scarred (Holo)",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/broken_fang/battle_scarred_holo.c750322c63efc7d935471b8b34da575ca6210162.png"
+          },
+          {
+            "name": "Battle Scarred (Holo)",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/broken_fang/battle_scarred_holo.c750322c63efc7d935471b8b34da575ca6210162.png"
+          },
+          {
+            "name": "Battle Scarred (Holo)",
+            "image": "https://steamcdn-a.akamaihd.net/apps/730/icons/econ/stickers/broken_fang/battle_scarred_holo.c750322c63efc7d935471b8b34da575ca6210162.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.023146163672208786,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 760,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%204F5FBEBD8FEBE94E576D6F6E674C7F4B77C9F5B9AA4C0FB74A2D4A474F5F9C6B2D4A474E5F9C6B2D4A474C5F9C6B2D40474D5F9C6B72F7AFD3720A8FA3C3F42D40474C5F9C6B7213BF1FF10A5B6E47F127CCCFCFCF433F4B4F8FF783",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "6852a80a5a702e402c58bc0f",
+        "emissionSerial": "6852a80a5a702e402c58bc0f",
+        "sagaAddress": "0x64c3f1Fd172330850b03e620624065E525C4df4F"
+      },
+      "createdAt": 1771431423,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "950b0986-1747-50af-8ca8-549a72f15279",
+      "type": "offer",
+      "amount": 1,
+      "classId": "0:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+      "ownersBlockchainId": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8",
+      "ownerDetails": {
+        "id": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "70000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "c6d342a4-6564-45bb-b794-bdde12621670",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199257150297/inventory/#730_2_45277788638",
+        "groupId": "76561199257150297",
+        "withdrawable": true,
+        "linkId": "6956f81d-1739-5d70-8c58-8dd891bd99d8",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.008488200604915619,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 922,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%208898567B185E208990AAA8A9A08BB88CB0102C24688BC8128FE00B08080884F8881B728ACF",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "687efed2fef42883ac911192",
+        "emissionSerial": "687efed2fef42883ac911192",
+        "sagaAddress": "0x7dCF7319208d86E44310BaB0BD2d76423B9a0787"
+      },
+      "createdAt": 1767741103,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "090a21c6-b8ea-5f07-8afd-14b1270900c8",
+      "type": "offer",
+      "amount": 1,
+      "classId": "7633383045:7993042644",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "Souvenir MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "ee5649be-173b-42b6-8d8c-d99739c2a478",
+      "ownersBlockchainId": "0df3d4dea2844989a819e415121f7c9e0c2ca22beb4347bca44ba9822add4d1a",
+      "ownerDetails": {
+        "id": "ee5649be-173b-42b6-8d8c-d99739c2a478",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "0df3d4dea2844989a819e415121f7c9e0c2ca22beb4347bca44ba9822add4d1a"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "75000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "19600"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "c446da83-6583-4bdd-b8ca-9a9b43ef4eb5",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199507508704/inventory/#730_2_50231504087",
+        "groupId": "76561199507508704",
+        "withdrawable": true,
+        "linkId": "85a83a41-9613-5572-95a3-7223983547d2",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "souvenir",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "0df3d4dea2844989a819e415121f7c9e0c2ca22beb4347bca44ba9822add4d1a",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "olofmeister (Gold) | London 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/london2018/sig_olofmeister_gold.3754b44422865a6167f3480ae3c79ea3b3e5b96c.png"
+          },
+          {
+            "name": "FaZe Clan (Gold) | London 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/london2018/faze_gold.08b7fdbe067eacf8c19ffc23d378f0d30d1bf3c7.png"
+          },
+          {
+            "name": "FACEIT (Gold) | London 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/london2018/faceit_gold.c4c827676b1b20384c53bcdf3da5f6069df4d386.png"
+          },
+          {
+            "name": "mousesports (Gold) | London 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/london2018/mss_gold.62aeadcd012c58ce9598723683bb29fdc8523776.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.029479466378688812,
+        "floatPartValue": "FN-2",
+        "paintIndex": 33,
+        "paintSeed": 213,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20B1A166682E210AB0A993919099B281BD895D4C7456B2F164B0D3A5B9B1A12DA9ACB1B1B1B194B1B1318E9CB1B1B1B1D3A5B9B0A123A6ACB1B1B1B194B1B1318E9CB1B1B1B1D3A5B9B3A15FA6ACB1B1B1B194B1B1318E9CB1B1B1B1D3A5B9B2A12FA6ACB1B1B1B194B1B1318E9CB1B1B1B1D932313131BDC1B977098593",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69b134f7d675fd03b7a3900d",
+        "emissionSerial": "69b134f7d675fd03b7a3900d",
+        "sagaAddress": "0xa7Ba51873D409E2c15f5f3F969718d82D70f709F"
+      },
+      "createdAt": 1773221118,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:c479fc6598949daf50a47080aa39d9d2",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "f9c94b1e-41a7-59f4-bb69-ecd158b4d52c",
+      "type": "offer",
+      "amount": 1,
+      "classId": "7475235785:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "abd7c00c-42f6-4549-b1f6-acdb0a17cbd9",
+      "ownersBlockchainId": "6a49ba24e60d85ddc2bd89ad9e4da83a9b2dc9e562b34e4081056e72d0b951f2",
+      "ownerDetails": {
+        "id": "abd7c00c-42f6-4549-b1f6-acdb0a17cbd9",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "6a49ba24e60d85ddc2bd89ad9e4da83a9b2dc9e562b34e4081056e72d0b951f2"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "85000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "ece40ab7-28d7-4f20-bbb5-1a74158bb170",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199262029992/inventory/#730_2_46345179475",
+        "groupId": "76561199262029992",
+        "withdrawable": true,
+        "linkId": "a0eff724-0413-582c-87f4-5af0281a4224",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "66249384efc842037bcab97f7239d8731d591d2f085f6c679a2d43d7f93d0c73",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "Gold Web (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/shattered_web/gold_web_normal.6bfa09ec7177996ca6fa3c15b04aa76af9222a37.png"
+          },
+          {
+            "name": "Gold Web (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/shattered_web/gold_web_normal.6bfa09ec7177996ca6fa3c15b04aa76af9222a37.png"
+          },
+          {
+            "name": "Gold Web (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/shattered_web/gold_web_normal.6bfa09ec7177996ca6fa3c15b04aa76af9222a37.png"
+          },
+          {
+            "name": "Gold Web (Foil)",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/shattered_web/gold_web_normal.6bfa09ec7177996ca6fa3c15b04aa76af9222a37.png"
+          },
+          {
+            "name": "Terrorist-Tech",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/shattered_web/terrorist_tech_m9.d1b5e11beb6dac70e81a0e957851a3c0e6815660.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.016498124226927757,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 861,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20879754250A542B869FA5A7A6AF84B783BF14491B6384C75A81E59E8F879727A49A878707B8AA87875545BA81FC2F39C2E7578DBBE59E8F879727A49A878707B8AA87871B45BA6D49F639C2872FCE3CE59E8F879727A49A878707B8AA87871145BA471AE73AC2C78D46BCE59E8F849727A49A878707B8AA87875F45BAC37572BAC2FF758539E5938F84971BA49A878707B8BA879D4ABDC2170F2EBBEF040707078BF783561A3C32",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "68c6f748c36cc577acc77a70",
+        "emissionSerial": "68c6f748c36cc577acc77a70",
+        "sagaAddress": "0xd251cF07a4fA12CA1D722430700d3AeD546B47E5"
+      },
+      "createdAt": 1773931090,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "7cab756e-b659-5455-b2d3-e97d02b71bb0",
+      "type": "offer",
+      "amount": 1,
+      "classId": "8279571761:241608185",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "dc96f59c-ba9a-4ac5-92c7-63dad5fe6136",
+      "ownersBlockchainId": "4d52849dd984f5b18bf1c8f02a2a2342ff457a6c4e91452ad23faba06c88f1f8",
+      "ownerDetails": {
+        "id": "dc96f59c-ba9a-4ac5-92c7-63dad5fe6136",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "4d52849dd984f5b18bf1c8f02a2a2342ff457a6c4e91452ad23faba06c88f1f8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "100000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "38973"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "34677c19-e68d-403a-bf40-ad8d8ad84a33",
+        "isNew": true,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199528682584/inventory/#730_2_50452994522",
+        "groupId": "76561199528682584",
+        "withdrawable": true,
+        "linkId": "f998ffba-3abd-5f11-9f2e-10b6833f85d5",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "4d52849dd984f5b18bf1c8f02a2a2342ff457a6c4e91452ad23faba06c88f1f8",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.01388393621891737,
+        "floatPartValue": "FN-1",
+        "paintIndex": 33,
+        "paintSeed": 333,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%208B9B51386572308A93A9ABAAA388BB8FB37879066888CB4689E3080B0B0B87FB8B0A0A287F",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69bafdf0b709c05382aa117b",
+        "emissionSerial": "69bafdf0b709c05382aa117b",
+        "sagaAddress": "0xe7dB94BD599d8B02B97b15a919e571Aee3bc8e3b"
+      },
+      "createdAt": 1778967607,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "81aafa35-1bee-5b51-babe-1cc84b15fa23",
+      "type": "offer",
+      "amount": 1,
+      "classId": "0:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+      "ownersBlockchainId": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8",
+      "ownerDetails": {
+        "id": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "110000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "e8c991fa-8483-4296-8119-eaef1d218409",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199303504304/inventory/#730_2_48265524171",
+        "groupId": "76561199303504304",
+        "withdrawable": true,
+        "linkId": "2fcd9078-aceb-5044-8665-09e259874ead",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "d7b58781c45673b60742c0cb012bc4cffc53faaf15bc0e7c3331e4ad0fe638c3",
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.008344307541847229,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 29,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20CBDB002C2E2D78CAD3E9EBEAE3C8FBCFF35B26692BC88BD6A3484B4B4BC7BBCBDCB1F355",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "6934c2d2544027d353f394d0",
+        "emissionSerial": "6934c2d2544027d353f394d0",
+        "sagaAddress": "0x7dCF7319208d86E44310BaB0BD2d76423B9a0787"
+      },
+      "createdAt": 1765142354,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "0ad22d57-64db-50d0-9789-166eeb3257f9",
+      "type": "offer",
+      "amount": 1,
+      "classId": "6294332855:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "51bf1ac6-c0f0-4d89-9ce8-1eceae072961",
+      "ownersBlockchainId": "d2eb41aea6b7528c0fdd0864f4c08401b0a31da25c8328903faf923a9ac41d19",
+      "ownerDetails": {
+        "id": "51bf1ac6-c0f0-4d89-9ce8-1eceae072961",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "d2eb41aea6b7528c0fdd0864f4c08401b0a31da25c8328903faf923a9ac41d19"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "236000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "45640"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "4b69ff",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "9931782d-a907-4893-a315-b3b93a25dffb",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199495442414/inventory/#730_2_48088166951",
+        "groupId": "76561199495442414",
+        "withdrawable": true,
+        "linkId": "0e0f75ec-a3e7-539a-9ba8-1768ae7d5ee7",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "depositor": "d2eb41aea6b7528c0fdd0864f4c08401b0a31da25c8328903faf923a9ac41d19",
+        "tradeProtectionRemoved": true,
+        "stickers": [
+          {
+            "name": "karrigan | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/sig_karrigan.4b4ec4f7c3d499bf486775417b09e8279826cd76.png"
+          },
+          {
+            "name": "FaZe Clan | Boston 2018",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/boston2018/faze.447ff91da6b9c8632b71ff94d50750a8bea78c84.png"
+          },
+          {
+            "name": "mousesports | Atlanta 2017",
+            "image": "https://cdn.steamstatic.com/apps/730/icons/econ/stickers/atlanta2017/mss.7003da843031dee02443409b38008b808775e4c6.png"
+          }
+        ],
+        "itemType": "smg",
+        "floatValue": 0.003786975285038352,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 857,
+        "inspectInGame": "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20S76561199495442414A48088166951D14883484225599202396",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "69289dab544027d35335ae50",
+        "emissionSerial": "69289dab544027d35335ae50",
+        "sagaAddress": "0xE7efCC768b57010F5C357357a11661aecF0C1Ac0"
+      },
+      "createdAt": 1764269586,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 0,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 0,
+        "forUser": false
+      }
+    },
+    {
+      "itemId": "48e4ede4-9ac8-5ed9-a97c-2575f5c885f0",
+      "type": "offer",
+      "amount": 1,
+      "classId": "480085569:310778169",
+      "gameId": "a8db",
+      "gameType": "steam",
+      "inMarket": true,
+      "lockStatus": false,
+      "title": "MP9 | Hot Rod (Factory New)",
+      "description": "",
+      "image": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL8js_f_Cxk_feqV6hkJ_iHQD7Cl7ou5rlsGyi2wBgh4WyDytmqcC6fbQAhC8chEeZZtRLrw4LlNLz8p1uJeM3XA-E",
+      "slug": "mp9-hot-rod",
+      "owner": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+      "ownersBlockchainId": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8",
+      "ownerDetails": {
+        "id": "786c0bc9-4c07-42c7-aa9f-f6d89c5a13be",
+        "avatar": "https://cdn-main.dmarket.com/default-images/avatar.svg",
+        "wallet": "2d459742b2cf4ff3871acc5c308168a2952aa942b6ed4dbd8708ea14b4a4a2b8"
+      },
+      "status": "active",
+      "discount": 0,
+      "price": {
+        "DMC": "",
+        "USD": "300000"
+      },
+      "instantPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "exchangePrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "instantTargetId": "",
+      "suggestedPrice": {
+        "DMC": "",
+        "USD": "39294"
+      },
+      "recommendedPrice": {
+        "offerPrice": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d3": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7": {
+          "DMC": "",
+          "USD": ""
+        },
+        "d7Plus": {
+          "DMC": "",
+          "USD": ""
+        }
+      },
+      "extra": {
+        "nameColor": "d2d2d2",
+        "backgroundColor": "4b69ff",
+        "tradable": true,
+        "offerId": "22486397-3c83-4966-94c5-123b1a23d8cc",
+        "isNew": false,
+        "gameId": "a8db",
+        "name": "MP9 | Hot Rod",
+        "categoryPath": "smg/mp9",
+        "viewAtSteam": "https://steamcommunity.com/profiles/76561199282201579/inventory/#730_2_45033152704",
+        "groupId": "76561199282201579",
+        "withdrawable": true,
+        "linkId": "44a61808-7bc5-5b60-8ce4-5056447ac602",
+        "exterior": "factory new",
+        "quality": "mil-spec grade",
+        "category": "normal",
+        "tradeLockDuration": 0,
+        "settlementTime": "",
+        "settlementDuration": 0,
+        "tradeProtectionRemoved": true,
+        "itemType": "smg",
+        "floatValue": 0.0021096172276884317,
+        "floatPartValue": "FN-0",
+        "paintIndex": 33,
+        "paintSeed": 862,
+        "inspectInGame": "steam://run/730//+csgo_econ_action_preview%20839343423E6224829BA1A3A2AB80B387BB02002A5B80C35D85EB000303038FF3874F1200B8",
+        "collection": [
+          "mirage"
+        ],
+        "saleRestricted": false,
+        "inGameAssetID": "686da55d69151b3fe0a11b9b",
+        "emissionSerial": "686da55d69151b3fe0a11b9b",
+        "sagaAddress": "0x7dCF7319208d86E44310BaB0BD2d76423B9a0787"
+      },
+      "createdAt": 1764011624,
+      "deliveryStats": {
+        "rate": "",
+        "time": ""
+      },
+      "fees": {
+        "f2f": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        },
+        "dmarket": {
+          "sell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "instantSell": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          },
+          "exchange": {
+            "default": {
+              "percentage": "",
+              "minFee": {
+                "DMC": "",
+                "USD": ""
+              }
+            }
+          }
+        }
+      },
+      "discountPrice": {
+        "DMC": "",
+        "USD": ""
+      },
+      "tradeProtectionRemoved": true,
+      "productId": "a8db:46ab5079fb4f160fec88d31b115de2db",
+      "favoriteFor": 1,
+      "favoriteForUser": false,
+      "favorite": {
+        "count": 1,
+        "forUser": false
+      }
+    }
+  ],
+  "total": {
+    "offers": 0,
+    "targets": 0,
+    "items": 27,
+    "completedOffers": 0,
+    "closedTargets": 0
+  },
+  "cursor": "WzMwMDAsIjIyNDg2Mzk3LTNjODMtNDk2Ni05NGM1LTEyM2IxYTIzZDhjYyJd"
+}

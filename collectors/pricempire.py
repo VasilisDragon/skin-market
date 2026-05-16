@@ -31,10 +31,12 @@ Dedup gate:
 Same shape as the prices collectors (ADR 009 §3): skip insert when
 ``(price, count)`` matches the latest existing row for that
 ``(item_id, source_id)`` pair. Phase 1's dedup-vs-display lessons
-(ADR 017) apply — but there is no observation_log analog for
-Pricempire in Phase 2a. Phase 2b decides whether one is needed based
-on what drift detection actually requires. Until then the dedup gate
-compares against ``pricempire_observations`` itself.
+(ADR 017) apply — Phase 2b added ``pricempire_observation_log``
+(ADR 023) as the dedup-independent freshness signal, mirroring the
+curated-collector ``observation_log``. The dedup gate operates
+against ``pricempire_observations`` itself; freshness is advanced
+unconditionally in ``_upsert_observation_log``, called before the
+dedup SELECT.
 
 Failure handling:
 
@@ -79,6 +81,7 @@ from db.models import (
     Item,
     PricempireItemMetadata,
     PricempireObservation,
+    PricempireObservationLog,
     Source,
 )
 from db.naming import normalize_name
@@ -390,6 +393,50 @@ def _stream_prices(client: httpx.Client) -> Iterator[dict[str, Any]]:
 # ────────────────────────────────────────────────────────────────────
 
 
+def _upsert_observation_log(
+    session: Session,
+    item_id: Any,
+    source_id: int,
+    last_checked_at: datetime | None,
+) -> bool:
+    """Upsert (item_id, source_id) into pricempire_observation_log
+    with Pricempire's claimed ``last_checked_at``.
+
+    LOAD-BEARING INVARIANT: this helper MUST be called BEFORE the
+    dedup gate's SELECT in ``_persist_row``. Moving the call inside
+    the "row written" branch silently reproduces Phase 1's
+    observed_at bug at one level up — dedup-suppressed cycles would
+    leave the log row stale even though Pricempire is still actively
+    polling. ADR 023.
+
+    Skips the upsert when ``last_checked_at`` is None (e.g. wire row
+    omitted the field or it didn't parse as ISO 8601). The drift
+    detector treats a missing log row as "stale" — same semantic as
+    a row whose last_observed_at is too old to be fresh. Filing the
+    "we polled but Pricempire didn't tell us when" case as stale is
+    the honest behavior; pretending it's fresh would mask the
+    underlying wire-format problem.
+
+    Returns True on upsert, False on skip-due-to-None.
+    """
+    if last_checked_at is None:
+        return False
+    stmt = (
+        pg_insert(PricempireObservationLog)
+        .values(
+            item_id=item_id,
+            source_id=source_id,
+            last_observed_at=last_checked_at,
+        )
+        .on_conflict_do_update(
+            index_elements=["item_id", "source_id"],
+            set_={"last_observed_at": last_checked_at},
+        )
+    )
+    session.execute(stmt)
+    return True
+
+
 def _persist_row(
     *,
     session: Session,
@@ -425,6 +472,19 @@ def _persist_row(
         unknown_providers_seen.add(source_name)
         return "unknown_provider", None
 
+    # ──────────────────────────────────────────────────────────────
+    # LOAD-BEARING: upsert the observation log BEFORE the dedup gate
+    # below. See _upsert_observation_log() docstring and ADR 023.
+    # Moving this call inside the "row written" branch silently
+    # reproduces Phase 1's observed_at bug at one level up.
+    # ──────────────────────────────────────────────────────────────
+    _upsert_observation_log(
+        session=session,
+        item_id=item_id,
+        source_id=source_id,
+        last_checked_at=_parse_iso(wire_row.get("last_checked_at")),
+    )
+
     raw_price = wire_row.get("price")
     if raw_price is None:
         # Pricempire knows the provider but has no price; nothing to
@@ -459,9 +519,10 @@ def _persist_row(
         count_int = None
 
     # Dedup gate. Same shape as collectors.base.should_write_observation
-    # but local to this collector — no observation_log analog yet
-    # (Phase 2b decision). We compare against the latest row for
-    # (item_id, source_id).
+    # but local to this collector. The observation log is advanced
+    # above (pre-dedup); this gate decides whether to write a new
+    # pricempire_observations row based on (price, count) equality
+    # with the latest existing row for (item_id, source_id).
     latest = session.execute(
         select(
             PricempireObservation.price,
