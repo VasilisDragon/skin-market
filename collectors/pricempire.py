@@ -125,6 +125,15 @@ _PROVIDER_KEY_TO_SOURCE_NAME: dict[str, str] = {
 # The order doesn't matter to Pricempire; alphabetical for stability.
 _SOURCES_PARAM = ",".join(sorted(_PROVIDER_KEY_TO_SOURCE_NAME.keys()))
 
+# Stable display order for the per-provider breakdowns in the
+# cycle-complete log line. Alphabetical by sub-provider source name
+# (without the "pricempire_" prefix) — matches the sort order in §2 of
+# docs/phase2a-ingest-validation.md so operators reading both don't
+# context-switch.
+_PROVIDER_ORDER: tuple[str, ...] = tuple(
+    sorted(_PROVIDER_KEY_TO_SOURCE_NAME.values())
+)
+
 # Pricempire returns prices in cents (empirically confirmed in the
 # diagnostic samples — e.g. 17316 for $173.16). Divide before insert.
 _CENTS_PER_DOLLAR = Decimal("100")
@@ -183,6 +192,16 @@ def collect_snapshot() -> None:
     rows_unchanged = 0
     rows_unknown_provider = 0
     unknown_providers_seen: set[str] = set()
+    # Per-provider breakdowns of rows_written / rows_unchanged. Keyed
+    # by source name (e.g. "pricempire_buff163") in the order defined
+    # by _PROVIDER_ORDER so the log line is stable cycle-to-cycle even
+    # when a provider writes zero rows in a given cycle.
+    written_by_provider: dict[str, int] = {
+        name: 0 for name in _PROVIDER_ORDER
+    }
+    unchanged_by_provider: dict[str, int] = {
+        name: 0 for name in _PROVIDER_ORDER
+    }
     # Metadata-extraction counters (ADR 020). Metadata fields change
     # slowly so the dedup gate suppresses most writes in steady state.
     metadata_written = 0
@@ -209,7 +228,7 @@ def collect_snapshot() -> None:
 
                     prices = item.get("prices") or []
                     for row in prices:
-                        outcome = _persist_row(
+                        outcome, source_name = _persist_row(
                             session=session,
                             item_id=item_id,
                             source_id_by_name=source_id_by_name,
@@ -218,8 +237,17 @@ def collect_snapshot() -> None:
                         )
                         if outcome == "written":
                             rows_written += 1
+                            if source_name is not None:
+                                written_by_provider[source_name] += 1
                         elif outcome == "unchanged":
                             rows_unchanged += 1
+                            # "unchanged" without a source_name is the
+                            # malformed-numeric / missing-price fallback
+                            # (`_persist_row` returns ("unchanged", None)
+                            # before resolving the provider). Per-provider
+                            # bucket gets nothing in that case.
+                            if source_name is not None:
+                                unchanged_by_provider[source_name] += 1
                         else:  # unknown_provider
                             rows_unknown_provider += 1
 
@@ -276,15 +304,19 @@ def collect_snapshot() -> None:
             "sources table to ingest.",
             sorted(unknown_providers_seen),
         )
+    written_breakdown = _format_provider_breakdown(written_by_provider)
+    unchanged_breakdown = _format_provider_breakdown(unchanged_by_provider)
     logger.info(
         "Pricempire cycle complete: %d items seen, %d skipped "
-        "(not in watchlist), %d rows written, %d unchanged, "
-        "%d skipped (unknown provider); metadata: %d written, "
+        "(not in watchlist), %d rows written (%s), %d unchanged "
+        "(%s), %d skipped (unknown provider); metadata: %d written, "
         "%d unchanged; elapsed %.1fs",
         items_seen,
         items_skipped_unknown,
         rows_written,
+        written_breakdown,
         rows_unchanged,
+        unchanged_breakdown,
         rows_unknown_provider,
         metadata_written,
         metadata_unchanged,
@@ -365,31 +397,42 @@ def _persist_row(
     source_id_by_name: dict[str, int],
     wire_row: dict[str, Any],
     unknown_providers_seen: set[str],
-) -> str:
+) -> tuple[str, str | None]:
     """Translate one Pricempire ``prices[]`` row into a DB write.
 
-    Returns one of ``"written"``, ``"unchanged"``, ``"unknown_provider"``.
+    Returns ``(outcome, source_name)`` where:
+    - ``outcome`` is one of ``"written"``, ``"unchanged"``,
+      ``"unknown_provider"``.
+    - ``source_name`` is the resolved sub-provider source name (e.g.
+      ``"pricempire_buff163"``) when the provider was recognized, else
+      ``None``. The caller uses this for the per-provider counters in
+      the cycle-complete log line.
     """
     provider_key = wire_row.get("provider_key")
     if not provider_key:
         unknown_providers_seen.add("(missing)")
-        return "unknown_provider"
+        return "unknown_provider", None
 
     source_name = _PROVIDER_KEY_TO_SOURCE_NAME.get(provider_key)
     if source_name is None:
         unknown_providers_seen.add(provider_key)
-        return "unknown_provider"
+        return "unknown_provider", None
 
     source_id = source_id_by_name.get(source_name)
     if source_id is None:
         # The mapping table says this provider should land in
         # sources, but it's not there. Migration drift; log once.
         unknown_providers_seen.add(source_name)
-        return "unknown_provider"
+        return "unknown_provider", None
 
     raw_price = wire_row.get("price")
     if raw_price is None:
-        return "unchanged"  # Pricempire knows the provider but has no price; nothing to record.
+        # Pricempire knows the provider but has no price; nothing to
+        # record. Treated as "unchanged" for the aggregate count but
+        # source_name=None so the per-provider unchanged bucket isn't
+        # inflated by no-price rows. (The provider IS resolved, but
+        # nothing happened in our table either way.)
+        return "unchanged", None
 
     # Wire prices are integer cents in practice (empirically confirmed
     # in the diagnostic). Defensively, parse through ``Decimal(str(...))``
@@ -404,7 +447,7 @@ def _persist_row(
     except Exception:
         # Malformed numeric — bail. Logging per row is too noisy at
         # 40k items × 6 providers; the row just doesn't get persisted.
-        return "unchanged"
+        return "unchanged", None
 
     count = wire_row.get("count")
     count_int: int | None
@@ -436,7 +479,7 @@ def _persist_row(
         and latest.price == price
         and latest.count == count_int
     ):
-        return "unchanged"
+        return "unchanged", source_name
 
     insert_stmt = (
         pg_insert(PricempireObservation)
@@ -459,7 +502,20 @@ def _persist_row(
         )
     )
     session.execute(insert_stmt)
-    return "written"
+    return "written", source_name
+
+
+def _format_provider_breakdown(counts: dict[str, int]) -> str:
+    """Render a stable ``"buff163=8, buff163_buy=6, ..."`` fragment from
+    a {source_name: count} dict. The "pricempire_" prefix is stripped
+    for readability — the cycle-complete line already names "Pricempire
+    cycle complete" so the prefix would be redundant noise. Iteration
+    order follows ``_PROVIDER_ORDER`` so the log line is stable across
+    cycles even when individual providers write zero rows."""
+    return ", ".join(
+        f"{name.removeprefix('pricempire_')}={counts.get(name, 0)}"
+        for name in _PROVIDER_ORDER
+    )
 
 
 # Item-level metadata fields lifted from each Pricempire wire item
