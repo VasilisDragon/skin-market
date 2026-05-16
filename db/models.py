@@ -154,6 +154,56 @@ class ObservationLog(Base):
     )
 
 
+class PricempireObservation(Base):
+    """One Pricempire sub-provider's reading for one item at one cycle.
+
+    Phase 2a (ADR 018/019). Layered on top of the existing curated
+    Steam/Skinport/DMarket collectors — Pricempire is breadth coverage
+    across buff163/skinport/dmarket/csmoney/swap.gg/buff163_buy.
+
+    Three timestamps live here on purpose (see migration 0005's
+    docstring):
+
+    - ``timestamp`` — local clock at row-write time. Drives dedup and
+      TimescaleDB chunking. Project-canonical.
+    - ``last_checked_at`` — Pricempire's claim of when it last polled
+      the provider. Informational; Phase 2b drift signal.
+    - ``updated_at`` — Pricempire's claim of when the underlying
+      price last moved. Informational. Note: Skinport rows carry a
+      placeholder 2025-01-01 here in practice — handle gracefully.
+
+    Pricempire wire prices are in cents (e.g. 17316 = $173.16); the
+    collector divides by 100 before insert.
+    """
+
+    __tablename__ = "pricempire_observations"
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id"), primary_key=True
+    )
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id"), primary_key=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        nullable=False,
+        server_default=func.now(),
+    )
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    count: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    currency: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="USD"
+    )
+    raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
 class Insight(Base):
     __tablename__ = "insights"
 

@@ -120,6 +120,10 @@ def test_migration_roundtrip_then_seed() -> None:
     assert items_count == 48, (
         f"expected 48 items after seed, got {items_count}"
     )
-    assert sources_count == 2, (
-        f"expected 2 sources after seed, got {sources_count}"
+    # 3 from seed (steam_market, skinport, dmarket) + 7 from migration
+    # 0005 (pricempire pseudo-source + 6 sub-providers). If the count
+    # drifts, update this alongside the YAML or migration.
+    assert sources_count == 10, (
+        f"expected 10 sources after seed (3 seed + 7 from migrations), "
+        f"got {sources_count}"
     )
