@@ -258,9 +258,7 @@ GET /insights/anomalies/recent
 
 ## 5. The 4-hour staleness issue
 
-> **Resolved 2026-05-15** (Phase 1). The `/items/{slug}/price` query now drives off `observation_log` and returns two distinct timestamps: `last_polled_at` (the poll-freshness signal the bot's 🟡 threshold reads) and `last_changed_at` (informational — "price last moved at"). The bot's renderer and system prompt were updated accordingly, and a new `price_flat_minutes` field surfaces the gap when meaningfully >1h. ADR 017 has the design. The §5 audit text below is preserved verbatim as the historical record of the bug.
->
-> One related issue NOT fixed in Phase 1, surfaced during the audit and worth a follow-up: `api/routes/deals.py` filters `/deals/evaluate` freshness by `prices.timestamp` (same conceptual bug, different endpoint). It should also switch to `observation_log.last_observed_at`. Scope-discipline kept it out of this phase.
+> **Resolved 2026-05-15** (Phase 1 → Phase 2a). The timestamp-split work is now complete across both API endpoints that gate on freshness. `/items/{slug}/price` (Phase 1) and `/deals/evaluate` (Phase 2a) both drive off `observation_log.last_observed_at` for the freshness decision and expose `last_polled_at` + `last_changed_at` to consumers. The bot renders 🟡 stale only when `last_polled_at` is genuinely old; `last_changed_at` is informational and explains "price hasn't moved in Nh" without escalating to a warning. ADR 017 has the design. The §5 audit text below is preserved verbatim as the historical record of the bug.
 
 **The root cause is not under-polling. It's a dedup-vs-display mismatch.**
 

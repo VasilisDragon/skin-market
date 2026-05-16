@@ -234,12 +234,21 @@ Verdict = Literal[
 
 class ComparableSource(BaseModel):
     """One source whose denomination matches the offer's currency AND
-    has fresh data. These are the rows the verdict math reads."""
+    has fresh polling data. These are the rows the verdict math reads.
+
+    Two timestamps follow the ADR 017 split. ``last_polled_at`` is the
+    freshness signal (from ``observation_log``) the verdict gate uses;
+    ``last_changed_at`` is the timestamp of the actual price row
+    (``prices.timestamp``) and is informational only — Phase 1 taught
+    us that a flat-market hour leaves ``prices.timestamp`` stale even
+    while the collector is polling cleanly.
+    """
 
     source: str
     denomination: Denomination
     current: MoneyStr
-    observed_at: datetime
+    last_polled_at: datetime
+    last_changed_at: datetime | None
     delta: MoneyStr
     delta_pct: str  # e.g. "+51.8%" — pre-formatted for direct render
 
@@ -249,12 +258,18 @@ InformationalReason = Literal["denomination_mismatch", "stale", "no_data"]
 
 class InformationalSource(BaseModel):
     """One source not used in the verdict, with the explicit reason
-    why — denomination mismatch, stale data, or no recent observation."""
+    why — denomination mismatch, stale polling, or no recent observation.
+
+    ``last_polled_at`` is the freshness signal that drove the
+    ``reason="stale"`` decision (when applicable). ``last_changed_at``
+    is informational; both are nullable for the no-data path.
+    """
 
     source: str
     denomination: Denomination
     current: MoneyStr | None
-    observed_at: datetime | None
+    last_polled_at: datetime | None
+    last_changed_at: datetime | None
     reason: InformationalReason
     note: str
 
@@ -281,7 +296,8 @@ class DealEvaluateResponse(BaseModel):
                             "source": "skinport",
                             "denomination": "usd",
                             "current": "28.00",
-                            "observed_at": "2026-05-12T21:25:06Z",
+                            "last_polled_at": "2026-05-15T20:38:00Z",
+                            "last_changed_at": "2026-05-15T04:23:00Z",
                             "delta": "14.50",
                             "delta_pct": "+51.8%",
                         }
@@ -291,7 +307,8 @@ class DealEvaluateResponse(BaseModel):
                             "source": "steam_market",
                             "denomination": "wallet_credit",
                             "current": "42.92",
-                            "observed_at": "2026-05-12T21:47:02Z",
+                            "last_polled_at": "2026-05-15T20:00:00Z",
+                            "last_changed_at": "2026-05-12T21:47:02Z",
                             "reason": "denomination_mismatch",
                             "note": (
                                 "Steam Wallet credit; not directly "

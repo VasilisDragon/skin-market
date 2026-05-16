@@ -1039,22 +1039,25 @@ class TestDealsEvaluate:
         dmarket_price: str = "31.41",
         steam_price: str = "42.92",
     ) -> None:
+        """Seed both `prices` and `observation_log` so that all three
+        sources read as fresh under the ADR 017 contract — the deals
+        endpoint drives freshness off observation_log."""
         now = datetime.now(UTC)
         _ensure_source_enabled(session, "steam_market")
         _ensure_source_enabled(session, "skinport")
         _ensure_source_enabled(session, "dmarket")
-        _insert_price(
-            session, item_id, "skinport",
-            now - timedelta(minutes=5), skinport_price,
-        )
-        _insert_price(
-            session, item_id, "dmarket",
-            now - timedelta(minutes=5), dmarket_price,
-        )
-        _insert_price(
-            session, item_id, "steam_market",
-            now - timedelta(minutes=5), steam_price,
-        )
+        for source, price in (
+            ("skinport", skinport_price),
+            ("dmarket", dmarket_price),
+            ("steam_market", steam_price),
+        ):
+            _insert_price(
+                session, item_id, source,
+                now - timedelta(minutes=5), price,
+            )
+            _upsert_observation_log(
+                session, item_id, source, now - timedelta(minutes=5),
+            )
 
     def test_usd_offer_above_market(
         self, client: TestClient, sentinel_item
@@ -1163,23 +1166,34 @@ class TestDealsEvaluate:
     def test_stale_comparable_demoted(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """Comparable in matching currency but >4h old is demoted to
-        informational with reason=stale."""
+        """Comparable in matching currency whose last successful poll is
+        >4h old is demoted to informational with reason=stale.
+
+        ADR 017: freshness is driven by observation_log.last_observed_at,
+        not by prices.timestamp. To exercise the stale path, the
+        observation_log row must itself be old (collector hasn't
+        polled the source for that item in over 4h).
+        """
         engine = get_engine()
         now = datetime.now(UTC)
+        stale_ts = now - timedelta(hours=COMPARABLE_FRESHNESS_HOURS + 1)
         with Session(engine) as session:
             _ensure_source_enabled(session, "skinport")
             _ensure_source_enabled(session, "dmarket")
             _insert_price(
-                session, sentinel_item, "skinport",
-                # Past the freshness floor.
-                now - timedelta(hours=COMPARABLE_FRESHNESS_HOURS + 1),
-                "28.00",
+                session, sentinel_item, "skinport", stale_ts, "28.00",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", stale_ts,
             )
             _insert_price(
                 session, sentinel_item, "dmarket",
                 now - timedelta(minutes=5),
                 "31.41",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "dmarket",
+                now - timedelta(minutes=5),
             )
             session.commit()
 
@@ -1203,23 +1217,21 @@ class TestDealsEvaluate:
     def test_no_comparable_data_when_all_stale(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """All matching-currency sources are stale → verdict=no_comparable_data,
-        informational still populated for context."""
+        """All matching-currency sources have stale observation_log →
+        verdict=no_comparable_data, informational still populated."""
         engine = get_engine()
         now = datetime.now(UTC)
+        stale_ts = now - timedelta(hours=COMPARABLE_FRESHNESS_HOURS + 1)
         with Session(engine) as session:
             _ensure_source_enabled(session, "skinport")
             _ensure_source_enabled(session, "dmarket")
-            _insert_price(
-                session, sentinel_item, "skinport",
-                now - timedelta(hours=COMPARABLE_FRESHNESS_HOURS + 1),
-                "28.00",
-            )
-            _insert_price(
-                session, sentinel_item, "dmarket",
-                now - timedelta(hours=COMPARABLE_FRESHNESS_HOURS + 1),
-                "31.41",
-            )
+            for source, price in (("skinport", "28.00"), ("dmarket", "31.41")):
+                _insert_price(
+                    session, sentinel_item, source, stale_ts, price,
+                )
+                _upsert_observation_log(
+                    session, sentinel_item, source, stale_ts,
+                )
             session.commit()
 
         resp = client.post(
@@ -1236,6 +1248,74 @@ class TestDealsEvaluate:
             1 for i in body["informational"] if i["reason"] == "stale"
         )
         assert stale_count == 2
+
+    def test_polled_fresh_but_price_flat_is_comparable(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """The Phase 2a fix in a sentence: an (item, source) pair with
+        fresh observation_log but multi-hour-stale prices.timestamp
+        must NOT be demoted to reason='stale' — it should still anchor
+        the verdict.
+
+        Mirrors ``test_polled_fresh_but_price_flat`` for the
+        ``/items/{slug}/price`` endpoint. Phase 1 fixed that path;
+        Phase 2a applies the same pattern to ``/deals/evaluate``.
+
+        Live empirical analogue: Desert Eagle Blaze FN at $450
+        previously returned ``no_comparable_data`` because Skinport's
+        prices row was 7+ hours old despite Skinport being polled
+        every 15 minutes. After this fix it returns a real verdict.
+        """
+        engine = get_engine()
+        now = datetime.now(UTC)
+        old_price_ts = now - timedelta(hours=16)
+        fresh_poll_ts = now - timedelta(minutes=2)
+        with Session(engine) as session:
+            _ensure_source_enabled(session, "skinport")
+            _insert_price(
+                session, sentinel_item, "skinport", old_price_ts, "754.90",
+            )
+            _upsert_observation_log(
+                session, sentinel_item, "skinport", fresh_poll_ts,
+            )
+            session.commit()
+
+        resp = client.post(
+            "/deals/evaluate",
+            json={
+                "slug": _SENTINEL_SLUG,
+                "offer": {"amount": "450.00", "currency": "usd"},
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+
+        # Skinport must be comparable, not demoted to stale.
+        comparable_sources = {c["source"] for c in body["comparable"]}
+        assert comparable_sources == {"skinport"}, (
+            f"Skinport must be comparable when observation_log is fresh "
+            f"even if prices.timestamp is multi-hour stale. "
+            f"Got comparable={comparable_sources}, "
+            f"informational="
+            f"{[(i['source'], i['reason']) for i in body['informational']]}"
+        )
+        # And the verdict must be a real one (not no_comparable_data).
+        assert body["verdict"] == "below_market"
+        # last_polled_at carries the fresh observation_log timestamp;
+        # last_changed_at carries the old prices.timestamp (informational).
+        sk = body["comparable"][0]
+        assert (
+            datetime.fromisoformat(
+                sk["last_polled_at"].replace("Z", "+00:00")
+            )
+            - fresh_poll_ts
+        ).total_seconds() < 1.0
+        assert (
+            datetime.fromisoformat(
+                sk["last_changed_at"].replace("Z", "+00:00")
+            )
+            - old_price_ts
+        ).total_seconds() < 1.0
 
     def test_unknown_slug_404(self, client: TestClient) -> None:
         resp = client.post(

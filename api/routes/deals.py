@@ -5,10 +5,14 @@ Currency-driven split:
 - ``offer.currency`` selects which sources are *candidate* comparables
   (matching denomination). Other sources are *informational* with
   ``reason="denomination_mismatch"``.
-- Among the candidate comparables, sources whose latest observation is
-  older than ``COMPARABLE_FRESHNESS_HOURS`` are demoted to
-  *informational* with ``reason="stale"``. Verdict math reads only
-  fresh, currency-matched comparables.
+- Among the candidate comparables, sources whose **last successful
+  poll** (``observation_log.last_observed_at``) is older than
+  ``COMPARABLE_FRESHNESS_HOURS`` are demoted to *informational* with
+  ``reason="stale"``. Verdict math reads only fresh, currency-matched
+  comparables. ADR 017 documents why poll-freshness rather than
+  price-row-timestamp drives this decision: ``prices`` is dedup-on-
+  write, so a flat-market hour leaves ``prices.timestamp`` stale even
+  when the collector is polling cleanly every 15 minutes.
 - If no comparables remain (all stale, or none match the currency), the
   verdict is ``no_comparable_data`` and the response still includes the
   informational rows so the bot can show context.
@@ -73,19 +77,32 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
                 status_code=404, detail=f"Item not found: {req.slug!r}"
             )
 
+        # Driven off observation_log (ADR 017). Sources with no
+        # observation_log row are omitted entirely — they fall through
+        # to "no comparable, no informational" for this endpoint,
+        # consistent with /items/{slug}/price.
         latest_per_source = session.execute(
             text(
                 """
-                SELECT DISTINCT ON (p.source_id)
+                SELECT
                     s.name AS source_name,
                     s.denomination,
                     p.price,
-                    p.timestamp AS observed_at
-                FROM prices p
-                JOIN sources s ON s.id = p.source_id
-                WHERE p.item_id = :item_id
+                    p.timestamp AS last_changed_at,
+                    ol.last_observed_at AS last_polled_at
+                FROM observation_log ol
+                JOIN sources s ON s.id = ol.source_id
+                JOIN LATERAL (
+                    SELECT timestamp, price
+                    FROM prices
+                    WHERE item_id = ol.item_id
+                      AND source_id = ol.source_id
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ) p ON TRUE
+                WHERE ol.item_id = :item_id
                   AND s.enabled = TRUE
-                ORDER BY p.source_id, p.timestamp DESC
+                ORDER BY s.name
                 """
             ),
             {"item_id": item["id"]},
@@ -106,7 +123,8 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
                     source=row["source_name"],
                     denomination=row["denomination"],
                     current=row["price"],
-                    observed_at=row["observed_at"],
+                    last_polled_at=row["last_polled_at"],
+                    last_changed_at=row["last_changed_at"],
                     reason="denomination_mismatch",
                     note=note,
                 )
@@ -116,19 +134,23 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
         # Stage 2: freshness split. Stale comparable becomes
         # informational with reason='stale' — same source name, same
         # denomination match, but excluded from the verdict math.
-        if row["observed_at"] < freshness_floor:
+        # Freshness is driven by last_polled_at (observation_log), NOT
+        # by last_changed_at (prices.timestamp). Phase 1 / ADR 017
+        # establishes why.
+        if row["last_polled_at"] < freshness_floor:
             informational.append(
                 InformationalSource(
                     source=row["source_name"],
                     denomination=row["denomination"],
                     current=row["price"],
-                    observed_at=row["observed_at"],
+                    last_polled_at=row["last_polled_at"],
+                    last_changed_at=row["last_changed_at"],
                     reason="stale",
                     note=(
-                        f"Last observed >"
+                        f"Last successful poll >"
                         f"{COMPARABLE_FRESHNESS_HOURS}h ago "
-                        f"({row['observed_at'].isoformat()}); excluded "
-                        f"from verdict computation."
+                        f"({row['last_polled_at'].isoformat()}); "
+                        f"excluded from verdict computation."
                     ),
                 )
             )
@@ -144,7 +166,8 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
                 source=row["source_name"],
                 denomination=row["denomination"],
                 current=row["price"],
-                observed_at=row["observed_at"],
+                last_polled_at=row["last_polled_at"],
+                last_changed_at=row["last_changed_at"],
                 delta=delta,
                 delta_pct=_format_pct(delta_pct),
             )
