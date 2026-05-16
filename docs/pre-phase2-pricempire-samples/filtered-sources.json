@@ -1,0 +1,152 @@
+[
+  {
+    "market_hash_name": "Glock-18 | Gamma Doppler (Factory New)",
+    "liquidity": 62.802508437142585,
+    "steam_last_7d": "64",
+    "steam_last_30d": "757",
+    "steam_last_90d": "1691",
+    "marketcap": "215473980",
+    "trades_7d": "29",
+    "trades_30d": "42",
+    "trades_90d": "29",
+    "count": "9060",
+    "rank": "554",
+    "image": "/panorama/images/econ/default_generated/weapon_glock_am_gamma_doppler_phase4_glock_light_png.png",
+    "prices": [
+      {
+        "price": 17316,
+        "count": 593,
+        "updated_at": "2026-05-16T00:20:00.000Z",
+        "last_checked_at": "2026-05-16T00:20:00.003Z",
+        "provider_key": "buff163",
+        "meta": {
+          "rate": 0.1468709151526723,
+          "original_price": 117900,
+          "original_currency": "CNY"
+        },
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 27371,
+        "count": 71,
+        "updated_at": "2025-01-01T00:00:00.000Z",
+        "last_checked_at": "2026-05-15T23:51:58.798Z",
+        "provider_key": "skinport",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 17268,
+        "count": 73,
+        "updated_at": "2026-05-15T12:58:00.000Z",
+        "last_checked_at": "2026-05-16T00:23:28.036Z",
+        "provider_key": "dmarket",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      }
+    ]
+  },
+  {
+    "market_hash_name": "Glock-18 | Gamma Doppler (Minimal Wear)",
+    "liquidity": 64.89517114871943,
+    "steam_last_7d": "91",
+    "steam_last_30d": "824",
+    "steam_last_90d": "1516",
+    "marketcap": "90114576",
+    "trades_7d": null,
+    "trades_30d": null,
+    "trades_90d": null,
+    "count": "7401",
+    "rank": "1186",
+    "image": "/panorama/images/econ/default_generated/weapon_glock_am_gamma_doppler_phase4_glock_light_png.png",
+    "prices": [
+      {
+        "price": 9826,
+        "count": 410,
+        "updated_at": "2026-05-16T00:20:00.000Z",
+        "last_checked_at": "2026-05-16T00:20:00.003Z",
+        "provider_key": "buff163",
+        "meta": {
+          "rate": 0.1468709151526723,
+          "original_price": 66899,
+          "original_currency": "CNY"
+        },
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 11847,
+        "count": 66,
+        "updated_at": "2025-01-01T00:00:00.000Z",
+        "last_checked_at": "2026-05-15T23:51:58.798Z",
+        "provider_key": "skinport",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 10130,
+        "count": 49,
+        "updated_at": "2026-05-15T12:58:00.000Z",
+        "last_checked_at": "2026-05-16T00:23:28.036Z",
+        "provider_key": "dmarket",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      }
+    ]
+  },
+  {
+    "market_hash_name": "Glock-18 | Gamma Doppler (Field-Tested)",
+    "liquidity": 24.070791544868143,
+    "steam_last_7d": "94",
+    "steam_last_30d": "853",
+    "steam_last_90d": "1657",
+    "marketcap": "62693730",
+    "trades_7d": null,
+    "trades_30d": null,
+    "trades_90d": null,
+    "count": "6270",
+    "rank": "1613",
+    "image": "/panorama/images/econ/default_generated/weapon_glock_am_gamma_doppler_phase4_glock_medium_png.png",
+    "prices": [
+      {
+        "price": 8519,
+        "count": 236,
+        "updated_at": "2026-05-16T00:20:00.000Z",
+        "last_checked_at": "2026-05-16T00:20:00.003Z",
+        "provider_key": "buff163",
+        "meta": {
+          "rate": 0.1468709151526723,
+          "original_price": 58000,
+          "original_currency": "CNY"
+        },
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 8258,
+        "count": 51,
+        "updated_at": "2025-01-01T00:00:00.000Z",
+        "last_checked_at": "2026-05-15T23:51:58.798Z",
+        "provider_key": "skinport",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      },
+      {
+        "price": 8355,
+        "count": 75,
+        "updated_at": "2026-05-15T12:58:00.000Z",
+        "last_checked_at": "2026-05-16T00:23:28.036Z",
+        "provider_key": "dmarket",
+        "meta": null,
+        "original_price": null,
+        "exchange_rate": null
+      }
+    ]
+  }
+]

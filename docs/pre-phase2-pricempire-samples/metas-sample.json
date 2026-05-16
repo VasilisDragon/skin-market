@@ -1,0 +1,46 @@
+[
+  {
+    "market_hash_name": "Sealed Graffiti | Double (Bazooka Pink)",
+    "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bi9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdB2ozio1RrlIWFK3UfvMYB8UsvjiMXojflsZalyxSh31CIyHz2GZ-KuFpPsrTzBG0pe2YHnjyVzzNIy2XGFtpTrJcMG_d_2Gs5-SQSjicQ-klQFwMKKoGoWQcP5iKOBU91o8I8iuomUM7HRkkfddLZQOvw2QfKOAnyXdKJ5lv0hfGKQ",
+    "buff_market_id": 12165,
+    "market_first_date": 1475794800000,
+    "description": "This is a sealed container of a graffiti pattern. Once this graffiti pattern is unsealed, it will provide you with enough charges to apply the graffiti pattern 50 times to the in-game world.",
+    "steam_image_hash": "https://community.cloudflare.steamstatic.com/economy/image/IzMF03bi9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdB2ozio1RrlIWFK3UfvMYB8UsvjiMXojflsZalyxSh31CIyHz2GZ-KuFpPsrTzBG0pe2YHnjyVzzNIy2XHQYwH-ddMDrQ-TKn4rydSm7PSLx9FwwCKaRV9GUfPszbPRRogdIJ8yuomUM7HRkkfddLZQOvw2QfKOAnyXdKJ5kOKXRSCQ",
+    "liquidity": 75,
+    "marketcap": 1345,
+    "count": 1345,
+    "steam_last_90d": 3589,
+    "steam_last_30d": 1193,
+    "steam_last_7d": 261,
+    "steam_last_24h": 30,
+    "rank": 23219
+  },
+  {
+    "market_hash_name": "Sticker | xerolte (Gold) | Budapest 2025",
+    "steam_image_hash": "https://steamcommunity-a.akamaihd.net/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJai0ki7VeTHjMi0MSnHtwM6547z1UHiUxL9ipPf-i1X67yrOPM5IajEC2HDxbZw47E9GSvnwRtxsjnQm9eveXifbgZzWcchRLUNrFDmxdnTv0kn",
+    "description": "This item commemorates the StarLadder Budapest 2025 CS2 Major Championship. This sticker can be applied to any weapon you own and can be scraped to look more worn. You can scrape the same sticker multiple times, making it a bit more worn each time, until it is removed from the weapon.This gold sticker was autographed by professional player Munkhtogtokh Enkhbat playing for The Huns at the StarLadder Budapest 2025 CS2 Major Championship.",
+    "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJai0ki7VeTHjMi0MSnHtwM6547z1UHiUxL9ipPf-i1X67yrOPM5IajEC2HDxbZw47E9GSvnwRtxsjnQm9eveXifbgZzWcchRLUNrFDmxdnTv0kn",
+    "liquidity": 0
+  },
+  {
+    "market_hash_name": "Glock-18 | Gamma Doppler (Factory New)",
+    "description": "The Glock 18 is a serviceable first-round pistol that works best against unarmored opponents and is capable of firing three-round bursts. It has been painted with black and silver metallic paints using a marbleizing medium, then candy coated.",
+    "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGIGz3UqlXOLrxM-vMGmW8VNxu5Dx60noTyL2kpnj9h1a4s2paalgIc-XAXeAzetkj_FhTjq2wSIgvzKGkbD1KCzPKhhxC5FyRbII4Ua_ltDhY-Ln41fW2I1Ayn_9ii5P7Xpr5ekHV6Mg__HekUifZpA8glcU",
+    "count": 9060,
+    "trades_1d": 29,
+    "trades_90d": 29,
+    "market_first_date": 1632265200000,
+    "trades_7d": 29,
+    "buff_market_id": 19580,
+    "steam_image_hash": "https://steamcommunity-a.akamaihd.net/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I56KU0Zwwo4NUX4oFJZEHLbXH5ApeO4YmlhxYQknCRvCo04DEVlxkKgposbaqKAxf0v73djxP4d2JkI-bh_vxIYTBnmpC7ZROjeXO9ofKhF2zowcDPzixc9OLIAU3ZFnVq1K8lO6518Lv786awSdqunYrsXnYnEGzghwYb-Jp0aOXHULeWfI9u5g-Fg",
+    "trades_30d": 42,
+    "trades_180d": 29,
+    "liquidity": 66,
+    "rank": 554,
+    "marketcap": 215473980,
+    "steam_last_90d": 1691,
+    "steam_last_30d": 757,
+    "steam_last_7d": 64,
+    "steam_last_24h": 5
+  }
+]
