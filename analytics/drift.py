@@ -97,13 +97,23 @@ logger = logging.getLogger(__name__)
 # surface evidence to bump this; the value is not load-bearing-by-default.
 BASELINE_DRIFT_THRESHOLD: Decimal = Decimal("0.10")
 
-# Both stale thresholds set to 30 min — matches the detector's
-# 30-minute cadence so each cycle is guaranteed to see at least one
-# fresh poll on each side under normal operation. Module constants;
-# no env override (matches STALE_PRICEMPIRE_MINUTES posture from
-# Step 1).
+# Stale thresholds. Curated at 30 min matches the curated polling
+# cadence (15-30 min); the gate fires only on actual misses.
+#
+# Pricempire at 75 min is an INTERIM value per ADR 022 §2.5. The
+# original 30-min constant was empirically mis-calibrated: Pricempire's
+# upstream pricempire_skinport refresh runs ~60 min mean with ±30 min
+# jitter (docs/phase2b-validation.md §3.a), producing structural every-
+# other-cycle false-positive `stale_pricempire` verdicts. 75 covers
+# the 90-min worst-case jitter observed in the 21h validation window
+# while staying tight enough that a real multi-hour Pricempire outage
+# still trips the gate. Revised by follow-up ADR after the 7-day
+# characterization in ADR 022 §6 completes.
+#
+# Module constants; no env override (operational changes go through
+# an ADR amendment + code change, not an env variable).
 STALE_CURATED_MINUTES: float = 30.0
-STALE_PRICEMPIRE_MINUTES: float = 30.0
+STALE_PRICEMPIRE_MINUTES: float = 75.0
 
 # Meaningful source pairs per ADR 018. Tuple of (curated_name,
 # pricempire_sub_provider_name). Test

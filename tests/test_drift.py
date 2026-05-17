@@ -228,11 +228,13 @@ class TestDecideVerdictStaleness:
         assert result.curated_age_min == pytest.approx(45.0)
 
     def test_pricempire_stale(self) -> None:
+        """Pricempire side > STALE_PRICEMPIRE_MINUTES (=75 per ADR 022
+        §2.5) → stale_pricempire. 90 min comfortably exceeds 75."""
         result = decide_verdict(
             curated_price=Decimal("108.00"),
             curated_last_polled_at=_fresh(5),
             pricempire_price=Decimal("100.00"),
-            pricempire_last_polled_at=_fresh(45),
+            pricempire_last_polled_at=_fresh(90),
             classification=_entry("pattern_agnostic"),
             now=_NOW,
         )
@@ -240,11 +242,13 @@ class TestDecideVerdictStaleness:
         assert result.drift is None
 
     def test_both_stale(self) -> None:
+        """Both sides exceed their respective thresholds → stale_both.
+        Curated >30 (here 45), Pricempire >75 (here 90)."""
         result = decide_verdict(
             curated_price=Decimal("108.00"),
             curated_last_polled_at=_fresh(45),
             pricempire_price=Decimal("100.00"),
-            pricempire_last_polled_at=_fresh(45),
+            pricempire_last_polled_at=_fresh(90),
             classification=_entry("pattern_agnostic"),
             now=_NOW,
         )
@@ -864,12 +868,15 @@ class TestModuleConstants:
         assert isinstance(BASELINE_DRIFT_THRESHOLD, Decimal)
         assert Decimal("0.10") == BASELINE_DRIFT_THRESHOLD
 
-    def test_stale_thresholds_match_cadence(self) -> None:
-        """Both stale thresholds at 30 min; matches the detector's
-        30-min interval cadence so each cycle is guaranteed to see at
-        least one fresh poll on each side."""
+    def test_stale_thresholds_match_adr_022(self) -> None:
+        """Curated at 30 min matches the 15-30 min curated polling
+        cadence. Pricempire at 75 min is the ADR 022 §2.5 interim
+        value chosen to cover the empirically-observed 30-90 min
+        jitter on the upstream pricempire_skinport refresh
+        (docs/phase2b-validation.md §3.a). Revised by follow-up ADR
+        after the 7-day characterization in ADR 022 §6 completes."""
         assert STALE_CURATED_MINUTES == 30.0
-        assert STALE_PRICEMPIRE_MINUTES == 30.0
+        assert STALE_PRICEMPIRE_MINUTES == 75.0
 
 
 # Reference the module so a future import-pruner doesn't strip the
