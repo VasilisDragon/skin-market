@@ -258,9 +258,32 @@ is premature.
 
 ## Empirical findings
 
-All numbers from the 21h 30min / 44-cycle validation window
-(2026-05-16 23:16 UTC → 2026-05-17 20:46 UTC). See
+All numbers in this section were **measured before the §2.5 interim
+revision took effect** — i.e., with `STALE_PRICEMPIRE_MINUTES = 30`
+running in production over the 21h 30min / 44-cycle validation
+window (2026-05-16 23:16 UTC → 2026-05-17 20:46 UTC). See
 `docs/phase2b-validation.md` for the full SQL and per-cycle data.
+
+**Post-rebuild behavior (with `STALE_PRICEMPIRE_MINUTES = 75`)
+will differ.** The two predicted changes:
+
+- `stale_pricempire` rate on the skinport pair should drop from ~50%
+  of cycles toward ~0% of cycles under typical Pricempire upstream
+  cadence. The 21.2% aggregate `stale_pricempire` figure below was
+  almost entirely skinport-pair false-positives; with 75 covering
+  the observed 30-90 min jitter envelope, that share should collapse
+  to outage-only events.
+- `drift_alert` distribution should re-balance away from the current
+  ~96% dmarket-pair share, because skinport-pair items will start
+  getting fresh evaluations on the cycles where they previously
+  reported `stale_pricempire`. The Hedge Maze-shaped one-shot events
+  (validation §3.1) are precisely the class that should surface more
+  often post-rebuild.
+
+The 7-day characterization in §6 is the trigger for re-measuring
+both. Numbers below should be read as "what the detector did in its
+first day at the original threshold," not "what readers should
+expect now."
 
 - **Cadence cleanliness** (validation §1): 44 cycles, 84 rows each
   cycle exactly, 30-min cadence honored across the window. No

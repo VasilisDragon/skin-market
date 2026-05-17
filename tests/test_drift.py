@@ -878,6 +878,26 @@ class TestModuleConstants:
         assert STALE_CURATED_MINUTES == 30.0
         assert STALE_PRICEMPIRE_MINUTES == 75.0
 
+    def test_pricempire_age_in_revised_band_evaluates_fresh(self) -> None:
+        """ADR 022 §2.5 behavior pin: a Pricempire age of 60 min — well
+        inside the original 30-min stale band but well inside the new
+        75-min fresh band — must produce a fresh evaluation verdict,
+        NOT stale_pricempire. Locks in the semantic change against
+        regressions that the constant-pin test wouldn't catch: an env-
+        override path, a bypass of decide_verdict's stale gate, or a
+        partial revert of the constant change."""
+        result = decide_verdict(
+            curated_price=Decimal("108.00"),
+            curated_last_polled_at=_fresh(5),
+            pricempire_price=Decimal("100.00"),
+            pricempire_last_polled_at=_fresh(60),
+            classification=_entry("pattern_agnostic"),
+            now=_NOW,
+        )
+        assert result.verdict != "stale_pricempire"
+        assert result.verdict in ("drift_alert", "no_drift")
+        assert result.drift is not None
+
 
 # Reference the module so a future import-pruner doesn't strip the
 # direct symbol imports above.

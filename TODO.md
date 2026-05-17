@@ -244,3 +244,82 @@ The current target_size=100 workaround works against production data
 state as of 2026-05-17. If a future production cycle pushes 100 items
 above sentinel rank 10, the test will start failing; that's the cue
 to pick up this TODO.
+
+---
+
+## 7-day Pricempire cadence characterization (ADR 022 §2.5 follow-up)
+
+**Filed:** 2026-05-17 (paired with ADR 022 commit 5594bee).
+**Severity:** medium. The `STALE_PRICEMPIRE_MINUTES = 75` value
+shipped in ADR 022 §2.5 is an **interim** choice based on a 21h 30min
+validation window. Leaving it permanent by default — the failure mode
+the explicit end-state framing was meant to prevent — would freeze a
+threshold that may be too tight, too loose, or in the wrong
+per-sub-provider shape entirely.
+
+**Target date:** **2026-05-25** (assumes the analytics rebuild that
+takes the 75-min threshold live happens on or about 2026-05-17 + 7
+full days of post-rebuild data + 1 day buffer for the characterization
+work itself). **If the rebuild slips past 2026-05-18, update this
+target date accordingly** — the trigger is rebuild + 7d, not a
+calendar date.
+
+### Trigger
+
+Operator (or whoever picks this up) confirms the rebuild date by
+checking the most recent `analytics` image timestamp:
+
+```bash
+docker images --format "{{.Repository}} {{.CreatedAt}}" | grep skin-market-
+```
+
+Or by checking the first `drift_verdict` row whose `meta_info->>'threshold_used'`
+calculation reflects the new constant (will require a separate marker
+in the meta_info or a separate cycle-time anchor — see "Implementation
+notes" below).
+
+### Scope
+
+Per ADR 022 §6:
+
+1. **Jitter distribution** per sub-provider over a 7-day window:
+   median, p95, p99 of inter-write gaps for
+   `pricempire_observation_log.last_observed_at` by `source_id`.
+2. **Time-of-day dependence**: bucket the cadence by UTC hour-of-day
+   and check whether the upstream refresh slows during certain
+   windows (Pricempire's own internal cron pattern, or upstream
+   sub-provider downtime windows).
+3. **Outage tails**: any single-day outliers (gaps > 6h) — were they
+   correlated across sub-providers (= a Pricempire-side outage) or
+   isolated to one (= upstream-provider-side outage)?
+4. **All six sub-providers**, not just `pricempire_skinport` /
+   `pricempire_dmarket` — informs whether to ever expand the
+   meaningful-pair set.
+
+### Deliverable
+
+A follow-up ADR (provisionally ADR 026) that:
+
+- Cites the 7-day characterization findings.
+- Revises `STALE_PRICEMPIRE_MINUTES` (one of: lower, raise, split
+  per-sub-provider, or affirm 75).
+- Updates `analytics/drift.py:117` and
+  `tests/test_drift.py::test_stale_thresholds_match_adr_022` if the
+  value changes.
+- Cross-references ADR 022 §2.5 as superseded.
+
+### Implementation notes
+
+The validation queries from `docs/phase2b-validation.md` §1 / §3.a
+generalize directly — same shape, just over a wider window. Add a
+per-sub-provider grouping to the percentile query in §3.a. No new
+schema or instrumentation needed; everything is in
+`pricempire_observation_log` already.
+
+### Not affected — system runs fine in the meantime
+
+The 75-min interim is functionally correct for the typical cadence
+envelope. The risk this TODO addresses is "we forget to revise" and
+75 silently becomes the permanent value, not "the system is broken
+in the meantime." If picked up later than 2026-05-25, the only cost
+is delayed empirical confirmation, not operational degradation.
