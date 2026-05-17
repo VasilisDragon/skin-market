@@ -42,6 +42,7 @@ from api.schemas import (
     DealEvaluateResponse,
     InformationalSource,
 )
+from api.watchlist_tiers import get_tier
 from db.connection import get_engine
 
 router = APIRouter(tags=["deals"])
@@ -68,7 +69,8 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
     with Session(engine) as session:
         item = session.execute(
             text(
-                "SELECT id, display_name FROM items WHERE slug = :slug"
+                "SELECT id, display_name, market_hash_name FROM items "
+                "WHERE slug = :slug"
             ),
             {"slug": req.slug},
         ).mappings().first()
@@ -184,6 +186,7 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
     return DealEvaluateResponse(
         slug=req.slug,
         display_name=item["display_name"],
+        tier=get_tier(item["market_hash_name"]),
         offer=req.offer,
         verdict=verdict,
         comparable=comparable,

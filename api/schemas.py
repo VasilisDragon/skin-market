@@ -35,6 +35,16 @@ MoneyStr = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 # require a Pydantic edit per new source.
 Denomination = Literal["usd", "wallet_credit"]
 
+# Tier surfaces on every item-level response so the bot can shape its
+# rendering without a follow-up call. ``deep`` items get the full
+# curated-collector + Pricempire treatment (drift detection, cross-
+# source spreads, etc.). ``broad`` items are Pricempire-only and have
+# no curated data — the routes return empty per-source/per-history
+# rows for them. ``orphan`` means the item exists in the items table
+# but is no longer in the active YAML watchlist (ADR 024) — historical
+# data may exist but no current cycle is producing it.
+Tier = Literal["deep", "broad", "orphan"]
+
 
 class Item(BaseModel):
     """One row of the watchlist."""
@@ -42,6 +52,7 @@ class Item(BaseModel):
     slug: str
     market_hash_name: str
     display_name: str
+    tier: Tier
 
 
 class ItemDetail(Item):
@@ -91,6 +102,7 @@ class PriceResponse(BaseModel):
 
     slug: str
     display_name: str
+    tier: Tier
     sources: list[PerSourcePrice]
 
     model_config = {
@@ -99,6 +111,7 @@ class PriceResponse(BaseModel):
                 {
                     "slug": "ak-47-redline-field-tested",
                     "display_name": "AK-47 | Redline (Field-Tested)",
+                    "tier": "deep",
                     "sources": [
                         {
                             "source": "skinport",
@@ -147,6 +160,7 @@ class HistoryResponse(BaseModel):
     """
 
     slug: str
+    tier: Tier
     source: str | None
     since: datetime
     until: datetime
@@ -159,6 +173,7 @@ class HistoryResponse(BaseModel):
             "examples": [
                 {
                     "slug": "ak-47-redline-field-tested",
+                    "tier": "deep",
                     "source": "skinport",
                     "since": "2026-05-05T00:00:00Z",
                     "until": "2026-05-12T00:00:00Z",
@@ -198,6 +213,7 @@ class InsightsResponse(BaseModel):
     """
 
     slug: str
+    tier: Tier
     insights: list[InsightRow]
 
 
@@ -277,6 +293,7 @@ class InformationalSource(BaseModel):
 class DealEvaluateResponse(BaseModel):
     slug: str
     display_name: str
+    tier: Tier
     offer: Offer
     verdict: Verdict
     comparable: list[ComparableSource]
@@ -289,6 +306,7 @@ class DealEvaluateResponse(BaseModel):
                 {
                     "slug": "ak-47-redline-field-tested",
                     "display_name": "AK-47 | Redline (Field-Tested)",
+                    "tier": "deep",
                     "offer": {"amount": "42.50", "currency": "usd"},
                     "verdict": "above_market",
                     "comparable": [
@@ -390,6 +408,126 @@ class AnomaliesResponse(BaseModel):
     since: datetime
     count: int
     anomalies: list[AnomalyRow]
+
+
+# Drift detector output surfaces via /items/{slug}/drift (Phase 2b
+# Step 8). Verdict kinds mirror analytics/drift.py's module-level
+# VERDICT_* constants; ``Classification`` mirrors the labels in
+# analytics/pattern_classifier.py.
+DriftVerdict = Literal[
+    "drift_alert",
+    "no_drift",
+    "pattern_skip",
+    "stale_curated",
+    "stale_pricempire",
+    "stale_both",
+    "no_comparable_data",
+]
+
+Classification = Literal["pattern_agnostic", "phase_based", "pattern_seed"]
+
+
+class DriftPairVerdict(BaseModel):
+    """One pair's most-recent drift verdict.
+
+    Up to two pairs per deep-tier item (skinport↔pricempire_skinport
+    and dmarket↔pricempire_dmarket; see analytics/drift.py
+    ``_MEANINGFUL_PAIRS``). Money fields use ``MoneyStr`` to keep the
+    Decimal-on-wire-as-string contract; ``drift`` and
+    ``threshold_used`` are likewise serialized as strings since they
+    are ratios derived from money.
+    """
+
+    source_a: str
+    source_b: str
+    verdict: DriftVerdict
+    drift: MoneyStr | None
+    threshold_used: MoneyStr
+    classification: Classification
+    threshold_multiplier: float
+    computed_at: datetime
+    curated_price: MoneyStr | None
+    pricempire_price: MoneyStr | None
+    curated_last_polled_at: datetime | None
+    pricempire_last_polled_at: datetime | None
+    curated_age_min: float | None
+    pricempire_age_min: float | None
+    note: str | None
+
+
+class DriftResponse(BaseModel):
+    """``GET /items/{slug}/drift`` — most-recent verdict per meaningful
+    pair for one item.
+
+    Status-code contract:
+
+    - 404 when ``slug`` is unknown (item not in items table).
+    - 200 with ``tier="deep"``, ``pairs=[]`` when the drift detector
+      hasn't produced a row yet (fresh deploy / pre-cycle).
+    - 200 with ``tier="deep"``, ``pairs=[…1 or 2…]`` for items the
+      detector has evaluated. One-pair shape is the realistic middle
+      state for items added in Step 7.1 with sparse data for ~24h.
+    - 200 with ``tier="broad"``, ``pairs=[]`` for broad-tier items —
+      the detector skips them by construction. Pinned by tests using a
+      synthetic broad-tier item; broad tier is empty in production
+      today (deferred phase).
+    - 200 with ``tier="orphan"``, ``pairs=[]`` for items removed from
+      the YAML watchlist after Step 7.1 but still in the items table
+      (ADR 024).
+    """
+
+    slug: str
+    display_name: str
+    tier: Tier
+    pairs: list[DriftPairVerdict]
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "slug": "ak-47-redline-field-tested",
+                    "display_name": "AK-47 | Redline (Field-Tested)",
+                    "tier": "deep",
+                    "pairs": [
+                        {
+                            "source_a": "skinport",
+                            "source_b": "pricempire_skinport",
+                            "verdict": "no_drift",
+                            "drift": "-0.0123",
+                            "threshold_used": "0.10",
+                            "classification": "pattern_agnostic",
+                            "threshold_multiplier": 1.0,
+                            "computed_at": "2026-05-17T01:30:00Z",
+                            "curated_price": "28.00",
+                            "pricempire_price": "28.35",
+                            "curated_last_polled_at": "2026-05-17T01:28:00Z",
+                            "pricempire_last_polled_at": "2026-05-17T01:29:00Z",
+                            "curated_age_min": 2.0,
+                            "pricempire_age_min": 1.0,
+                            "note": None,
+                        },
+                        {
+                            "source_a": "dmarket",
+                            "source_b": "pricempire_dmarket",
+                            "verdict": "drift_alert",
+                            "drift": "0.1532",
+                            "threshold_used": "0.10",
+                            "classification": "pattern_agnostic",
+                            "threshold_multiplier": 1.0,
+                            "computed_at": "2026-05-17T01:30:00Z",
+                            "curated_price": "31.41",
+                            "pricempire_price": "27.24",
+                            "curated_last_polled_at": "2026-05-17T01:28:00Z",
+                            "pricempire_last_polled_at": "2026-05-17T01:29:00Z",
+                            "curated_age_min": 2.0,
+                            "pricempire_age_min": 1.0,
+                            "note": None,
+                        },
+                    ],
+                }
+            ]
+        }
+    }
 
     model_config = {
         "json_schema_extra": {

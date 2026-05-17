@@ -28,6 +28,7 @@ Endpoints:
 - ``GET  /items/{slug}/history`` — bounded time-series
 - ``GET  /items/{slug}/insights``— latest of each per-item insight
 - ``GET  /items/{slug}/chart``   — PNG chart, one source × N days
+- ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
 """
 
@@ -38,7 +39,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from api.auth import require_token
-from api.routes import charts, deals, history, insights, items
+from api.routes import charts, deals, drift, history, insights, items
 from api.schemas import HealthResponse
 from db.connection import get_engine
 
@@ -64,6 +65,7 @@ app.include_router(history.router, dependencies=_auth)
 app.include_router(insights.router, dependencies=_auth)
 app.include_router(charts.router, dependencies=_auth)
 app.include_router(deals.router, dependencies=_auth)
+app.include_router(drift.router, dependencies=_auth)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["meta"])

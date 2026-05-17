@@ -29,6 +29,7 @@ from api.schemas import (
     PerSourcePrice,
     PriceResponse,
 )
+from api.watchlist_tiers import get_tier
 from db.connection import get_engine
 from db.models import Item as ItemModel
 
@@ -57,6 +58,7 @@ def list_items() -> list[Item]:
             slug=row.slug,
             market_hash_name=row.market_hash_name,
             display_name=row.display_name,
+            tier=get_tier(row.market_hash_name),
         )
         for row in rows
     ]
@@ -77,6 +79,7 @@ def get_item(slug: str) -> ItemDetail:
         slug=row.slug,
         market_hash_name=row.market_hash_name,
         display_name=row.display_name,
+        tier=get_tier(row.market_hash_name),
         item_type=row.item_type,
         weapon_name=row.weapon_name,
         skin_name=row.skin_name,
@@ -112,9 +115,11 @@ def get_item_price(slug: str) -> PriceResponse:
     engine = get_engine()
     with Session(engine) as session:
         item = session.execute(
-            select(ItemModel.id, ItemModel.display_name).where(
-                ItemModel.slug == slug
-            )
+            select(
+                ItemModel.id,
+                ItemModel.display_name,
+                ItemModel.market_hash_name,
+            ).where(ItemModel.slug == slug)
         ).first()
         if item is None:
             raise HTTPException(
@@ -152,6 +157,7 @@ def get_item_price(slug: str) -> PriceResponse:
     return PriceResponse(
         slug=slug,
         display_name=item.display_name,
+        tier=get_tier(item.market_hash_name),
         sources=[
             PerSourcePrice(
                 source=row["source_name"],

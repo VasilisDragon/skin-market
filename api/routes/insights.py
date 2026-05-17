@@ -30,6 +30,7 @@ from api.schemas import (
     InsightsResponse,
     NarrativeResponse,
 )
+from api.watchlist_tiers import get_tier
 from db.connection import get_engine
 
 router = APIRouter(tags=["insights"])
@@ -45,14 +46,19 @@ ANOMALIES_MAX_HOURS = 24
 def get_insights(slug: str) -> InsightsResponse:
     engine = get_engine()
     with Session(engine) as session:
-        item_id = session.execute(
-            text("SELECT id FROM items WHERE slug = :slug"),
+        item_row = session.execute(
+            text(
+                "SELECT id, market_hash_name FROM items "
+                "WHERE slug = :slug"
+            ),
             {"slug": slug},
-        ).scalar_one_or_none()
-        if item_id is None:
+        ).first()
+        if item_row is None:
             raise HTTPException(
                 status_code=404, detail=f"Item not found: {slug!r}"
             )
+        item_id = item_row.id
+        market_hash_name = item_row.market_hash_name
 
         rows = session.execute(
             text(
@@ -87,6 +93,7 @@ def get_insights(slug: str) -> InsightsResponse:
 
     return InsightsResponse(
         slug=slug,
+        tier=get_tier(market_hash_name),
         insights=[
             InsightRow(
                 insight_type=row["insight_type"],
