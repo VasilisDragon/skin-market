@@ -47,23 +47,30 @@ Tier = Literal["deep", "broad", "orphan"]
 
 
 class Item(BaseModel):
-    """One row of the watchlist."""
+    """One row of the watchlist.
+
+    weapon_name / skin_name / is_stattrak / is_souvenir surface on the
+    list endpoint (not just ``ItemDetail``) so the bot can match an
+    orphan slug to its sibling deep-tier wear without parsing
+    ``display_name`` strings (which would be brittle on StatTrak™ /
+    Souvenir / star-prefixed knives + gloves). Phase 2b Step 9.
+    """
 
     slug: str
     market_hash_name: str
     display_name: str
     tier: Tier
+    weapon_name: str | None
+    skin_name: str | None
+    is_stattrak: bool
+    is_souvenir: bool
 
 
 class ItemDetail(Item):
     """Full item metadata for ``GET /items/{slug}``."""
 
     item_type: str | None
-    weapon_name: str | None
-    skin_name: str | None
     wear: str | None
-    is_stattrak: bool
-    is_souvenir: bool
 
 
 class PerSourcePrice(BaseModel):

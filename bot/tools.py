@@ -70,6 +70,93 @@ HISTORY_DOWNSAMPLE_THRESHOLD: int = 30
 ANOMALIES_TOP_N_THRESHOLD: int = 10
 WATCHLIST_SAMPLE_SIZE: int = 5
 
+# Phase 2b Step 9 — tier-aware response shaping. Pre-composed copy
+# the LLM renders verbatim when an item is broad-tier or orphan;
+# avoids relying on the open-source model to invent the right framing
+# on its own (ADR 016's defensive-handling rationale). Production
+# today: no items are broad-tier; 28 items are orphan after Step 7.1.
+_TIER_NOTE_BROAD: str = (
+    "This item is on the broad watchlist — we track it but with "
+    "less detail than our priority items. Detailed drift checks "
+    "aren't available for this tier."
+)
+
+
+def _tier_note_orphan(active_wear_display_name: str | None) -> str:
+    """Compose the orphan tier_note. When an actively-tracked sibling
+    wear exists, the note points the user to it."""
+    if active_wear_display_name is None:
+        return (
+            "This wear is no longer actively tracked. Historical "
+            "data may still be available, but we're not collecting "
+            "current prices for it."
+        )
+    return (
+        f"This wear is no longer actively tracked. The currently-"
+        f"tracked wear is {active_wear_display_name}. I can show "
+        f"historical data for the orphaned wear, or you can ask "
+        f"about the active wear instead."
+    )
+
+
+# Mapping from drift verdict → user-facing framing string + whether
+# the bot should render a drift number. See Step 9 design proposal §1
+# for the precedence table and analytics/drift.py for verdict
+# semantics.
+_DRIFT_FRAMING_TEMPLATES: dict[str, dict] = {
+    "drift_alert": {
+        "show_number": True,
+        "template": (
+            "Drift vs Pricempire: {curated_name} is {signed_pct} vs "
+            "{pricempire_name} (threshold ±{threshold_pct})."
+        ),
+    },
+    "no_drift": {
+        "show_number": True,
+        "template": (
+            "Cross-check vs Pricempire: spread within tolerance "
+            "({signed_pct}, threshold ±{threshold_pct})."
+        ),
+    },
+    "pattern_skip": {
+        "show_number": False,
+        "template": (
+            "Pattern-bearing item (phase/seed variation) — drift "
+            "check skipped by design; Pricempire and our direct "
+            "source name the same listing as different things."
+        ),
+    },
+    "stale_curated": {
+        "show_number": False,
+        "template": (
+            "Drift check inconclusive: our {curated_name} reading "
+            "is stale ({curated_age_min:.0f} min old)."
+        ),
+    },
+    "stale_pricempire": {
+        "show_number": False,
+        "template": (
+            "Drift check inconclusive: Pricempire's "
+            "{pricempire_name} reading is stale "
+            "({pricempire_age_min:.0f} min old)."
+        ),
+    },
+    "stale_both": {
+        "show_number": False,
+        "template": (
+            "Drift check inconclusive: both our {curated_name} and "
+            "Pricempire's {pricempire_name} readings are stale."
+        ),
+    },
+    "no_comparable_data": {
+        "show_number": False,
+        "template": (
+            "Drift check warming up: no comparable Pricempire data "
+            "yet for this item."
+        ),
+    },
+}
+
 
 @dataclass(frozen=True)
 class Attachment:
@@ -166,6 +253,173 @@ def _get_json(
 
 
 # ---------------------------------------------------------------------
+# Items cache + sibling-wear matcher (Phase 2b Step 9)
+#
+# The bot needs to know "which wear of skin X is the currently-active
+# (deep-tier) one" when a user lands on an orphan slug — both for the
+# active_wear_hint surfaced through query_current_price / query_drift /
+# evaluate_deal, and for the system-prompt wear-disambiguation rule.
+#
+# The items list is small (42 today, ~50 cap) and only changes at
+# deploy time (data/watchlist.yaml is operator-edited and followed by
+# a docker restart). One module-level cache for the lifetime of the
+# bot process is sufficient; ``_refresh_items_cache`` allows tests to
+# inject a fixture without reaching the API.
+# ---------------------------------------------------------------------
+
+
+_items_cache: list[dict] | None = None
+
+
+def _refresh_items_cache(items: list[dict] | None) -> None:
+    """Set or clear the items cache. Tests pass a fixture list;
+    passing None forces a fresh API fetch on the next access."""
+    global _items_cache
+    _items_cache = items
+
+
+def _get_items_cache() -> list[dict]:
+    """Return the items cache, fetching from the API on first call.
+
+    Failures bubble up the typed exception hierarchy so the bot's
+    tool-execution loop renders a sensible error rather than
+    silently returning ``[]`` (which would suppress the
+    active_wear_hint feature without explanation)."""
+    global _items_cache
+    if _items_cache is None:
+        with _client() as c:
+            _items_cache = _get_json(c, "/items")
+    return _items_cache
+
+
+def _find_active_wear(orphan_slug: str) -> dict | None:
+    """Given an orphan-tier slug, find the actively-tracked sibling
+    wear (same weapon + skin + StatTrak/Souvenir flags, different
+    wear, ``tier == "deep"``). Returns
+    ``{"slug": …, "display_name": …}`` or None.
+
+    Match uses the structured fields on /items rows (added in Phase
+    2b Step 9: weapon_name, skin_name, is_stattrak, is_souvenir);
+    parsing display_name strings would be brittle on StatTrak™ /
+    Souvenir / star-prefixed knives and gloves."""
+    cache = _get_items_cache()
+    orphan = next(
+        (row for row in cache if row.get("slug") == orphan_slug), None
+    )
+    if orphan is None:
+        return None
+    weapon = orphan.get("weapon_name")
+    skin = orphan.get("skin_name")
+    stt = orphan.get("is_stattrak", False)
+    sv = orphan.get("is_souvenir", False)
+    if weapon is None or skin is None:
+        return None
+    for row in cache:
+        if row.get("slug") == orphan_slug:
+            continue
+        if row.get("tier") != "deep":
+            continue
+        if (
+            row.get("weapon_name") == weapon
+            and row.get("skin_name") == skin
+            and row.get("is_stattrak", False) == stt
+            and row.get("is_souvenir", False) == sv
+        ):
+            return {
+                "slug": row.get("slug"),
+                "display_name": row.get("display_name"),
+            }
+    return None
+
+
+# ---------------------------------------------------------------------
+# Drift summary helper (Phase 2b Step 9)
+#
+# Translates a /items/{slug}/drift response's pair list into the
+# ``drift_summary`` block consumed by both query_current_price (where
+# it appears alongside per_source + anomaly_flag) and query_drift
+# (where it's the primary payload). Centralizes the framing-string
+# composition so the two tool surfaces stay in sync.
+# ---------------------------------------------------------------------
+
+
+def _format_drift_pct(drift_str: str | None) -> str | None:
+    """Convert a signed-ratio string like "-0.1234" into "-12.3%".
+    None passes through. Quantizing to one decimal place keeps the
+    rendered prose readable."""
+    if drift_str is None:
+        return None
+    ratio = float(drift_str)
+    pct = ratio * 100.0
+    sign = "+" if pct >= 0 else "-"
+    return f"{sign}{abs(pct):.1f}%"
+
+
+def _format_threshold_pct(threshold_str: str) -> str:
+    """Threshold is always unsigned ("0.10" → "10.0%")."""
+    return f"{float(threshold_str) * 100:.1f}%"
+
+
+def _shape_drift_pair(raw_pair: dict) -> dict:
+    """Map one /drift API pair entry → drift_summary list entry.
+
+    Adds a pre-formatted ``drift_pct``, a pre-composed ``framing``
+    string the LLM renders verbatim, and a ``stale_side`` hint for
+    the stale_* verdicts (so the LLM doesn't have to parse the
+    verdict string)."""
+    verdict = raw_pair.get("verdict", "")
+    drift_pct = _format_drift_pct(raw_pair.get("drift"))
+    template_info = _DRIFT_FRAMING_TEMPLATES.get(verdict, {})
+    framing_template = template_info.get(
+        "template", "Drift verdict: {verdict}."
+    )
+    threshold_pct = _format_threshold_pct(
+        raw_pair.get("threshold_used", "0.10")
+    )
+    framing = framing_template.format(
+        signed_pct=drift_pct or "n/a",
+        threshold_pct=threshold_pct,
+        curated_name=raw_pair.get("source_a", "curated"),
+        pricempire_name=raw_pair.get("source_b", "pricempire"),
+        curated_age_min=raw_pair.get("curated_age_min") or 0.0,
+        pricempire_age_min=raw_pair.get("pricempire_age_min") or 0.0,
+        verdict=verdict,
+    )
+    stale_side: str | None = None
+    if verdict == "stale_curated":
+        stale_side = "curated"
+    elif verdict == "stale_pricempire":
+        stale_side = "pricempire"
+    elif verdict == "stale_both":
+        stale_side = "both"
+    return {
+        "source_a": raw_pair.get("source_a"),
+        "source_b": raw_pair.get("source_b"),
+        "verdict": verdict,
+        "drift_pct": drift_pct,
+        "framing": framing,
+        "stale_side": stale_side,
+        "classification": raw_pair.get("classification"),
+        "computed_at": raw_pair.get("computed_at"),
+        "curated_price": raw_pair.get("curated_price"),
+        "pricempire_price": raw_pair.get("pricempire_price"),
+    }
+
+
+def _is_pricempire_pair(meta: dict) -> bool:
+    """Return True when this insight meta references a Pricempire
+    sub-provider on either side of the pair. Used by
+    query_current_price to filter cross_source_divergence rows that
+    accidentally involve Pricempire (none today by construction
+    per analytics/drift.py:52-60; the filter is defense-in-depth
+    against future schema changes that could let Pricempire spreads
+    leak into the legacy anomaly_flag)."""
+    sa = meta.get("source_a_name", "")
+    sb = meta.get("source_b_name", "")
+    return sa.startswith("pricempire_") or sb.startswith("pricempire_")
+
+
+# ---------------------------------------------------------------------
 # Tool function bodies
 # ---------------------------------------------------------------------
 
@@ -188,9 +442,37 @@ def list_watchlist() -> dict:
 
 
 def query_current_price(slug: str) -> dict:
+    """Return per-source prices + freshness + (for deep-tier items)
+    drift_summary + anomaly_flag.
+
+    Phase 2b Step 9 adds three optional response keys:
+
+    - ``drift_summary``: per-pair drift verdict from
+      ``/items/{slug}/drift``. Present only for deep-tier items
+      (broad/orphan get tier_note instead).
+    - ``tier_note``: pre-composed user-facing copy for broad/orphan
+      tiers. Absent for deep.
+    - ``active_wear_hint``: ``{slug, display_name}`` of the
+      currently-tracked sibling wear when the queried slug is orphan
+      AND a deep-tier sibling exists. Absent otherwise.
+
+    The ``anomaly_flag`` (legacy cross_source_divergence rendering)
+    is filtered to non-Pricempire pairs only — defense-in-depth
+    against future schema changes; today drift_verdict and
+    cross_source_divergence are disjoint by construction per
+    analytics/drift.py:52-60.
+    """
     with _client() as c:
         price_data = _get_json(c, f"/items/{slug}/price")
         insights_data = _get_json(c, f"/items/{slug}/insights")
+        tier = price_data.get("tier", "deep")
+        drift_data: dict | None = None
+        if tier == "deep":
+            # Only deep-tier items get drift detection (analytics/drift.py
+            # filters on tier=deep before evaluating). Skipping the
+            # /drift call for non-deep tiers avoids one HTTP round-trip
+            # per query and keeps the response shape consistent.
+            drift_data = _get_json(c, f"/items/{slug}/drift")
 
     fresh_by_source: dict[str, dict] = {
         s["source"]: s for s in price_data["sources"]
@@ -216,8 +498,17 @@ def query_current_price(slug: str) -> dict:
         elif insight["insight_type"] == "cross_source_divergence":
             computed_at = _parse_iso(insight["computed_at"])
             age_h = (now - computed_at).total_seconds() / 3600
-            if age_h <= ANOMALY_FRESHNESS_HOURS:
-                divergence_rows.append(insight)
+            if age_h > ANOMALY_FRESHNESS_HOURS:
+                continue
+            # Coexistence rule (Step 9 design proposal §1):
+            # cross_source_divergence rows involving a Pricempire
+            # sub-provider are suppressed here in favor of the
+            # drift_summary rendering. Today this is empty by
+            # construction (cross_source_divergence is curated-only);
+            # the filter is defense-in-depth.
+            if _is_pricempire_pair(meta):
+                continue
+            divergence_rows.append(insight)
 
     per_source: list[dict] = []
     for source_name in EXPECTED_SOURCES:
@@ -302,12 +593,87 @@ def query_current_price(slug: str) -> dict:
             ),
         }
 
-    return {
+    result: dict[str, Any] = {
         "slug": price_data["slug"],
         "display_name": price_data["display_name"],
+        "tier": tier,
         "per_source": per_source,
         "anomaly_flag": anomaly_flag,
     }
+
+    if tier == "deep" and drift_data is not None:
+        result["drift_summary"] = {
+            "pairs": [_shape_drift_pair(p) for p in drift_data.get("pairs", [])],
+        }
+    elif tier == "broad":
+        result["tier_note"] = _TIER_NOTE_BROAD
+    elif tier == "orphan":
+        active = _find_active_wear(slug)
+        result["tier_note"] = _tier_note_orphan(
+            active["display_name"] if active else None
+        )
+        if active is not None:
+            result["active_wear_hint"] = active
+
+    return result
+
+
+def query_drift(slug: str) -> dict:
+    """Return the latest drift verdict per Pricempire pair for one
+    item. Phase 2b Step 9.
+
+    Wraps ``/items/{slug}/drift``. Shape:
+
+    .. code-block:: python
+
+        {
+            "slug": ...,
+            "display_name": ...,
+            "tier": "deep" | "broad" | "orphan",
+            "pairs": [
+                {
+                    "source_a": "skinport",
+                    "source_b": "pricempire_skinport",
+                    "verdict": "no_drift" | ...,
+                    "drift_pct": "-1.2%" | None,
+                    "framing": "<pre-composed user-facing copy>",
+                    "stale_side": "curated" | "pricempire" | "both" | None,
+                    "classification": "pattern_agnostic" | ...,
+                    "computed_at": "...",
+                    "curated_price": "...",
+                    "pricempire_price": "...",
+                },
+                ...
+            ],
+            "tier_note": "..." | None,           # set for broad/orphan
+            "active_wear_hint": {...} | None,    # set when orphan + sibling
+        }
+
+    Non-deep tiers receive empty ``pairs`` plus a ``tier_note``. The
+    LLM is instructed via the system prompt to render the
+    ``framing`` string verbatim per pair, NOT to invent its own
+    drift narrative."""
+    with _client() as c:
+        raw = _get_json(c, f"/items/{slug}/drift")
+
+    tier = raw.get("tier", "deep")
+    pairs = [_shape_drift_pair(p) for p in raw.get("pairs", [])]
+    result: dict[str, Any] = {
+        "slug": raw["slug"],
+        "display_name": raw["display_name"],
+        "tier": tier,
+        "pairs": pairs,
+    }
+    if tier == "broad":
+        result["tier_note"] = _TIER_NOTE_BROAD
+    elif tier == "orphan":
+        active = _find_active_wear(slug)
+        result["tier_note"] = _tier_note_orphan(
+            active["display_name"] if active else None
+        )
+        if active is not None:
+            result["active_wear_hint"] = active
+    return result
 
 
 def query_price_history(
@@ -331,7 +697,12 @@ def query_price_history(
         params["source"] = source
     with _client() as c:
         raw = _get_json(c, f"/items/{slug}/history", params=params)
-    return _summarize_history(raw)
+    result = _summarize_history(raw)
+    tier = raw.get("tier", "deep")
+    if tier != "deep":
+        result["tier"] = tier
+        _attach_tier_envelope(result, slug=slug, tier=tier)
+    return result
 
 
 def render_chart(
@@ -366,6 +737,24 @@ def render_chart(
         )
 
 
+def _attach_tier_envelope(
+    result: dict, *, slug: str, tier: str
+) -> None:
+    """Inject ``tier_note`` and (for orphan + sibling exists)
+    ``active_wear_hint`` into the result dict in-place. Centralizes
+    the broad/orphan post-processing so every item-level tool stays
+    consistent."""
+    if tier == "broad":
+        result["tier_note"] = _TIER_NOTE_BROAD
+    elif tier == "orphan":
+        active = _find_active_wear(slug)
+        result["tier_note"] = _tier_note_orphan(
+            active["display_name"] if active else None
+        )
+        if active is not None:
+            result["active_wear_hint"] = active
+
+
 def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
     payload = {
         "slug": slug,
@@ -389,7 +778,11 @@ def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
                 f"Unexpected {resp.status_code} from /deals/evaluate: "
                 f"{resp.text[:200]}"
             )
-        return resp.json()
+        body = resp.json()
+        tier = body.get("tier", "deep")
+        if tier != "deep":
+            _attach_tier_envelope(body, slug=slug, tier=tier)
+        return body
 
 
 def narrative_today() -> dict:
@@ -644,10 +1037,13 @@ TOOL_DEFINITIONS: list[dict] = [
                 "Get the current per-source price snapshot for one "
                 "item. Returns prices from each source (Skinport, "
                 "DMarket in USD; Steam in wallet credit), each with "
-                "freshness, plus an anomaly flag when a divergence "
-                "is currently active. Call this when the user asks "
-                "about a specific item's price — 'how much is X?', "
-                "'what's the price of X?', 'X price'."
+                "freshness, plus (for deep-tier items) a "
+                "drift_summary comparing our direct sources to "
+                "Pricempire and an anomaly_flag when a curated "
+                "cross-source divergence is active. Call this when "
+                "the user asks about a specific item's price — "
+                "'how much is X?', 'what's the price of X?', 'X "
+                "price'."
             ),
             "parameters": {
                 "type": "object",
@@ -789,6 +1185,37 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "query_drift",
+            "description": (
+                "Return the latest drift verdict per Pricempire pair "
+                "for one item — compares our direct skinport/dmarket "
+                "prices against Pricempire's corresponding sub-"
+                "provider. Each pair entry carries a 'framing' string "
+                "the model should render verbatim. Call when the user "
+                "asks about Pricempire consistency, drift, or whether "
+                "our prices agree with a third-party reference — 'is "
+                "X drifting from Pricempire?', 'is X consistent with "
+                "Pricempire?', 'drift check on X', 'how does our X "
+                "compare to Pricempire?'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": (
+                            "Item slug. Same normalization rules as "
+                            "query_current_price."
+                        ),
+                    }
+                },
+                "required": ["slug"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "whats_interesting",
             "description": (
                 "Return currently-firing market anomalies — "
@@ -823,6 +1250,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "query_price_history": query_price_history,
     "render_chart": render_chart,
     "evaluate_deal": evaluate_deal,
+    "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,
 }

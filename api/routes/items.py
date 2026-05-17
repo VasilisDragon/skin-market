@@ -51,6 +51,10 @@ def list_items() -> list[Item]:
                 ItemModel.slug,
                 ItemModel.market_hash_name,
                 ItemModel.display_name,
+                ItemModel.weapon_name,
+                ItemModel.skin_name,
+                ItemModel.is_stattrak,
+                ItemModel.is_souvenir,
             ).order_by(ItemModel.display_name)
         ).all()
     return [
@@ -59,6 +63,10 @@ def list_items() -> list[Item]:
             market_hash_name=row.market_hash_name,
             display_name=row.display_name,
             tier=get_tier(row.market_hash_name),
+            weapon_name=row.weapon_name,
+            skin_name=row.skin_name,
+            is_stattrak=row.is_stattrak,
+            is_souvenir=row.is_souvenir,
         )
         for row in rows
     ]

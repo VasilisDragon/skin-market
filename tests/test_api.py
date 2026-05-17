@@ -426,6 +426,24 @@ class TestItems:
         slugs = {row["slug"] for row in resp.json()}
         assert _SENTINEL_SLUG in slugs
 
+    def test_list_items_carries_structured_fields(
+        self, client: TestClient, sentinel_item
+    ) -> None:
+        """Phase 2b Step 9: weapon_name, skin_name, is_stattrak,
+        is_souvenir surface on the list endpoint so the bot can
+        match orphan slugs to their active deep-tier sibling wear
+        without parsing display_name."""
+        resp = client.get("/items")
+        assert resp.status_code == 200
+        row = next(
+            r for r in resp.json() if r["slug"] == _SENTINEL_SLUG
+        )
+        assert row["weapon_name"] == "TestWeapon"
+        assert row["skin_name"] == "Sentinel"
+        assert row["is_stattrak"] is False
+        assert row["is_souvenir"] is False
+        assert "tier" in row  # Step 8 field still present
+
     def test_get_item_happy(
         self, client: TestClient, sentinel_item
     ) -> None:

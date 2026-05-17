@@ -36,10 +36,12 @@ from bot.tools import (
     ApiUnreachableError,
     Attachment,
     ItemNotInWatchlistError,
+    _refresh_items_cache,
     evaluate_deal,
     list_watchlist,
     narrative_today,
     query_current_price,
+    query_drift,
     query_price_history,
     render_chart,
     whats_interesting,
@@ -54,6 +56,27 @@ def _bot_env(monkeypatch):
     """Pin the env that ``bot.tools._client`` reads."""
     monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
     monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+
+
+@pytest.fixture(autouse=True)
+def _reset_items_cache():
+    """Clear the items cache before AND after each test so a test
+    that populates it (e.g. orphan-tier wear-disambiguation cases)
+    doesn't leak into the next test. Phase 2b Step 9."""
+    _refresh_items_cache(None)
+    yield
+    _refresh_items_cache(None)
+
+
+def _drift_payload(slug: str = "x", pairs: list[dict] | None = None) -> dict:
+    """Stock /items/{slug}/drift response with empty pairs by default.
+    Tests exercising drift behavior pass explicit pairs."""
+    return {
+        "slug": slug,
+        "display_name": slug.upper(),
+        "tier": "deep",
+        "pairs": pairs or [],
+    }
 
 
 # =====================================================================
@@ -71,6 +94,7 @@ class TestToolsRegistry:
             "query_price_history",
             "render_chart",
             "evaluate_deal",
+            "query_drift",
             "narrative_today",
             "whats_interesting",
         }
@@ -135,16 +159,27 @@ class TestQueryCurrentPriceComposer:
     fallback so a refactor can't quietly break the bot's rendering."""
 
     @staticmethod
-    def _price(sources: list[dict]) -> dict:
+    def _price(sources: list[dict], tier: str = "deep") -> dict:
         return {
             "slug": "x",
             "display_name": "X",
+            "tier": tier,
             "sources": sources,
         }
 
     @staticmethod
     def _insights(rows: list[dict]) -> dict:
-        return {"slug": "x", "insights": rows}
+        return {"slug": "x", "tier": "deep", "insights": rows}
+
+    @staticmethod
+    def _register_default_drift(httpx_mock) -> None:
+        """Most price-composer tests don't exercise drift; default to
+        empty pairs so the /drift call the bot now makes for deep-tier
+        items doesn't 404. Tests that want non-empty drift register
+        their own response BEFORE calling query_current_price."""
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift", json=_drift_payload(),
+        )
 
     def test_fresh_unavailable_never_observed(
         self, httpx_mock
@@ -192,6 +227,7 @@ class TestQueryCurrentPriceComposer:
                 ]
             ),
         )
+        self._register_default_drift(httpx_mock)
         result = query_current_price("x")
         states = {p["source"]: p["state"] for p in result["per_source"]}
         assert states == {
@@ -237,6 +273,7 @@ class TestQueryCurrentPriceComposer:
             url=f"{_BASE}/items/x/insights",
             json=self._insights([]),
         )
+        self._register_default_drift(httpx_mock)
         result = query_current_price("x")
         sk = next(p for p in result["per_source"] if p["source"] == "skinport")
         assert sk["state"] == "stale"
@@ -273,6 +310,7 @@ class TestQueryCurrentPriceComposer:
             url=f"{_BASE}/items/x/insights",
             json=self._insights([]),
         )
+        self._register_default_drift(httpx_mock)
         result = query_current_price("x")
         sk = next(
             p for p in result["per_source"] if p["source"] == "skinport"
@@ -311,6 +349,7 @@ class TestQueryCurrentPriceComposer:
                 ]
             ),
         )
+        self._register_default_drift(httpx_mock)
         result = query_current_price("x")
         assert result["anomaly_flag"] is not None
         assert "below" in result["anomaly_flag"]["summary"]
@@ -393,6 +432,631 @@ class TestQueryPriceHistory:
         )
         result = query_price_history("x", source="skinport", days=3)
         assert result["source"] == "skinport"
+
+
+# =====================================================================
+# Section 1c: Phase 2b Step 9 — query_drift + tier-aware shaping
+# =====================================================================
+
+
+def _items_fixture_for_orphan_test() -> list[dict]:
+    """A tiny items-cache fixture that includes two USP-S Neo-Noir
+    wear variants — Field-Tested as deep (the active wear post-Step
+    7.1) and Factory New as orphan (the dropped wear). Used to test
+    sibling-wear resolution without hitting the API."""
+    return [
+        {
+            "slug": "usp-s-neo-noir-field-tested",
+            "market_hash_name": "USP-S | Neo-Noir (Field-Tested)",
+            "display_name": "USP-S | Neo-Noir (Field-Tested)",
+            "tier": "deep",
+            "weapon_name": "USP-S",
+            "skin_name": "Neo-Noir",
+            "is_stattrak": False,
+            "is_souvenir": False,
+        },
+        {
+            "slug": "usp-s-neo-noir-factory-new",
+            "market_hash_name": "USP-S | Neo-Noir (Factory New)",
+            "display_name": "USP-S | Neo-Noir (Factory New)",
+            "tier": "orphan",
+            "weapon_name": "USP-S",
+            "skin_name": "Neo-Noir",
+            "is_stattrak": False,
+            "is_souvenir": False,
+        },
+        {
+            "slug": "awp-dragon-lore-factory-new",
+            "market_hash_name": "AWP | Dragon Lore (Factory New)",
+            "display_name": "AWP | Dragon Lore (Factory New)",
+            "tier": "deep",
+            "weapon_name": "AWP",
+            "skin_name": "Dragon Lore",
+            "is_stattrak": False,
+            "is_souvenir": False,
+        },
+        {
+            "slug": "awp-dragon-lore-field-tested",
+            "market_hash_name": "AWP | Dragon Lore (Field-Tested)",
+            "display_name": "AWP | Dragon Lore (Field-Tested)",
+            "tier": "orphan",
+            "weapon_name": "AWP",
+            "skin_name": "Dragon Lore",
+            "is_stattrak": False,
+            "is_souvenir": False,
+        },
+    ]
+
+
+def _drift_pair(
+    *,
+    verdict: str,
+    source_a: str = "skinport",
+    source_b: str = "pricempire_skinport",
+    drift: str | None = "-0.0123",
+    classification: str = "pattern_agnostic",
+    curated_price: str | None = "100.00",
+    pricempire_price: str | None = "98.00",
+    curated_age_min: float | None = 2.0,
+    pricempire_age_min: float | None = 1.0,
+) -> dict:
+    """Build a single DriftPairVerdict-shaped dict for /drift mocks.
+    Mirrors api/schemas.py's DriftPairVerdict — tests use this so a
+    schema change ripples through one place."""
+    return {
+        "source_a": source_a,
+        "source_b": source_b,
+        "verdict": verdict,
+        "drift": drift,
+        "threshold_used": "0.10",
+        "classification": classification,
+        "threshold_multiplier": 1.0,
+        "computed_at": "2026-05-17T01:30:00Z",
+        "curated_price": curated_price,
+        "pricempire_price": pricempire_price,
+        "curated_last_polled_at": "2026-05-17T01:28:00Z",
+        "pricempire_last_polled_at": "2026-05-17T01:29:00Z",
+        "curated_age_min": curated_age_min,
+        "pricempire_age_min": pricempire_age_min,
+        "note": None,
+    }
+
+
+class TestQueryDrift:
+    """Direct /drift tool. Mocks /items/{slug}/drift and asserts the
+    bot's shaping layer renders the framing strings per verdict."""
+
+    def test_returns_deep_tier_with_pairs(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [
+                    _drift_pair(verdict="no_drift", drift="-0.0123"),
+                    _drift_pair(
+                        verdict="drift_alert",
+                        drift="0.1532",
+                        source_a="dmarket",
+                        source_b="pricempire_dmarket",
+                    ),
+                ],
+            },
+        )
+        result = query_drift("x")
+        assert result["tier"] == "deep"
+        assert len(result["pairs"]) == 2
+        verdicts = {p["verdict"] for p in result["pairs"]}
+        assert verdicts == {"no_drift", "drift_alert"}
+        # tier_note and active_wear_hint should NOT appear for deep tier.
+        assert "tier_note" not in result
+        assert "active_wear_hint" not in result
+
+    def test_drift_alert_formats_signed_pct(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [_drift_pair(verdict="drift_alert", drift="0.1532")],
+            },
+        )
+        result = query_drift("x")
+        p = result["pairs"][0]
+        assert p["drift_pct"] == "+15.3%"
+        assert "+15.3%" in p["framing"]
+        assert "10.0%" in p["framing"]  # threshold reference
+        assert p["stale_side"] is None
+
+    def test_no_drift_calm_framing(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [_drift_pair(verdict="no_drift", drift="-0.0123")],
+            },
+        )
+        result = query_drift("x")
+        p = result["pairs"][0]
+        assert p["drift_pct"] == "-1.2%"
+        assert "within tolerance" in p["framing"]
+
+    def test_pattern_skip_no_drift_number(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [
+                    _drift_pair(
+                        verdict="pattern_skip",
+                        drift=None,
+                        classification="phase_based",
+                    )
+                ],
+            },
+        )
+        result = query_drift("x")
+        p = result["pairs"][0]
+        assert p["drift_pct"] is None
+        assert "skipped" in p["framing"].lower()
+        # The framing must NOT contain a percentage number — pattern_skip
+        # is structurally drift-less.
+        assert "%" not in p["framing"]
+
+    @pytest.mark.parametrize(
+        "verdict,expected_stale_side",
+        [
+            ("stale_curated", "curated"),
+            ("stale_pricempire", "pricempire"),
+            ("stale_both", "both"),
+        ],
+    )
+    def test_stale_variants_carry_stale_side(
+        self, httpx_mock, verdict: str, expected_stale_side: str
+    ) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [
+                    _drift_pair(
+                        verdict=verdict,
+                        drift=None,
+                        curated_age_min=120.0,
+                        pricempire_age_min=120.0,
+                    )
+                ],
+            },
+        )
+        result = query_drift("x")
+        p = result["pairs"][0]
+        assert p["stale_side"] == expected_stale_side
+        assert p["drift_pct"] is None
+
+    def test_no_comparable_data_warming_up_framing(
+        self, httpx_mock
+    ) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [
+                    _drift_pair(
+                        verdict="no_comparable_data",
+                        drift=None,
+                        curated_price=None,
+                        pricempire_price=None,
+                    )
+                ],
+            },
+        )
+        result = query_drift("x")
+        p = result["pairs"][0]
+        assert p["drift_pct"] is None
+        assert "warming up" in p["framing"].lower()
+
+    def test_broad_tier_carries_tier_note_no_pairs(
+        self, httpx_mock
+    ) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "broad",
+                "pairs": [],
+            },
+        )
+        result = query_drift("x")
+        assert result["tier"] == "broad"
+        assert result["pairs"] == []
+        assert "broad watchlist" in result["tier_note"]
+        # No active_wear_hint for broad tier — broad isn't a wear-tier
+        # swap case.
+        assert "active_wear_hint" not in result
+
+    def test_orphan_tier_with_active_wear_hint(
+        self, httpx_mock
+    ) -> None:
+        """Two real Step 7.1 wear swaps: USP-S Neo-Noir FN (orphan)
+        should resolve to FT (deep) as the active sibling."""
+        _refresh_items_cache(_items_fixture_for_orphan_test())
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/usp-s-neo-noir-factory-new/drift",
+            json={
+                "slug": "usp-s-neo-noir-factory-new",
+                "display_name": "USP-S | Neo-Noir (Factory New)",
+                "tier": "orphan",
+                "pairs": [],
+            },
+        )
+        result = query_drift("usp-s-neo-noir-factory-new")
+        assert result["tier"] == "orphan"
+        assert result["pairs"] == []
+        assert "no longer actively tracked" in result["tier_note"]
+        assert (
+            result["active_wear_hint"]["slug"]
+            == "usp-s-neo-noir-field-tested"
+        )
+        # The tier_note explicitly references the active wear by name.
+        assert "Field-Tested" in result["tier_note"]
+
+    def test_orphan_tier_dragon_lore_swap(self, httpx_mock) -> None:
+        """AWP Dragon Lore FT (orphan) → FN (deep) is the other Step
+        7.1 wear swap; pin it explicitly so a future YAML edit can't
+        silently break the hint."""
+        _refresh_items_cache(_items_fixture_for_orphan_test())
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/awp-dragon-lore-field-tested/drift",
+            json={
+                "slug": "awp-dragon-lore-field-tested",
+                "display_name": "AWP | Dragon Lore (Field-Tested)",
+                "tier": "orphan",
+                "pairs": [],
+            },
+        )
+        result = query_drift("awp-dragon-lore-field-tested")
+        assert (
+            result["active_wear_hint"]["slug"]
+            == "awp-dragon-lore-factory-new"
+        )
+
+    def test_orphan_tier_without_sibling_falls_back_gracefully(
+        self, httpx_mock
+    ) -> None:
+        """An orphan with no deep-tier sibling (e.g. a unique skin
+        whose only wear was dropped) gets tier_note without an
+        active_wear_hint."""
+        cache = [
+            {
+                "slug": "lonely-orphan-field-tested",
+                "market_hash_name": "Lonely | Orphan (Field-Tested)",
+                "display_name": "Lonely | Orphan (Field-Tested)",
+                "tier": "orphan",
+                "weapon_name": "Lonely",
+                "skin_name": "Orphan",
+                "is_stattrak": False,
+                "is_souvenir": False,
+            }
+        ]
+        _refresh_items_cache(cache)
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/lonely-orphan-field-tested/drift",
+            json={
+                "slug": "lonely-orphan-field-tested",
+                "display_name": "Lonely | Orphan (Field-Tested)",
+                "tier": "orphan",
+                "pairs": [],
+            },
+        )
+        result = query_drift("lonely-orphan-field-tested")
+        assert "active_wear_hint" not in result
+        assert "no longer actively tracked" in result["tier_note"]
+
+
+class TestQueryCurrentPriceDriftIntegration:
+    """The extended query_current_price now fetches /drift in
+    addition to /price + /insights for deep-tier items, and merges
+    the drift_summary block into the response. Pin the integration."""
+
+    def test_deep_tier_includes_drift_summary(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/price",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "sources": [],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/insights",
+            json={"slug": "x", "tier": "deep", "insights": []},
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "pairs": [_drift_pair(verdict="no_drift", drift="0.0050")],
+            },
+        )
+        result = query_current_price("x")
+        assert result["tier"] == "deep"
+        assert "drift_summary" in result
+        assert len(result["drift_summary"]["pairs"]) == 1
+        assert result["drift_summary"]["pairs"][0]["verdict"] == "no_drift"
+        assert "tier_note" not in result
+
+    def test_broad_tier_skips_drift_fetch(self, httpx_mock) -> None:
+        """Broad tier doesn't call /drift; pin by NOT registering a
+        /drift mock — pytest_httpx would fail if the call were made."""
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/price",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "broad",
+                "sources": [],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/insights",
+            json={"slug": "x", "tier": "broad", "insights": []},
+        )
+        result = query_current_price("x")
+        assert result["tier"] == "broad"
+        assert "drift_summary" not in result
+        assert "tier_note" in result
+        assert "broad watchlist" in result["tier_note"]
+
+    def test_orphan_tier_skips_drift_with_active_wear_hint(
+        self, httpx_mock
+    ) -> None:
+        _refresh_items_cache(_items_fixture_for_orphan_test())
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/usp-s-neo-noir-factory-new/price",
+            json={
+                "slug": "usp-s-neo-noir-factory-new",
+                "display_name": "USP-S | Neo-Noir (Factory New)",
+                "tier": "orphan",
+                "sources": [],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/usp-s-neo-noir-factory-new/insights",
+            json={
+                "slug": "usp-s-neo-noir-factory-new",
+                "tier": "orphan",
+                "insights": [],
+            },
+        )
+        result = query_current_price("usp-s-neo-noir-factory-new")
+        assert result["tier"] == "orphan"
+        assert "drift_summary" not in result
+        assert (
+            result["active_wear_hint"]["slug"]
+            == "usp-s-neo-noir-field-tested"
+        )
+
+    def test_pricempire_pair_filtered_from_anomaly_flag(
+        self, httpx_mock
+    ) -> None:
+        """Coexistence rule: a cross_source_divergence row whose meta
+        names a Pricempire sub-provider is suppressed from
+        anomaly_flag — drift_summary owns that pair. Today this is
+        empty by construction; the filter is defense-in-depth."""
+        now = datetime.now(UTC)
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/price",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "sources": [],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/insights",
+            json={
+                "slug": "x",
+                "tier": "deep",
+                "insights": [
+                    {
+                        "insight_type": "cross_source_divergence",
+                        "computed_at": (
+                            (now - timedelta(minutes=10)).isoformat()
+                        ),
+                        "value": "-3.1",
+                        "text_value": None,
+                        "meta": {
+                            "source_a_name": "skinport",
+                            "source_b_name": "pricempire_skinport",
+                        },
+                    },
+                    {
+                        "insight_type": "cross_source_divergence",
+                        "computed_at": (
+                            (now - timedelta(minutes=10)).isoformat()
+                        ),
+                        "value": "-2.5",
+                        "text_value": None,
+                        "meta": {
+                            "source_a_name": "skinport",
+                            "source_b_name": "dmarket",
+                        },
+                    },
+                ],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/x/drift",
+            json=_drift_payload(slug="x"),
+        )
+        result = query_current_price("x")
+        # Pricempire-involving divergence suppressed; skinport/dmarket
+        # divergence survives.
+        flag = result["anomaly_flag"]
+        assert flag is not None
+        # The "below" framing implies value < 0 was preserved; the
+        # surviving row's value is -2.5 (skinport vs dmarket).
+        assert flag["z_score"] == "-2.5"
+
+
+class TestEvaluateDealTierEnvelope:
+    """evaluate_deal passes through the API response and now injects
+    tier_note + active_wear_hint for broad/orphan tiers."""
+
+    def test_deep_tier_no_envelope_injected(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/deals/evaluate",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "deep",
+                "offer": {"amount": "10.00", "currency": "usd"},
+                "verdict": "no_comparable_data",
+                "comparable": [],
+                "informational": [],
+                "summary": "n/a",
+            },
+        )
+        result = evaluate_deal("x", "10.00", "usd")
+        assert "tier_note" not in result
+
+    def test_broad_tier_gets_tier_note(self, httpx_mock) -> None:
+        httpx_mock.add_response(
+            url=f"{_BASE}/deals/evaluate",
+            json={
+                "slug": "x",
+                "display_name": "X",
+                "tier": "broad",
+                "offer": {"amount": "10.00", "currency": "usd"},
+                "verdict": "no_comparable_data",
+                "comparable": [],
+                "informational": [],
+                "summary": "n/a",
+            },
+        )
+        result = evaluate_deal("x", "10.00", "usd")
+        assert "broad watchlist" in result["tier_note"]
+
+
+class TestQueryPriceHistoryTierEnvelope:
+    def test_orphan_history_carries_tier_note(self, httpx_mock) -> None:
+        _refresh_items_cache(_items_fixture_for_orphan_test())
+        httpx_mock.add_response(
+            url=re.compile(
+                rf"^{re.escape(_BASE)}"
+                r"/items/usp-s-neo-noir-factory-new/history.*$"
+            ),
+            json={
+                "slug": "usp-s-neo-noir-factory-new",
+                "tier": "orphan",
+                "source": None,
+                "since": "",
+                "until": "",
+                "limit": 500,
+                "count": 0,
+                "observations": [],
+            },
+        )
+        result = query_price_history("usp-s-neo-noir-factory-new")
+        assert result.get("tier") == "orphan"
+        assert "no longer actively tracked" in result["tier_note"]
+
+
+class TestFindActiveWearMatching:
+    """Direct unit coverage of the sibling-wear matcher. The
+    integration tests above exercise the same path through
+    query_drift / query_current_price; these tests pin the matching
+    rules in isolation so a future schema change can't silently
+    break the resolution."""
+
+    def test_match_requires_same_stattrak_flag(self) -> None:
+        from bot.tools import _find_active_wear
+
+        cache = [
+            {
+                "slug": "rifle-skin-fn-stt",
+                "market_hash_name": "StatTrak™ Rifle | Skin (FN)",
+                "tier": "orphan",
+                "weapon_name": "Rifle",
+                "skin_name": "Skin",
+                "is_stattrak": True,
+                "is_souvenir": False,
+            },
+            # Same weapon+skin but DIFFERENT StatTrak flag — should NOT
+            # match (StatTrak™ is a separate item from the base).
+            {
+                "slug": "rifle-skin-ft-base",
+                "market_hash_name": "Rifle | Skin (FT)",
+                "tier": "deep",
+                "weapon_name": "Rifle",
+                "skin_name": "Skin",
+                "is_stattrak": False,
+                "is_souvenir": False,
+            },
+        ]
+        _refresh_items_cache(cache)
+        assert _find_active_wear("rifle-skin-fn-stt") is None
+
+    def test_unknown_slug_returns_none(self) -> None:
+        from bot.tools import _find_active_wear
+
+        _refresh_items_cache(_items_fixture_for_orphan_test())
+        assert _find_active_wear("not-in-cache-slug") is None
+
+
+class TestSystemPromptPhase2bStep9:
+    """Pin the system-prompt additions so a future edit can't quietly
+    drop the wear-disambiguation or coexistence rules the LLM relies
+    on."""
+
+    def test_prompt_mentions_query_drift_section(self) -> None:
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        assert "## query_drift" in SYSTEM_PROMPT
+        assert "is X drifting" in SYSTEM_PROMPT
+
+    def test_prompt_mentions_wear_swaps(self) -> None:
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        # Hardcoded swap list per Step 9 sub-decision 5.
+        assert "USP-S | Neo-Noir" in SYSTEM_PROMPT
+        assert "AWP | Dragon Lore" in SYSTEM_PROMPT
+
+    def test_prompt_mentions_correctly_priced_clarification(self) -> None:
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        assert "correctly priced" in SYSTEM_PROMPT
+        assert "clarifying question" in SYSTEM_PROMPT.lower()
+
+    def test_prompt_pins_drift_before_anomaly_render_order(self) -> None:
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        # Drift framing must appear BEFORE the anomaly_flag line in
+        # the prompt — the LLM reads top-down and the order pins the
+        # render-time precedence.
+        drift_idx = SYSTEM_PROMPT.find("drift_summary.pairs[].framing")
+        anomaly_idx = SYSTEM_PROMPT.find(
+            "Cross-source spread anomaly active"
+        )
+        assert 0 <= drift_idx < anomaly_idx, (
+            "drift framing reference must precede the anomaly_flag "
+            "reference so render order is unambiguous"
+        )
 
 
 # =====================================================================
