@@ -785,15 +785,15 @@ class TestAmbiguousThresholdConstant:
 
 
 _LW_FIXTURE_YAML = """\
-schema_version: 2
+schema_version: 3
 sources:
   - { name: skinport, base_url: https://example, rate_limit_per_minute: 60, enabled: true }
 items:
-  - { market_hash_name: "AK-47 | Deep1 (Field-Tested)", item_type: rifle, tier: deep }
-  - { market_hash_name: "AK-47 | Deep2 (Factory New)", item_type: rifle, tier: deep }
-  - { market_hash_name: "AWP | Deep3 (Battle-Scarred)", item_type: sniper, tier: deep }
-  - { market_hash_name: "Glock-18 | Broad1 (Factory New)", item_type: pistol, tier: broad }
-  - { market_hash_name: "MP9 | Broad2 (Field-Tested)", item_type: smg, tier: broad }
+  - { market_hash_name: "AK-47 | Deep1 (Field-Tested)", item_type: rifle, tier: curated }
+  - { market_hash_name: "AK-47 | Deep2 (Factory New)", item_type: rifle, tier: curated }
+  - { market_hash_name: "AWP | Deep3 (Battle-Scarred)", item_type: sniper, tier: curated }
+  - { market_hash_name: "Glock-18 | Broad1 (Factory New)", item_type: pistol, tier: featured }
+  - { market_hash_name: "MP9 | Broad2 (Field-Tested)", item_type: smg, tier: featured }
 """
 
 
@@ -808,10 +808,10 @@ class TestLoadWatchlistTierFilter:
         path.write_text(body)
         return path
 
-    def test_load_watchlist_deep_only_for_steam(
+    def test_load_watchlist_curated_only_for_steam(
         self, tmp_path: Path
     ) -> None:
-        """steam_market is in _DEEP_ONLY_SOURCES → tier=deep only."""
+        """steam_market is in _CURATED_ONLY_SOURCES → tier=curated only."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
@@ -826,10 +826,10 @@ class TestLoadWatchlistTierFilter:
             "AWP | Deep3 (Battle-Scarred)",
         ]
 
-    def test_load_watchlist_deep_only_for_dmarket(
+    def test_load_watchlist_curated_only_for_dmarket(
         self, tmp_path: Path
     ) -> None:
-        """dmarket is in _DEEP_ONLY_SOURCES → tier=deep only.
+        """dmarket is in _CURATED_ONLY_SOURCES → tier=curated only.
         Pins the same rate-limit-math constraint as Steam (ADR 024)."""
         from collectors.scheduler import _load_watchlist
 
@@ -840,7 +840,7 @@ class TestLoadWatchlistTierFilter:
         assert all("Broad" not in n for n in names)
         assert len(names) == 3
 
-    def test_load_watchlist_deep_plus_broad_for_skinport(
+    def test_load_watchlist_curated_plus_featured_for_skinport(
         self, tmp_path: Path
     ) -> None:
         """skinport is the bulk-fetch source — polls both tiers
@@ -859,7 +859,7 @@ class TestLoadWatchlistTierFilter:
             "MP9 | Broad2 (Field-Tested)",
         }
 
-    def test_load_watchlist_omits_orphans(
+    def test_load_watchlist_omits_substrate(
         self, tmp_path: Path
     ) -> None:
         """Orphan items — present in items table but not in YAML —

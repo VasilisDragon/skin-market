@@ -53,14 +53,14 @@ items:
 # A minimal valid watchlist YAML the load_classifier integration test
 # can read. Includes the items referenced in _VALID_PATTERN_YAML.
 _VALID_WATCHLIST_YAML = """\
-schema_version: 2
+schema_version: 3
 
 sources:
   - { name: skinport, base_url: https://example, rate_limit_per_minute: 60, enabled: true }
 
 items:
-  - { market_hash_name: "★ Karambit | Doppler (Factory New)", item_type: knife, tier: deep }
-  - { market_hash_name: "★ Sport Gloves | Vice (Field-Tested)", item_type: glove, tier: deep }
+  - { market_hash_name: "★ Karambit | Doppler (Factory New)", item_type: knife, tier: curated }
+  - { market_hash_name: "★ Sport Gloves | Vice (Field-Tested)", item_type: glove, tier: curated }
 """
 
 
@@ -115,12 +115,12 @@ class TestParsePatternYaml:
         path = _write_yaml(
             tmp_path,
             """\
-schema_version: 2
+schema_version: 99
 items:
   - { market_hash_name: "X (FN)", classification: phase_based }
 """,
         )
-        with pytest.raises(ValueError, match="schema_version is 2"):
+        with pytest.raises(ValueError, match="schema_version is 99"):
             parse_pattern_yaml(path)
 
     def test_rejects_unknown_classification(self, tmp_path: Path) -> None:
@@ -250,8 +250,10 @@ class TestBuildClassifier:
             _raw("B (FT)", "pattern_seed", multiplier=2.0),
         ]
         items = {"A (FN)", "B (FT)"}
-        deep = items
-        cls = build_classifier(raw, items_set=items, deep_set=deep)
+        curated = items
+        cls = build_classifier(
+            raw, items_set=items, curated_set=curated
+        )
         assert len(cls) == 2
         assert cls.is_phase_based("A (FN)")
         assert cls.threshold_multiplier_for("B (FT)") == 2.0
@@ -260,17 +262,17 @@ class TestBuildClassifier:
         """Named mode 1: market_hash_name not in items_set."""
         raw = [_raw("Missing (FN)", "phase_based")]
         with pytest.raises(ValueError, match="not in items table"):
-            build_classifier(raw, items_set=set(), deep_set=set())
+            build_classifier(raw, items_set=set(), curated_set=set())
 
-    def test_fails_fast_on_broad_tier_item(self) -> None:
+    def test_fails_fast_on_non_curated_tier_item(self) -> None:
         """Named mode 2: market_hash_name in items_set but NOT in
-        deep_set (i.e. tier: broad)."""
-        raw = [_raw("Broad Item (FN)", "phase_based")]
-        with pytest.raises(ValueError, match="tier: broad"):
+        curated_set (i.e. tier: featured, or substrate)."""
+        raw = [_raw("Featured Item (FN)", "phase_based")]
+        with pytest.raises(ValueError, match="not tier: curated"):
             build_classifier(
                 raw,
-                items_set={"Broad Item (FN)"},
-                deep_set=set(),
+                items_set={"Featured Item (FN)"},
+                curated_set=set(),
             )
 
     def test_warns_once_on_phase_based_with_multiplier(
@@ -291,7 +293,7 @@ class TestBuildClassifier:
             cls = build_classifier(
                 raw,
                 items_set={"Phase Item (FN)"},
-                deep_set={"Phase Item (FN)"},
+                curated_set={"Phase Item (FN)"},
             )
 
         # 1. WARN logged once.
@@ -325,7 +327,7 @@ class TestBuildClassifier:
             build_classifier(
                 raw,
                 items_set={"Phase Clean (FN)"},
-                deep_set={"Phase Clean (FN)"},
+                curated_set={"Phase Clean (FN)"},
             )
         warns = [
             r for r in caplog.records if r.levelno == logging.WARNING
@@ -335,7 +337,7 @@ class TestBuildClassifier:
     def test_default_multiplier_one_when_field_absent(self) -> None:
         raw = [_raw("X (FN)", "pattern_seed", multiplier=None)]
         cls = build_classifier(
-            raw, items_set={"X (FN)"}, deep_set={"X (FN)"}
+            raw, items_set={"X (FN)"}, curated_set={"X (FN)"}
         )
         assert cls.threshold_multiplier_for("X (FN)") == 1.0
 
@@ -357,7 +359,7 @@ class TestLoadClassifierIntegration:
         )
         # Invalid watchlist: one item lacks the tier field.
         bad_watchlist = (
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: skinport, base_url: https://example, "
             "rate_limit_per_minute: 60, enabled: true }\n"
@@ -406,8 +408,8 @@ def _seeded_classifier() -> Classifier:
         _raw("Vice FT", "pattern_seed", multiplier=2.0),
     ]
     items = {"Doppler FN", "Vice FT", "Random FN"}
-    deep = items
-    return build_classifier(raw, items_set=items, deep_set=deep)
+    curated = items
+    return build_classifier(raw, items_set=items, curated_set=curated)
 
 
 class TestClassifierApi:

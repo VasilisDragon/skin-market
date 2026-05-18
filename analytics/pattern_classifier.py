@@ -10,24 +10,24 @@ Deploy-order dependency: ``data/watchlist.yaml`` changes and
 The loader cross-references each entry against:
 
 1. The ``items`` table — catches typos / unseeded entries.
-2. The ``watchlist.yaml`` tier field — catches a broad-tier item
-   accidentally gaining a classification.
+2. The ``watchlist.yaml`` tier field — catches a featured- or
+   substrate-tier item accidentally gaining a classification.
 
 Reversing the order fails fast at startup with one of:
 
 - ``"market_hash_name not in items table"``
-- ``"market_hash_name has tier: broad — drift detection is deep-only"``
+- ``"market_hash_name has tier: featured — drift detection is curated-only"``
 - ``"missing required `tier:` field"`` (inherited from load_watchlist)
 
 YAML schema versions are PER-FILE. This file's ``schema_version: 1``
-is independent of ``data/watchlist.yaml``'s ``schema_version: 2``.
+is independent of ``data/watchlist.yaml``'s ``schema_version: 3``.
 Bumping one does not imply bumping the other.
 
 Three-layer architecture for testability:
 
 - ``parse_pattern_yaml(path)`` — pure file parsing + schema validation.
   No DB or watchlist cross-references.
-- ``build_classifier(raw_entries, items_set, deep_set, *, logger)`` —
+- ``build_classifier(raw_entries, items_set, curated_set, *, logger)`` —
   pure cross-reference validation against pre-built sets. Used by
   tests to skip DB / watchlist setup entirely.
 - ``load_classifier(pattern_path, *, watchlist_path, session, logger)``
@@ -351,11 +351,11 @@ def build_classifier(
     raw_entries: list[_RawEntry],
     *,
     items_set: set[str],
-    deep_set: set[str],
+    curated_set: set[str],
     log: logging.Logger | None = None,
 ) -> Classifier:
     """Cross-reference each raw entry against ``items_set`` and
-    ``deep_set``, then build the final ``Classifier``.
+    ``curated_set``, then build the final ``Classifier``.
 
     Pure function. Tests inject synthetic sets to skip DB and
     watchlist setup entirely.
@@ -365,9 +365,12 @@ def build_classifier(
     1. UNKNOWN ITEM — ``market_hash_name`` not in ``items_set``.
        ``ValueError`` with "not in items table" wording so the
        operator can locate the typo.
-    2. BROAD-TIER ITEM — ``market_hash_name`` in ``items_set`` but
-       NOT in ``deep_set`` (i.e. flagged ``tier: broad`` in
-       watchlist.yaml). ``ValueError`` with "tier: broad" wording.
+    2. NON-CURATED-TIER ITEM — ``market_hash_name`` in ``items_set``
+       but NOT in ``curated_set`` (i.e. flagged ``tier: featured``
+       in watchlist.yaml, or substrate — absent from YAML). The
+       drift detector + classifier are curated-only by ADR 024
+       §4.D2; classifier entries on non-curated items are dead
+       config. ``ValueError`` with curated-only wording.
     3. MISSING TIER FIELD — inherited upstream from
        ``load_watchlist``, which fail-fasts before this function
        sees the data. This function never sees a tier-less item.
@@ -391,12 +394,13 @@ def build_classifier(
                 f"scripts/seed_watchlist.py have been run before "
                 f"loading the classifier."
             )
-        if raw.market_hash_name not in deep_set:
+        if raw.market_hash_name not in curated_set:
             raise ValueError(
-                f"pattern_sensitivity: {raw.market_hash_name!r} has "
-                f"tier: broad in data/watchlist.yaml — drift "
-                f"detection is deep-only. Move the item to tier: "
-                f"deep or remove the classifier entry."
+                f"pattern_sensitivity: {raw.market_hash_name!r} is "
+                f"not tier: curated in data/watchlist.yaml — drift "
+                f"detection (and therefore pattern classification) "
+                f"is curated-only. Move the item to tier: curated "
+                f"or remove the classifier entry."
             )
 
         # Resolve threshold_multiplier with the phase_based WARN-once
@@ -466,14 +470,14 @@ def load_classifier(
     log = log or logger
     raw_entries = parse_pattern_yaml(pattern_path)
 
-    # load_watchlist validates schema_version 2 + per-item tier field
+    # load_watchlist validates schema_version 3 + per-item tier field
     # — its fail-fast on missing tier is the third named mode for
     # this loader, inherited cleanly.
     watchlist_data = load_watchlist(watchlist_path)
-    deep_set = {
+    curated_set = {
         it["market_hash_name"]
         for it in watchlist_data["items"]
-        if it.get("tier") == "deep"
+        if it.get("tier") == "curated"
     }
 
     if session is None:
@@ -485,6 +489,6 @@ def load_classifier(
     return build_classifier(
         raw_entries,
         items_set=items_set,
-        deep_set=deep_set,
+        curated_set=curated_set,
         log=log,
     )

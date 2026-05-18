@@ -53,7 +53,7 @@ _db_required = pytest.mark.skipif(
 
 _BASE_YAML = """\
 # Test fixture watchlist
-schema_version: 2
+schema_version: 3
 
 sources:
   - name: steam_market
@@ -72,20 +72,20 @@ items:
     weapon_name: "AK-47"
     skin_name: "Redline"
     wear: "Field-Tested"
-    tier: deep
+    tier: curated
   - market_hash_name: "M4A4 | Howl (Factory New)"
     item_type: rifle
     weapon_name: "M4A4"
     skin_name: "Howl"
     wear: "Factory New"
-    tier: deep
+    tier: curated
   # --- Snipers ---
   - market_hash_name: "AWP | Asiimov (Field-Tested)"
     item_type: sniper
     weapon_name: "AWP"
     skin_name: "Asiimov"
     wear: "Field-Tested"
-    tier: deep
+    tier: curated
 """
 
 
@@ -157,9 +157,9 @@ def _cleanup_test_item():
             session.commit()
 
 
-class TestSchemaV2Loader:
+class TestSchemaV3Loader:
     """Phase 2b: scripts.seed_watchlist.load_watchlist enforces
-    schema_version == 2 and a ``tier:`` field on every item. Test the
+    schema_version == 3 and a ``tier:`` field on every item. Test the
     contract directly so a future YAML drift fails loudly.
     """
 
@@ -168,40 +168,40 @@ class TestSchemaV2Loader:
         path.write_text(body)
         return path
 
-    def test_accepts_schema_v2_with_tier_deep(self, tmp_path: Path) -> None:
+    def test_accepts_schema_v3_with_tier_curated(self, tmp_path: Path) -> None:
         from scripts.seed_watchlist import load_watchlist
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "AK-47 | Redline (Field-Tested)", '
             'item_type: rifle, weapon_name: "AK-47", skin_name: "Redline", '
-            'wear: "Field-Tested", tier: deep }\n',
+            'wear: "Field-Tested", tier: curated }\n',
         )
         data = load_watchlist(path)
-        assert data["schema_version"] == 2
-        assert data["items"][0]["tier"] == "deep"
+        assert data["schema_version"] == 3
+        assert data["items"][0]["tier"] == "curated"
 
-    def test_accepts_schema_v2_with_tier_broad(self, tmp_path: Path) -> None:
+    def test_accepts_schema_v3_with_tier_featured(self, tmp_path: Path) -> None:
         from scripts.seed_watchlist import load_watchlist
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: skinport, base_url: https://example, "
             "rate_limit_per_minute: 60, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "Some Broad Item (Factory New)", '
             'item_type: rifle, weapon_name: "X", skin_name: "Y", '
-            'wear: "Factory New", tier: broad }\n',
+            'wear: "Factory New", tier: featured }\n',
         )
         data = load_watchlist(path)
-        assert data["items"][0]["tier"] == "broad"
+        assert data["items"][0]["tier"] == "featured"
 
     def test_rejects_schema_v1(self, tmp_path: Path) -> None:
         """A pre-Phase-2b YAML must fail fast so a stale deploy can't
@@ -227,7 +227,7 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
@@ -244,7 +244,7 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
@@ -265,14 +265,14 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: dmarket, base_url: https://example, "
             "rate_limit_per_minute: 20, enabled: true }\n"
             "items:\n"
             '  - market_hash_name: "Desert Eagle | Blaze (Factory New)"\n'
             "    item_type: pistol\n"
-            "    tier: deep\n"
+            "    tier: curated\n"
             "    dmarket_alias:\n"
             '      - "Desert Eagle | Blaze (Factory New)"\n'
             '      - "Desert Eagle | Blaze Variant (Factory New)"\n',
@@ -292,13 +292,13 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: dmarket, base_url: https://example, "
             "rate_limit_per_minute: 20, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "X (Factory New)", '
-            'item_type: pistol, tier: deep, '
+            'item_type: pistol, tier: curated, '
             'dmarket_alias: "bare-string-not-allowed" }\n',
         )
         with pytest.raises(ValueError, match="expected a list"):
@@ -312,13 +312,13 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: dmarket, base_url: https://example, "
             "rate_limit_per_minute: 20, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "X (Factory New)", '
-            'item_type: pistol, tier: deep, '
+            'item_type: pistol, tier: curated, '
             'dmarket_alias: ["", "valid"] }\n',
         )
         with pytest.raises(
@@ -326,13 +326,13 @@ class TestSchemaV2Loader:
         ):
             load_watchlist(path)
 
-    def test_dmarket_alias_on_broad_tier_warns_not_errors(
+    def test_dmarket_alias_on_featured_tier_warns_not_errors(
         self,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Broad-tier items with dmarket_alias log a WARN (dead config)
-        but don't fail-fast. DMarket isn't polled for broad tier
+        but don't fail-fast. DMarket isn't polled for featured tier
         (ADR 024), so the field is dead config there."""
         import logging as _logging
 
@@ -340,13 +340,13 @@ class TestSchemaV2Loader:
 
         path = self._write(
             tmp_path,
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: skinport, base_url: https://example, "
             "rate_limit_per_minute: 60, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "Broad Item (Factory New)", '
-            'item_type: pistol, tier: broad, '
+            'item_type: pistol, tier: featured, '
             'dmarket_alias: ["Broad Item (Factory New)"] }\n',
         )
         with caplog.at_level(
@@ -354,7 +354,7 @@ class TestSchemaV2Loader:
         ):
             data = load_watchlist(path)
         # Loads without error.
-        assert data["items"][0]["tier"] == "broad"
+        assert data["items"][0]["tier"] == "featured"
         # WARN message references "dead config" + ADR 024.
         warns = [r.getMessage() for r in caplog.records]
         assert any(
@@ -508,14 +508,14 @@ class TestRemoveWithDB:
         # Set up a watchlist YAML that has only our test item.
         watchlist = tmp_path / "watchlist.yaml"
         watchlist.write_text(
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
             "items:\n"
             f'  - {{ market_hash_name: "{_TEST_NAME}", item_type: rifle, '
             'weapon_name: "Test", skin_name: "Sentinel", '
-            'wear: "Field-Tested", tier: deep }\n'
+            'wear: "Field-Tested", tier: curated }\n'
         )
         # Seed it into the DB.
         from scripts.seed_watchlist import seed
@@ -556,14 +556,14 @@ class TestRemoveWithDB:
     ) -> None:
         watchlist = tmp_path / "watchlist.yaml"
         watchlist.write_text(
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
             "items:\n"
             f'  - {{ market_hash_name: "{_TEST_NAME}", item_type: rifle, '
             'weapon_name: "Test", skin_name: "Sentinel", '
-            'wear: "Field-Tested", tier: deep }\n'
+            'wear: "Field-Tested", tier: curated }\n'
         )
         from scripts.seed_watchlist import seed
 
@@ -625,14 +625,14 @@ class TestRemoveWithDB:
     ) -> None:
         watchlist = tmp_path / "watchlist.yaml"
         watchlist.write_text(
-            "schema_version: 2\n"
+            "schema_version: 3\n"
             "sources:\n"
             "  - { name: steam_market, base_url: https://example, "
             "rate_limit_per_minute: 12, enabled: true }\n"
             "items:\n"
             f'  - {{ market_hash_name: "{_TEST_NAME}", item_type: rifle, '
             'weapon_name: "Test", skin_name: "Sentinel", '
-            'wear: "Field-Tested", tier: deep }\n'
+            'wear: "Field-Tested", tier: curated }\n'
         )
         from scripts.seed_watchlist import seed
 

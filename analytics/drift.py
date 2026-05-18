@@ -1,6 +1,6 @@
 """Pattern-aware drift detector (Phase 2b, ADR 022).
 
-Compares each deep-tier item's direct-collector price against the
+Compares each curated-tier item's direct-collector price against the
 corresponding Pricempire sub-provider price. Emits a `drift_verdict`
 insights row per (item, meaningful-pair) per cycle. Uses the
 pattern-sensitivity classifier (ADR 021) to skip phase-bearing items
@@ -12,9 +12,10 @@ marketplace pairings mix taxonomies):
     (skinport, pricempire_skinport)
     (dmarket,  pricempire_dmarket)
 
-Two pairs per deep-tier item → 88 max comparisons per cycle at the
-post-Step-7 44-item deep composition (96 today with 48 items, all
-flagged tier: deep by migration 0009's default).
+Two pairs per curated-tier item → 84 comparisons per cycle at the
+post-Step-7 42-item curated composition. (Pre-Phase-2b: 96 with 48
+items, all flagged tier: deep by migration 0009's default — at Phase
+2c the tier vocabulary renamed deep→curated, broad→featured.)
 
 Verdict kinds (seven; ``insights.value`` is set only on the first two):
 
@@ -46,7 +47,7 @@ but adds duplicate rows; downstream readers see only the latest.
 Loading discipline: ``compute_and_store`` loads the classifier YAML
 and the watchlist YAML ONCE at cycle start, not per-item. Both are
 treated as immutable for the duration of the cycle. The
-deep-tier filter is read from the watchlist YAML directly (ADR 024:
+curated-tier filter is read from the watchlist YAML directly (ADR 024:
 tier lives in YAML, not the items table).
 
 Insights-table coexistence with ``cross_source_divergence``:
@@ -372,18 +373,18 @@ def compute_and_store(
     classifier: Classifier | None = None,
     watchlist_path: Path = DEFAULT_WATCHLIST_PATH,
     pattern_path: Path = DEFAULT_PATTERN_PATH,
-    deep_set: set[str] | None = None,
+    curated_set: set[str] | None = None,
 ) -> int:
     """Run one drift-detection cycle. Returns rows written.
 
-    Reads the deep-tier set from watchlist.yaml (per ADR 024 — tier
+    Reads the curated-tier set from watchlist.yaml (per ADR 024 — tier
     lives in YAML, not the items table). Loads the classifier once
     at cycle start. Both YAML files are treated as IMMUTABLE for the
     duration of the cycle — re-reads per-item would invite races
     against an operator git pull mid-cycle and would also burn
     needless I/O.
 
-    For each deep-tier item × each meaningful pair, queries the
+    For each curated-tier item × each meaningful pair, queries the
     latest curated + Pricempire observations + their freshness
     timestamps, calls ``decide_verdict``, and INSERTs an
     ``insight_type = 'drift_verdict'`` row into the insights table.
@@ -391,7 +392,7 @@ def compute_and_store(
     Append-only: each cycle writes one row per evaluated pair. The
     bot/API read pattern uses DISTINCT ON to surface the latest.
 
-    ``classifier`` / ``deep_set`` parameters exist for test injection;
+    ``classifier`` / ``curated_set`` parameters exist for test injection;
     production callers omit both and the function loads from disk.
     """
     now = now or datetime.now(UTC)
@@ -404,13 +405,13 @@ def compute_and_store(
             session=session,
         )
 
-    # Load deep-tier set ONCE at cycle start. Immutable for the cycle.
-    if deep_set is None:
+    # Load curated-tier set ONCE at cycle start. Immutable for the cycle.
+    if curated_set is None:
         watchlist_data = load_watchlist(watchlist_path)
-        deep_set = {
+        curated_set = {
             it["market_hash_name"]
             for it in watchlist_data["items"]
-            if it.get("tier") == "deep"
+            if it.get("tier") == "curated"
         }
 
     # Resolve source-name → source_id ONCE.
@@ -418,7 +419,7 @@ def compute_and_store(
 
     rows_written = 0
 
-    for market_hash_name in sorted(deep_set):
+    for market_hash_name in sorted(curated_set):
         item_id = session.execute(
             text(
                 "SELECT id FROM items "
@@ -427,7 +428,7 @@ def compute_and_store(
             {"name": market_hash_name},
         ).scalar_one_or_none()
         if item_id is None:
-            # YAML drift: tier-deep item not in items table. Skip
+            # YAML drift: curated-tier item not in items table. Skip
             # silently; the upstream watchlist loader would have
             # caught this at deploy time.
             continue

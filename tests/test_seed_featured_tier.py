@@ -1,4 +1,4 @@
-"""Tests for scripts/seed_broad_tier.py.
+"""Tests for scripts/seed_featured_tier.py.
 
 Most tests are pure-logic (no DB) and run on any host. The DB-required
 suite at the bottom is gated by the same _db_required skip pattern the
@@ -6,7 +6,7 @@ other collector tests use.
 
 What these cover:
 
-- compute_broad_tier: top-N selection, deep precedence, exclusion
+- compute_featured_tier: top-N selection, curated precedence, exclusion
   handling, the "exclusions don't shrink output" invariant (per Step 1
   clarification).
 - detect_flags: StatTrak™ / Souvenir prefix detection.
@@ -15,7 +15,7 @@ What these cover:
 - print_summary: each section appears with counts; dry-run preserves
   the YAML byte-for-byte (per the Step 3 clarification — byte-equality,
   not mtime).
-- YAML write path: deep tier never touched, comments preserved,
+- YAML write path: curated tier never touched, comments preserved,
   StatTrak/Souvenir flags set when appropriate.
 - Idempotency: second run produces zero diff.
 - CLI: --dry-run, --target-size, bogus paths.
@@ -35,22 +35,22 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from db.connection import get_engine
-from scripts import seed_broad_tier
-from scripts.seed_broad_tier import (
-    BroadTierCandidate,
+from scripts import seed_featured_tier
+from scripts.seed_featured_tier import (
     DiffReport,
+    FeaturedTierCandidate,
     MetadataRow,
-    compute_broad_tier,
+    compute_featured_tier,
     detect_flags,
     diff_against_current,
     load_exclusions,
     partition_yaml_items,
     print_summary,
 )
-from scripts.seed_broad_tier import (
+from scripts.seed_featured_tier import (
     main as seed_main,
 )
-from scripts.seed_broad_tier import (
+from scripts.seed_featured_tier import (
     run as seed_run,
 )
 
@@ -87,12 +87,12 @@ def _meta(rank: int, name: str | None = None) -> MetadataRow:
     )
 
 
-# A minimal YAML body the seeder can read end-to-end. Two deep items,
-# two broad items, two exclusions, schema_version 2.
+# A minimal YAML body the seeder can read end-to-end. Two curated
+# items, two featured items, two exclusions, schema_version 3.
 _MIN_YAML = """\
-schema_version: 2
+schema_version: 3
 
-broad_tier_exclusions:
+featured_tier_exclusions:
   - "Excluded Skin A (Factory New)"
   - "Excluded Skin B (Battle-Scarred)"
 
@@ -105,15 +105,15 @@ items:
     weapon_name: "AK-47"
     skin_name: "Redline"
     wear: "Field-Tested"
-    tier: deep
+    tier: curated
   - market_hash_name: "M4A4 | Howl (Factory New)"
     item_type: rifle
     weapon_name: "M4A4"
     skin_name: "Howl"
     wear: "Factory New"
-    tier: deep
-  - { market_hash_name: "Currently Broad A (Field-Tested)", tier: broad }
-  - { market_hash_name: "Currently Broad B (Minimal Wear)", tier: broad }
+    tier: curated
+  - { market_hash_name: "Currently Broad A (Field-Tested)", tier: featured }
+  - { market_hash_name: "Currently Broad B (Minimal Wear)", tier: featured }
 """
 
 
@@ -151,28 +151,28 @@ class TestDetectFlags:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# compute_broad_tier — composition logic
+# compute_featured_tier — composition logic
 # ──────────────────────────────────────────────────────────────────────
 
 
-class TestComputeBroadTier:
+class TestComputeFeaturedTier:
     def test_takes_top_n_by_rank(self) -> None:
         rows = [_meta(i) for i in range(1, 11)]  # ranks 1-10
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=set(),
             target_size=5,
         )
         assert [c.rank for c in result] == [1, 2, 3, 4, 5]
 
-    def test_skips_deep_tier_items(self) -> None:
+    def test_skips_curated_tier_items(self) -> None:
         rows = [_meta(i) for i in range(1, 11)]
-        # The rank-1 item is also in deep tier; broad must skip it.
-        deep_set = {rows[0].market_hash_name}
-        result = compute_broad_tier(
+        # The rank-1 item is also in curated tier; featured must skip it.
+        curated_set = {rows[0].market_hash_name}
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=deep_set,
+            curated_set=curated_set,
             exclusions=set(),
             target_size=5,
         )
@@ -181,9 +181,9 @@ class TestComputeBroadTier:
     def test_skips_exclusion_list(self) -> None:
         rows = [_meta(i) for i in range(1, 11)]
         exclusions = {rows[2].market_hash_name}  # rank 3
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=exclusions,
             target_size=5,
         )
@@ -193,16 +193,16 @@ class TestComputeBroadTier:
         """Pin the load-bearing invariant: target_size is the OUTPUT
         size after filters apply, not the input window. Two
         exclusions in the top-10 should still yield 5 items in the
-        broad tier (using ranks 1, 2, 4, 6, 7 — skipping 3 and 5).
+        featured tier (using ranks 1, 2, 4, 6, 7 — skipping 3 and 5).
         """
         rows = [_meta(i) for i in range(1, 11)]
         exclusions = {
             rows[2].market_hash_name,  # rank 3
             rows[4].market_hash_name,  # rank 5
         }
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=exclusions,
             target_size=5,
         )
@@ -212,13 +212,13 @@ class TestComputeBroadTier:
         )
         assert [c.rank for c in result] == [1, 2, 4, 6, 7]
 
-    def test_skips_both_deep_and_exclusions(self) -> None:
+    def test_skips_both_curated_and_exclusions(self) -> None:
         rows = [_meta(i) for i in range(1, 11)]
-        deep_set = {rows[1].market_hash_name}  # rank 2
+        curated_set = {rows[1].market_hash_name}  # rank 2
         exclusions = {rows[3].market_hash_name}  # rank 4
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=deep_set,
+            curated_set=curated_set,
             exclusions=exclusions,
             target_size=5,
         )
@@ -226,9 +226,9 @@ class TestComputeBroadTier:
 
     def test_target_size_respected_when_input_is_larger(self) -> None:
         rows = [_meta(i) for i in range(1, 1001)]
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=set(),
             target_size=500,
         )
@@ -238,9 +238,9 @@ class TestComputeBroadTier:
 
     def test_empty_metadata_returns_empty(self) -> None:
         assert (
-            compute_broad_tier(
+            compute_featured_tier(
                 metadata_rows=[],
-                deep_set=set(),
+                curated_set=set(),
                 exclusions=set(),
                 target_size=500,
             )
@@ -249,9 +249,9 @@ class TestComputeBroadTier:
 
     def test_input_smaller_than_target_returns_all(self) -> None:
         rows = [_meta(i) for i in range(1, 4)]  # 3 rows
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=set(),
             target_size=500,
         )
@@ -266,9 +266,9 @@ class TestComputeBroadTier:
                 liquidity=Decimal("80.00"),
             )
         ]
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=set(),
             target_size=1,
         )
@@ -284,9 +284,9 @@ class TestComputeBroadTier:
                 liquidity=Decimal("10.00"),
             )
         ]
-        result = compute_broad_tier(
+        result = compute_featured_tier(
             metadata_rows=rows,
-            deep_set=set(),
+            curated_set=set(),
             exclusions=set(),
             target_size=1,
         )
@@ -299,9 +299,9 @@ class TestComputeBroadTier:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _candidate(name: str, rank: int) -> BroadTierCandidate:
+def _candidate(name: str, rank: int) -> FeaturedTierCandidate:
     stt, sv = detect_flags(name)
-    return BroadTierCandidate(
+    return FeaturedTierCandidate(
         market_hash_name=name,
         rank=rank,
         is_stattrak=stt,
@@ -311,12 +311,12 @@ def _candidate(name: str, rank: int) -> BroadTierCandidate:
 
 class TestDiffAgainstCurrent:
     def test_marks_additions_new_to_items(self) -> None:
-        """Item in new_broad, not in YAML, not in items table → added.
+        """Item in new_featured, not in YAML, not in items table → added.
         """
         new = [_candidate("Brand New Item (FN)", 100)]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set=set(),
+            new_featured=new,
+            current_featured_set=set(),
             existing_items=set(),
             metadata_rows=[],
             previous_ranks={},
@@ -328,14 +328,14 @@ class TestDiffAgainstCurrent:
         assert report.re_added == []
 
     def test_marks_re_added_when_in_items_but_not_yaml(self) -> None:
-        """Item in new_broad, not in YAML, but already in items table
-        → re_added (the Step-7 deep-tier-drop-flowing-into-broad
+        """Item in new_featured, not in YAML, but already in items table
+        → re_added (the Step-7 curated-tier-drop-flowing-into-featured
         case).
         """
         new = [_candidate("AK-47 | Redline (FT)", 50)]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set=set(),
+            new_featured=new,
+            current_featured_set=set(),
             existing_items={"AK-47 | Redline (FT)"},
             metadata_rows=[],
             previous_ranks={},
@@ -350,8 +350,8 @@ class TestDiffAgainstCurrent:
         new = [_candidate("Kept Item (FN)", 5)]
         current = {"Kept Item (FN)", "Dropped Item (FN)"}
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set=current,
+            new_featured=new,
+            current_featured_set=current,
             existing_items=current,
             metadata_rows=[],
             previous_ranks={},
@@ -363,8 +363,8 @@ class TestDiffAgainstCurrent:
     def test_marks_rank_changes_for_kept_items(self) -> None:
         new = [_candidate("Kept Item (FN)", 5)]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set={"Kept Item (FN)"},
+            new_featured=new,
+            current_featured_set={"Kept Item (FN)"},
             existing_items={"Kept Item (FN)"},
             metadata_rows=[],
             previous_ranks={"Kept Item (FN)": 10},
@@ -377,8 +377,8 @@ class TestDiffAgainstCurrent:
         rank_changes — only meaningful movement is interesting."""
         new = [_candidate("Steady Item (FN)", 10)]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set={"Steady Item (FN)"},
+            new_featured=new,
+            current_featured_set={"Steady Item (FN)"},
             existing_items={"Steady Item (FN)"},
             metadata_rows=[],
             previous_ranks={"Steady Item (FN)": 10},
@@ -394,8 +394,8 @@ class TestDiffAgainstCurrent:
         new = [_candidate(f"Item {i} (FN)", i) for i in range(1, 51)]
         previous_ranks = {f"Item {i} (FN)": i + i for i in range(1, 51)}
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set={f"Item {i} (FN)" for i in range(1, 51)},
+            new_featured=new,
+            current_featured_set={f"Item {i} (FN)" for i in range(1, 51)},
             existing_items={f"Item {i} (FN)" for i in range(1, 51)},
             metadata_rows=[],
             previous_ranks=previous_ranks,
@@ -409,10 +409,10 @@ class TestDiffAgainstCurrent:
         assert names[-1] == "Item 41 (FN)"
 
     def test_exclusion_hits_includes_excluded_within_cutoff(self) -> None:
-        """Excluded item with rank ≤ cutoff (worst rank in new_broad)
+        """Excluded item with rank ≤ cutoff (worst rank in new_featured)
         is reported as a hit."""
         meta = [_meta(i) for i in range(1, 11)]
-        # New broad takes ranks 1, 2, 3, 4, 6 (skipping rank-5
+        # New featured takes ranks 1, 2, 3, 4, 6 (skipping rank-5
         # excluded item). Cutoff = 6.
         excluded_name = meta[4].market_hash_name  # rank 5
         new = [
@@ -420,8 +420,8 @@ class TestDiffAgainstCurrent:
             for i in [0, 1, 2, 3, 5]
         ]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set=set(),
+            new_featured=new,
+            current_featured_set=set(),
             existing_items=set(),
             metadata_rows=meta,
             previous_ranks={},
@@ -433,7 +433,7 @@ class TestDiffAgainstCurrent:
         """An exclusion whose rank is worse than the cutoff isn't
         doing operational work — not reported as a hit."""
         meta = [_meta(i) for i in range(1, 11)]
-        # New broad: ranks 1-5, cutoff = 5. Excluded item is rank 8,
+        # New featured: ranks 1-5, cutoff = 5. Excluded item is rank 8,
         # outside the cutoff.
         excluded_name = meta[7].market_hash_name  # rank 8
         new = [
@@ -441,8 +441,8 @@ class TestDiffAgainstCurrent:
             for i in range(5)
         ]
         report = diff_against_current(
-            new_broad=new,
-            current_broad_set=set(),
+            new_featured=new,
+            current_featured_set=set(),
             existing_items=set(),
             metadata_rows=meta,
             previous_ranks={},
@@ -464,20 +464,20 @@ class TestYamlPartition:
         path.write_text(_MIN_YAML)
         with path.open() as f:
             data = _make_yaml().load(f)
-        deep, broad = partition_yaml_items(data)
-        assert deep == {
+        curated, featured = partition_yaml_items(data)
+        assert curated == {
             "AK-47 | Redline (Field-Tested)",
             "M4A4 | Howl (Factory New)",
         }
-        assert broad == {
+        assert featured == {
             "Currently Broad A (Field-Tested)",
             "Currently Broad B (Minimal Wear)",
         }
 
     def test_partition_handles_missing_items_section(self) -> None:
-        deep, broad = partition_yaml_items({})
-        assert deep == set()
-        assert broad == set()
+        curated, featured = partition_yaml_items({})
+        assert curated == set()
+        assert featured == set()
 
     def test_load_exclusions(self, tmp_path: Path) -> None:
         from scripts.watchlist_edit import _make_yaml
@@ -498,7 +498,7 @@ class TestYamlPartition:
         self, tmp_path: Path
     ) -> None:
         """Phase 2b Step 7.1 ships data/watchlist.yaml with an explicit
-        ``broad_tier_exclusions: []`` block (rather than omitting the
+        ``featured_tier_exclusions: []`` block (rather than omitting the
         key). Pin that the loader handles the explicit-empty-list case
         as cleanly as the absent-key case — same outcome (empty set,
         no raise). Future YAML edits that subtly break this go
@@ -508,25 +508,25 @@ class TestYamlPartition:
 
         path = tmp_path / "wl.yaml"
         path.write_text(
-            "schema_version: 2\n"
-            "broad_tier_exclusions: []\n"
+            "schema_version: 3\n"
+            "featured_tier_exclusions: []\n"
             "sources:\n"
             "  - { name: skinport, base_url: https://example, "
             "rate_limit_per_minute: 60, enabled: true }\n"
             "items:\n"
             '  - { market_hash_name: "X (FN)", item_type: rifle, '
-            'tier: deep }\n',
+            'tier: curated }\n',
         )
         with path.open() as f:
             data = _make_yaml().load(f)
         # Explicit empty list parses to a Python list (not None),
         # but load_exclusions normalizes both to set().
-        assert data["broad_tier_exclusions"] == []
+        assert data["featured_tier_exclusions"] == []
         assert load_exclusions(data) == set()
 
     def test_load_exclusions_non_list_raises(self) -> None:
         with pytest.raises(ValueError, match="must be a list"):
-            load_exclusions({"broad_tier_exclusions": "not-a-list"})
+            load_exclusions({"featured_tier_exclusions": "not-a-list"})
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -548,9 +548,9 @@ class TestPrintSummary:
         print_summary(diff, target_size=500, total_composition=2, file=buf)
         out = buf.getvalue()
         assert "Added (new to watchlist): 1" in out
-        assert "Re-added (previously tracked, now restored to broad): 1" in out
-        assert "Dropped from broad: 1" in out
-        assert "Kept in broad: 1" in out
+        assert "Re-added (previously tracked, now restored to featured): 1" in out
+        assert "Dropped from featured: 1" in out
+        assert "Kept in featured: 1" in out
         assert "Kept (FN): 200 -> 50" in out
         assert "Exclusion-list hits" in out
         assert "Excluded (FN)" in out
@@ -570,9 +570,9 @@ class TestPrintSummary:
         print_summary(empty, target_size=500, total_composition=0, file=buf)
         out = buf.getvalue()
         assert "Added (new to watchlist): 0" in out
-        assert "Re-added (previously tracked, now restored to broad): 0" in out
-        assert "Dropped from broad: 0" in out
-        assert "Kept in broad: 0" in out
+        assert "Re-added (previously tracked, now restored to featured): 0" in out
+        assert "Dropped from featured: 0" in out
+        assert "Kept in featured: 0" in out
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -593,7 +593,7 @@ class TestCli:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """``--target-size 0`` is a legitimate operator request
-        ("zero broad-tier items wanted" — used for Step 7.0's
+        ("zero featured-tier items wanted" — used for Step 7.0's
         normalize-only commit). Only NEGATIVE values are rejected."""
         path = tmp_path / "wl.yaml"
         path.write_text(_MIN_YAML)
@@ -603,6 +603,83 @@ class TestCli:
         captured = capsys.readouterr().err
         assert rc != 0
         assert "must be non-negative" in captured
+
+
+# ──────────────────────────────────────────────────────────────────────
+# MetadataRow.item_id Optional[UUID] — contract pin
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestComputeFeaturedTierWithNullItemId:
+    """Defensive coverage for the nullable-item_id invariant.
+
+    Not currently exercised by Path A's bulk-seed (which uses its own
+    dataclass in scripts/seed_catalog.py), but pins the contract
+    against future refactors that might re-introduce an HTTP-fed
+    MetadataRow path or share MetadataRow across modules. The downstream
+    pipeline (compute_featured_tier, diff_against_current) must continue
+    to never read item_id after construction; a regression that
+    started doing so would surface here.
+    """
+
+    def test_compute_featured_tier_with_null_item_id_rows(self) -> None:
+        rows = [
+            MetadataRow(
+                item_id=None,
+                market_hash_name=f"Null-IID Item {i} (FT)",
+                rank=i,
+                liquidity=Decimal("50"),
+            )
+            for i in range(1, 6)
+        ]
+        result = compute_featured_tier(
+            metadata_rows=rows,
+            curated_set=set(),
+            exclusions=set(),
+            target_size=3,
+        )
+        assert len(result) == 3
+        # Lowest 3 ranks selected.
+        assert [c.rank for c in result] == [1, 2, 3]
+
+    def test_diff_against_current_marks_null_iid_rows_as_added(self) -> None:
+        """A row whose name isn't in items table → ``added`` (not
+        ``re_added``). Confirms null-item_id propagates cleanly through
+        diff_against_current without crashing on the item_id field."""
+        new_featured = [
+            FeaturedTierCandidate(
+                market_hash_name="Null-IID A (FT)",
+                rank=1,
+                is_stattrak=False,
+                is_souvenir=False,
+            ),
+            FeaturedTierCandidate(
+                market_hash_name="Null-IID B (FT)",
+                rank=2,
+                is_stattrak=False,
+                is_souvenir=False,
+            ),
+        ]
+        diff = diff_against_current(
+            new_featured=new_featured,
+            current_featured_set=set(),
+            existing_items=set(),
+            metadata_rows=[
+                MetadataRow(
+                    item_id=None,
+                    market_hash_name=c.market_hash_name,
+                    rank=c.rank,
+                    liquidity=None,
+                )
+                for c in new_featured
+            ],
+            previous_ranks={},
+            exclusions=set(),
+        )
+        assert len(diff.added) == 2
+        assert diff.re_added == []
+        assert diff.dropped == []
+        assert diff.kept == []
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -653,7 +730,7 @@ def sentinel_items():
                     "id": item_id,
                     "name": name,
                     "slug": (
-                        f"broad-tier-sentinel-item-{rank}-field-tested"
+                        f"featured-tier-sentinel-item-{rank}-field-tested"
                     ),
                 },
             )
@@ -713,7 +790,7 @@ class TestRunEndToEnd:
         )
 
     @_db_required
-    def test_writes_top_n_broad_tier_entries(
+    def test_writes_top_n_featured_tier_entries(
         self, tmp_path: Path, sentinel_items
     ) -> None:
         """Run against 10 synthetic metadata rows (sentinel ranks
@@ -721,7 +798,7 @@ class TestRunEndToEnd:
         ``pricempire_item_metadata``. With target_size = 100 the cut
         is comfortably wide enough to capture all 10 sentinels
         regardless of production rank collisions; the assertion is
-        "sentinels appear in the new broad tier," not "broad tier is
+        "sentinels appear in the new featured tier," not "featured tier is
         exclusively sentinels."
 
         This was originally written as "top 5 sentinels at target=5"
@@ -744,11 +821,11 @@ class TestRunEndToEnd:
 
         with path.open() as f:
             data = _make_yaml().load(f)
-        _deep, broad = partition_yaml_items(data)
+        _curated, featured = partition_yaml_items(data)
         sentinel_names = {name for _, name, _ in sentinel_items}
-        assert sentinel_names.issubset(broad), (
-            f"sentinels missing from broad tier: "
-            f"{sentinel_names - broad}"
+        assert sentinel_names.issubset(featured), (
+            f"sentinels missing from featured tier: "
+            f"{sentinel_names - featured}"
         )
 
     @_db_required
@@ -780,7 +857,7 @@ class TestRunEndToEnd:
         after_second = path.read_bytes()
 
         assert after_first == after_second, (
-            "seed_broad_tier is not idempotent: second run with "
+            "seed_featured_tier is not idempotent: second run with "
             "identical inputs produced a different YAML"
         )
 
@@ -804,38 +881,38 @@ class TestRunEndToEnd:
         from scripts.seed_watchlist import load_watchlist
 
         data = load_watchlist(path)
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == 3
         # Every item must still have a tier field per loader contract.
         for item in data["items"]:
-            assert item.get("tier") in {"deep", "broad"}
+            assert item.get("tier") in {"curated", "featured"}
 
     @_db_required
-    def test_deep_tier_content_unchanged(
+    def test_curated_tier_content_unchanged(
         self, tmp_path: Path, sentinel_items
     ) -> None:
         """Sub-decision (A) reinforcement: a seeder run must leave
-        every deep-tier item's *content* unchanged. Note: we compare
+        every curated-tier item's *content* unchanged. Note: we compare
         parsed content (dict-equality) rather than raw line bytes,
         because ruamel's round-trip reformats flow-style entries
         (e.g. drops inner-brace spaces). That formatting reflow is a
         one-time cost on the first seeder run against any
         previously-hand-edited YAML; it's documented in the seeder's
-        docstring. The semantic invariant — 'deep-tier items aren't
-        touched by the broad-tier seeder' — still holds.
+        docstring. The semantic invariant — 'curated-tier items aren't
+        touched by the featured-tier seeder' — still holds.
         """
         from scripts.watchlist_edit import _make_yaml
 
         path = tmp_path / "wl.yaml"
         path.write_text(_MIN_YAML)
 
-        # Parse the deep-tier item dicts before the run.
+        # Parse the curated-tier item dicts before the run.
         with path.open() as f:
             data_before = _make_yaml().load(f)
-        deep_before = sorted(
+        curated_before = sorted(
             (
                 dict(item)
                 for item in data_before.get("items", [])
-                if item.get("tier") == "deep"
+                if item.get("tier") == "curated"
             ),
             key=lambda d: d["market_hash_name"],
         )
@@ -849,21 +926,21 @@ class TestRunEndToEnd:
 
         with path.open() as f:
             data_after = _make_yaml().load(f)
-        deep_after = sorted(
+        curated_after = sorted(
             (
                 dict(item)
                 for item in data_after.get("items", [])
-                if item.get("tier") == "deep"
+                if item.get("tier") == "curated"
             ),
             key=lambda d: d["market_hash_name"],
         )
 
-        assert deep_before == deep_after, (
-            "deep-tier item content changed during a broad-tier seed; "
-            "deep tier is editorial and must never be touched by "
+        assert curated_before == curated_after, (
+            "curated-tier item content changed during a featured-tier seed; "
+            "curated tier is editorial and must never be touched by "
             "this seeder"
         )
 
 
 # Reference the module so a future import-pruner doesn't strip it.
-_ = seed_broad_tier
+_ = seed_featured_tier

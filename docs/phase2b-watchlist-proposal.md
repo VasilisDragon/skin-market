@@ -1,5 +1,7 @@
 # Phase 2b watchlist proposal — DRAFT, awaits human review
 
+> **Retrospective note (2026-05-18, Phase 2c rename).** This proposal was written using the original tier vocabulary `Tier 1 / 2 / 3 / 5` and (later in the doc) `deep / broad`. Phase 2c renamed the runtime tiers to `curated / featured / substrate` (ADR 024, schema_version 2→3). The original proposal categories collapsed at implementation time per ADR 024 §"Proposal-vs-implementation reconciliation" — the proposal's "Tier 1 + 2 + 3 + 5" became `tier: curated` (42 items shipped); "broad" became `tier: featured`; the never-mentioned "orphan" state became `substrate` (computed at read time). Mental mapping for readers of this historical doc: any "deep" → "curated"; any "broad" → "featured". The empirical analysis and selection criteria below remain valid against the post-rename system.
+
 **Status:** Proposal only. **Phase 2a does NOT re-seed the watchlist.** This document is the deliverable; the actual re-seed happens in Phase 2b during the drift-detection work.
 
 The current 48-item watchlist was curated ad-hoc for v1 (`data/watchlist.yaml`). With Pricempire ingest live (Phase 2a) and drift detection landing in Phase 2b, the watchlist's composition becomes load-bearing — drift detection works only against items where we have good direct-poll coverage AND good Pricempire coverage. This proposal lays out a tier-based composition (Tier 1, 2, 3, 5 — the original Tier 4 was deferred; see "Selection criteria" below) that you can accept, edit, or reject before re-seeding.

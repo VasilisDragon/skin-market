@@ -211,7 +211,7 @@ class TestDriftStatusCodes:
         assert body["slug"] == _SENTINEL_SLUG
         assert body["pairs"] == []
         # Sentinel isn't in YAML → orphan.
-        assert body["tier"] == "orphan"
+        assert body["tier"] == "substrate"
 
 
 # ---------------------------------------------------------------------
@@ -399,7 +399,7 @@ def _yaml_for_tier(tier: str) -> str:
     as the given tier. Includes a minimal sources block so
     load_watchlist's schema_version + required-keys checks pass."""
     return f"""\
-schema_version: 2
+schema_version: 3
 sources:
   - name: skinport
     base_url: https://api.skinport.com
@@ -418,13 +418,13 @@ items:
 
 @_db_required
 class TestDriftTierShaping:
-    def test_deep_tier_with_verdicts(
+    def test_curated_tier_with_verdicts(
         self, client: TestClient, sentinel_item, tmp_path: Path
     ) -> None:
         """When the sentinel is classified as deep in YAML, the
         endpoint returns tier=deep and includes drift verdicts."""
         yaml_path = tmp_path / "watchlist.yaml"
-        _write_yaml(yaml_path, _yaml_for_tier("deep"))
+        _write_yaml(yaml_path, _yaml_for_tier("curated"))
         watchlist_tiers.reload(yaml_path)
 
         item_id = sentinel_item
@@ -448,10 +448,10 @@ class TestDriftTierShaping:
         resp = client.get(f"/items/{_SENTINEL_SLUG}/drift")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["tier"] == "deep"
+        assert body["tier"] == "curated"
         assert len(body["pairs"]) == 1
 
-    def test_broad_tier_returns_empty_pairs(
+    def test_featured_tier_returns_empty_pairs(
         self, client: TestClient, sentinel_item, tmp_path: Path
     ) -> None:
         """The broad-tier contract pinned: drift detection skips
@@ -462,16 +462,16 @@ class TestDriftTierShaping:
         this test guarantees future broad-tier population doesn't
         surprise the bot."""
         yaml_path = tmp_path / "watchlist.yaml"
-        _write_yaml(yaml_path, _yaml_for_tier("broad"))
+        _write_yaml(yaml_path, _yaml_for_tier("featured"))
         watchlist_tiers.reload(yaml_path)
 
         resp = client.get(f"/items/{_SENTINEL_SLUG}/drift")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["tier"] == "broad"
+        assert body["tier"] == "featured"
         assert body["pairs"] == []
 
-    def test_orphan_tier_returns_empty_pairs(
+    def test_substrate_tier_returns_empty_pairs(
         self, client: TestClient, sentinel_item
     ) -> None:
         """Sentinel is not in the default YAML, so tier=orphan and
@@ -480,7 +480,7 @@ class TestDriftTierShaping:
         resp = client.get(f"/items/{_SENTINEL_SLUG}/drift")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["tier"] == "orphan"
+        assert body["tier"] == "substrate"
         assert body["pairs"] == []
 
 

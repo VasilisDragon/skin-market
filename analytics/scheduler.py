@@ -42,7 +42,6 @@ from analytics import (
     drift,
     moving_averages,
     narrative,
-    unavailability_streak,
 )
 from db.connection import get_engine
 
@@ -81,12 +80,9 @@ def run_hourly_cycle() -> None:
             session,
             now,
         )
-        _run_with_logging(
-            "Unavailability streaks",
-            unavailability_streak.compute_and_store,
-            session,
-            now,
-        )
+        # item_unavailability_streak removed in Phase 2c (2026-05-18).
+        # See TODO.md "item_unavailability_streak removal" for the
+        # reasoning. Do NOT reintroduce without re-reading the rationale.
         session.commit()
     logger.info("Hourly analytics cycle complete")
 
@@ -94,7 +90,7 @@ def run_hourly_cycle() -> None:
 def run_drift_cycle() -> None:
     """30-minute pattern-aware drift detection cycle (Phase 2b, ADR 022).
 
-    Compares each deep-tier item's direct-collector latest price
+    Compares each curated-tier item's direct-collector latest price
     against the corresponding Pricempire sub-provider latest price.
     Emits one drift_verdict insights row per (item, meaningful-pair).
     The classifier (ADR 021) decides phase_based skips and pattern-
@@ -108,7 +104,7 @@ def run_drift_cycle() -> None:
     ── Feature flag (Phase 2b Step 5) ────────────────────────────────
     Gated behind the ``DRIFT_DETECTION_ENABLED`` env var so the
     detector is dormant until Step 7's re-seed gate validates the
-    deep-tier composition. Defaults to false at every analytics
+    curated-tier composition. Defaults to false at every analytics
     service restart — Step 7 flips it true after sign-off.
 
     Accepted truthy values (case-insensitive): "true", "1", "yes",
@@ -158,7 +154,7 @@ def _drift_detection_enabled() -> bool:
     (case-insensitive). Anything else — including unset — is False.
 
     Phase 2b Step 5 (feature flag): the drift detector is dormant
-    until Step 7's re-seed gate validates the deep-tier composition.
+    until Step 7's re-seed gate validates the curated-tier composition.
     """
     raw = (os.environ.get("DRIFT_DETECTION_ENABLED") or "").strip().lower()
     return raw in {"true", "1", "yes", "on"}

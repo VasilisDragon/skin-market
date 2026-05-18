@@ -40,3 +40,12 @@ Thumbs.db
 # excluded. Source-of-truth files (e.g. data/watchlist.yaml) stay tracked.
 data/cache/
 data/exports/
+
+# Session-scratch directory (Phase 2c, ADR 024 repo-hygiene rule).
+# Holds ephemeral working files: session-handoff prompts for fresh
+# Claude Code sessions, design proposals pending advisor review,
+# anything that isn't a permanent architectural record. Architectural
+# memory lives in docs/adr/, docs/*.md, ADR catalogs in
+# PROJECT_OVERVIEW.md, TODO.md, README.md — those stay committed.
+# notes/ does not.
+notes/

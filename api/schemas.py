@@ -36,22 +36,27 @@ MoneyStr = Annotated[Decimal, PlainSerializer(str, return_type=str)]
 Denomination = Literal["usd", "wallet_credit"]
 
 # Tier surfaces on every item-level response so the bot can shape its
-# rendering without a follow-up call. ``deep`` items get the full
-# curated-collector + Pricempire treatment (drift detection, cross-
-# source spreads, etc.). ``broad`` items are Pricempire-only and have
-# no curated data — the routes return empty per-source/per-history
-# rows for them. ``orphan`` means the item exists in the items table
-# but is no longer in the active YAML watchlist (ADR 024) — historical
-# data may exist but no current cycle is producing it.
-Tier = Literal["deep", "broad", "orphan"]
+# rendering without a follow-up call. ``curated`` items get the full
+# direct-collector + Pricempire treatment (drift detection, cross-
+# source spreads, etc.). ``featured`` items are Pricempire-only and
+# appear in the bot's watchlist surface; the routes return Pricempire
+# rows but empty direct-collector rows for them. ``substrate`` means
+# the item exists in the items table but is no longer in the active
+# YAML watchlist (ADR 024) — Pricempire-only observation continues
+# via the bulk snapshot collector; historical curated data may exist
+# from a prior tier membership. The Phase 2c rename (deep/broad/
+# orphan → curated/featured/substrate) reflects post-Path-A semantics
+# where the items table is bulk-populated and the YAML's tracked-list
+# is the editorial overlay.
+Tier = Literal["curated", "featured", "substrate"]
 
 
 class Item(BaseModel):
     """One row of the watchlist.
 
     weapon_name / skin_name / is_stattrak / is_souvenir surface on the
-    list endpoint (not just ``ItemDetail``) so the bot can match an
-    orphan slug to its sibling deep-tier wear without parsing
+    list endpoint (not just ``ItemDetail``) so the bot can match a
+    substrate slug to its sibling curated-tier wear without parsing
     ``display_name`` strings (which would be brittle on StatTrak™ /
     Souvenir / star-prefixed knives + gloves). Phase 2b Step 9.
     """
@@ -118,7 +123,7 @@ class PriceResponse(BaseModel):
                 {
                     "slug": "ak-47-redline-field-tested",
                     "display_name": "AK-47 | Redline (Field-Tested)",
-                    "tier": "deep",
+                    "tier": "curated",
                     "sources": [
                         {
                             "source": "skinport",
@@ -180,7 +185,7 @@ class HistoryResponse(BaseModel):
             "examples": [
                 {
                     "slug": "ak-47-redline-field-tested",
-                    "tier": "deep",
+                    "tier": "curated",
                     "source": "skinport",
                     "since": "2026-05-05T00:00:00Z",
                     "until": "2026-05-12T00:00:00Z",
@@ -313,7 +318,7 @@ class DealEvaluateResponse(BaseModel):
                 {
                     "slug": "ak-47-redline-field-tested",
                     "display_name": "AK-47 | Redline (Field-Tested)",
-                    "tier": "deep",
+                    "tier": "curated",
                     "offer": {"amount": "42.50", "currency": "usd"},
                     "verdict": "above_market",
                     "comparable": [
@@ -437,7 +442,7 @@ Classification = Literal["pattern_agnostic", "phase_based", "pattern_seed"]
 class DriftPairVerdict(BaseModel):
     """One pair's most-recent drift verdict.
 
-    Up to two pairs per deep-tier item (skinport↔pricempire_skinport
+    Up to two pairs per curated-tier item (skinport↔pricempire_skinport
     and dmarket↔pricempire_dmarket; see analytics/drift.py
     ``_MEANINGFUL_PAIRS``). Money fields use ``MoneyStr`` to keep the
     Decimal-on-wire-as-string contract; ``drift`` and
@@ -469,18 +474,15 @@ class DriftResponse(BaseModel):
     Status-code contract:
 
     - 404 when ``slug`` is unknown (item not in items table).
-    - 200 with ``tier="deep"``, ``pairs=[]`` when the drift detector
+    - 200 with ``tier="curated"``, ``pairs=[]`` when the drift detector
       hasn't produced a row yet (fresh deploy / pre-cycle).
-    - 200 with ``tier="deep"``, ``pairs=[…1 or 2…]`` for items the
+    - 200 with ``tier="curated"``, ``pairs=[…1 or 2…]`` for items the
       detector has evaluated. One-pair shape is the realistic middle
       state for items added in Step 7.1 with sparse data for ~24h.
-    - 200 with ``tier="broad"``, ``pairs=[]`` for broad-tier items —
-      the detector skips them by construction. Pinned by tests using a
-      synthetic broad-tier item; broad tier is empty in production
-      today (deferred phase).
-    - 200 with ``tier="orphan"``, ``pairs=[]`` for items removed from
-      the YAML watchlist after Step 7.1 but still in the items table
-      (ADR 024).
+    - 200 with ``tier="featured"``, ``pairs=[]`` for featured-tier
+      items — the detector skips them by construction (curated-only).
+    - 200 with ``tier="substrate"``, ``pairs=[]`` for items in the
+      items table but not in the YAML watchlist (ADR 024).
     """
 
     slug: str
@@ -494,7 +496,7 @@ class DriftResponse(BaseModel):
                 {
                     "slug": "ak-47-redline-field-tested",
                     "display_name": "AK-47 | Redline (Field-Tested)",
-                    "tier": "deep",
+                    "tier": "curated",
                     "pairs": [
                         {
                             "source_a": "skinport",

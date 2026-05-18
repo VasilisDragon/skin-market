@@ -6,6 +6,322 @@ owner/date stamp when picked up.
 
 ---
 
+## External architectural review feedback (2026-05)
+
+**Filed:** 2026-05-18. **Status:** documented; per-item action deferred.
+
+Four items surfaced in an external architectural review. Each is
+filed here as future-revisit reference; none is in-scope for current
+Phase 2c work.
+
+1. **Query-cost DB logging for abuse-potential analysis.** Defer
+   until public/multi-tenant access. Current single-bot single-
+   operator setup has no abuse surface; instrumentation would
+   produce noise without a consumer.
+2. **Redis caching layer.** Defer until a measurable latency or
+   load problem appears. Postgres + dedup-on-write is sufficient
+   at current scale; adding Redis ahead of need is unjustified
+   complexity. Revisit when the bot's /price-path p95 latency
+   exceeds operator tolerance, or when concurrent-user count
+   actually grows.
+3. **Tier-filtering location consolidation (architectural debt).**
+   Tier filtering currently lives in `collectors/scheduler.py`
+   (`_CURATED_ONLY_SOURCES` + `_load_watchlist`), `analytics/drift.py`
+   (`curated_set` filter inside `compute_and_store`),
+   `analytics/anomaly_detection.py` (implicit via source-pair
+   filtering), and the API tier-aware response shapers
+   (`api/watchlist_tiers.py:get_tier`). A future ADR should map
+   where tier-filtering happens by component and consolidate the
+   places that can drift. Real debt; revisit when adding tier
+   awareness to another component would otherwise add a 5th
+   independent implementation.
+4. **Synchronous / blocking I/O patterns in bot tools + analytics
+   jobs.** Defer; scale-driven concern not currently active. The
+   bot is single-event-loop today; analytics jobs are batch-mode
+   under APScheduler. Revisit when concurrent-user count grows or
+   when an analytics job's wall-clock starts impinging on the
+   30-minute drift cycle.
+
+---
+
+## 7-day Pricempire-skinport cadence characterization
+
+**Filed:** 2026-05-17 (ADR 022 §2.5 follow-up).
+**Status:** in flight; ~5 days remaining as of 2026-05-18.
+
+ADR 022 §"Open follow-ups" requires a 7-day characterization of the
+Pricempire `pricempire_skinport` upstream refresh cadence to convert
+the interim `STALE_PRICEMPIRE_MINUTES = 75.0` into a data-driven
+permanent value. Started 2026-05-17 with the deploy of `75`. Due
+~2026-05-24.
+
+When the window closes:
+- Query `pricempire_observation_log` aged distribution for the
+  `pricempire_skinport` source over the 7-day window. Compute
+  jitter distribution (median, p95, p99), time-of-day dependence,
+  per-sub-provider variance.
+- Compare against current `STALE_PRICEMPIRE_MINUTES = 75.0`.
+- File a follow-up ADR adjusting the constant if the empirical
+  envelope warrants a change. Per ADR 022 §2.5: raise if median +
+  p95 jitter exceeds 75; lower if well under 75; consider
+  per-sub-provider thresholds if time-of-day or per-provider
+  variance dominates.
+
+---
+
+## Slug algorithm v2 (ADR 005 v2 follow-up)
+
+**Filed:** 2026-05-18 (Phase 2c bootstrap surfaced the first slug-v1
+collision). **Status:** session prompt drafted at
+`notes/slug-v2-session-prompt.md` (gitignored — see ADR 024 repo-
+hygiene rule); fresh session pending. **The session prompt is a
+convenience; this TODO entry is authoritative — if `notes/` is
+ever lost, recreate the prompt from this entry.**
+
+### Problem
+
+ADR 005's slug-v1 algorithm (`db/naming.py:slugify`) strips non-ASCII
+characters at step 5 (`_NON_SLUG_CHAR.sub("", s)`). At the Phase 2c
+bootstrap, two real CS2 items produced the same slug:
+- `Desert Eagle | Sunset Storm 壱 (Factory New)` (rank ~379)
+- `Desert Eagle | Sunset Storm 弐 (Factory New)` (rank ~405)
+Both slugify to `desert-eagle-sunset-storm-factory-new`. The items
+table's `slug` UNIQUE constraint correctly rejected the second
+INSERT with `psycopg.errors.UniqueViolation`. ADR 005 §"Consequences"
+explicitly anticipated this collision class.
+
+**Interim fix in production:** both colliding items added to
+`featured_tier_exclusions:` in `data/watchlist.yaml`.
+
+### Scope of slug v2 work (reconstructible from this entry)
+
+- **Three design decisions to pick (advisor pause-point 1):**
+  - Transliteration approach: `unidecode` library (recommended;
+    standard for non-ASCII transliteration; covers Cyrillic, Greek,
+    Arabic, etc.), curated codepoint map (brittle), or codepoint-
+    suffix fallback (ugly slugs but zero collision risk).
+  - Pre-COMMIT uniqueness check: algorithmic (compute v2 slug for
+    every items + metas row, assert no duplicates), schema-level
+    (rely on UNIQUE constraint at migration apply), or both.
+  - Regeneration migration shape: inline slug-v2 algorithm in the
+    Alembic migration file (recommended; self-contained; doesn't
+    break when slug v3 ships), vs. import-from-current-`db.naming`.
+- **Implementation steps (after design sign-off):**
+  - ADR 005 v2 amendment.
+  - `db/naming.py:slugify` v2 + `SLUG_ALGORITHM_VERSION = 2`.
+  - Pre-commit uniqueness check (script or test).
+  - Alembic migration regenerating every `items.slug`.
+  - Remove Sunset Storm entries from `featured_tier_exclusions:`.
+  - Regression tests pinning v2 behavior on Sunset Storm pair +
+    confirming ASCII items produce identical output to v1.
+- **Constraints:**
+  - Slugs stay RFC-3986 unreserved-only `[a-z0-9-]`.
+  - Identical output to v1 for ASCII-only names; only non-ASCII
+    items produce different v2 slugs.
+  - `bot/tools.py:_find_active_wear` uses slug-based sibling match;
+    verify post-migration.
+  - The two Sunset Storm items are currently NOT in `items` (the
+    Path A bulk-seed in commit 2 will attempt them; slug v1 fails
+    before slug v2 lands, so the exclusion stays through commit 2).
+- **Pause-points (4):** design decisions; implementation plan;
+  post-migration with uniqueness check passing; pre-push final review.
+- **Workflow:** standard ARCHITECTURE.md rules — no magic libraries,
+  tests for non-trivial logic, advisor coordinates before design
+  decisions, operator commits per phase and pushes manually.
+
+Timing: planned for after Path A bulk-seed (commit 2) lands and
+stabilizes for 24h on the larger items table, where the collision
+surface scales.
+
+---
+
+## Phase 2c Path A bulk-seed (commit 2 pending)
+
+**Filed:** 2026-05-18. **Status:** session prompt drafted at
+`notes/path-a-bulk-seed-session-prompt.md` (gitignored); fresh
+session pending. **The session prompt is a convenience; this TODO
+entry is authoritative — if `notes/` is ever lost, recreate the
+prompt from this entry.**
+
+### Selected path
+
+Phase 2c selected **Path A** (bulk-seed items table from Pricempire's
+metas catalog) over Path B v1 (fresh HTTP per seeder run; the
+working prior approach in yesterday's session). Rationale: forward-
+looking storage substrate for a post-v1 on-demand fetch + auto-
+promotion feature (Phase 3+ scope; that ADR lands separately).
+Path A's bulk-pre-seed means existence queries against `items`
+return a row for any catalog item, making the future on-demand flow
+a fetch-and-update rather than an existence-create-fetch three-
+step. **This commit (commit 2) only does the storage switch; the
+on-demand feature is out of scope.**
+
+### Scope of commit 2 work (reconstructible from this entry)
+
+- Write `scripts/seed_catalog.py`:
+  - Top 5,000 by Pricempire rank from `/v4/paid/items/metas`.
+  - Single transaction (all-or-nothing for ~5,000 INSERTs; NOT
+    batched commits). Postgres handles this comfortably; partial-
+    state-on-error rollback is the safety property.
+  - Fail-fast in dry-run on slug collisions (collect all, present
+    as a block, exit without writing).
+  - Honor `featured_tier_exclusions:` from YAML.
+  - Populate parse-derivable metadata fields by mirroring
+    `scripts/seed_watchlist.py`'s parsing exactly: `is_stattrak` +
+    `is_souvenir` from name prefixes, `slug` via `db.naming.slugify`,
+    `display_name` = `market_hash_name`. Steam-side taxonomy fields
+    (`item_type`, `weapon_name`, `skin_name`, `wear`) stay NULL
+    when not deterministic.
+  - Idempotent via `ON CONFLICT (market_hash_name) DO NOTHING`.
+  - CLI: `--dry-run`, `--limit N` (for testing).
+- Write `tests/test_seed_catalog.py`.
+- Dry-run, capture collision report.
+- Decision rule for slug collisions: under ~10 collisions → add
+  to exclusions and proceed; dozens → pause for slug v2 first.
+- Bulk-seed for real (items table 545 → ~5,000).
+- Re-run `seed_featured_tier.py` (DB-source default path; the
+  rolled-back `--source=pricempire` flag is not part of Path A
+  steady-state) to verify zero diff.
+- Restart api / collector / analytics services.
+- Verify canaries:
+  - Zero `drift_verdict` rows for any non-curated item.
+  - Curated 42 items continue at 84 rows × 42 distinct items per
+    cycle (drift detector deep-set filter intact at the larger
+    items population).
+  - §4 wear-swap canary: 2 substrate items continue zero rows.
+  - §4.5 substrate obs_log canary: zero advancements on
+    `steam_market` / `skinport` / `dmarket` for substrate items.
+  - `cross_source_spread` / `moving_avg` row volume on substrate:
+    quantify + report. At ~4,400 substrate items, may warrant the
+    §4.D3-TODO orphan-filter follow-up (separate commit).
+- Rewrite ADR 024 §3 Addendum to reflect Path A landed (not just
+  selected). Path B v1 stays in rejected-alternatives.
+- Update §4.D5 substrate-set scale acknowledgment (~4,400 items
+  post-Path-A; dominated by never-curated items) + classifier-veto
+  sentence (`analytics/pattern_classifier.py` fail-fasts on
+  pattern_sensitivity entries for non-curated items, by ADR 024
+  §4.D2; this protects editorially-classified items from
+  auto-promotion to non-curated tiers in any future flow).
+- Update Consequences honestly: bootstrap chicken-and-egg
+  architecturally resolved by Path A's substrate-as-default;
+  storage cost (~5-10 GB/year compressed on
+  `pricempire_observations`) documented.
+
+### Pause-points (3)
+
+1. After `seed_catalog.py` is written + tests pass, before dry-run.
+2. After dry-run, before deciding what to do with collisions.
+3. After bulk-seed + canaries verified, before commit.
+
+### Prerequisites
+
+- Commit 1 (this commit) pushed.
+- Canaries hold for 24h on items table at 545 rows (post-
+  yesterday's Path B v1 bootstrap).
+- Advisor sign-off on commit 1.
+
+---
+
+## Strengthen TestYamlToCuratedSetIntegration second test (or remove)
+
+**Filed:** 2026-05-18 (Phase 2c rename verification — flagged at
+sign-off). **Status:** non-blocking; pick up post-commit.
+
+`tests/test_drift.py::TestYamlToCuratedSetIntegration` has two
+methods:
+
+1. `test_curated_set_built_from_v3_yaml_uses_curated_literal` —
+   the real regression pin. Loads a v3 YAML and asserts the
+   `if it.get("tier") == "curated"` set-construction picks up the
+   right rows. A regression to the pre-Phase-2c `"deep"` literal
+   would produce an empty set here and fail loudly. Keep.
+2. `test_compute_and_store_yaml_path_picks_up_curated_items` —
+   honestly only a smoke test, not a regression pin. The function
+   returns `rows_written = 0` in both the bug state (empty
+   curated_set, no iteration) AND the no-match state (curated_set
+   populated, items-table lookup returns None). Can't distinguish
+   the bug class it's framed to catch.
+
+### Fix or remove
+
+- **Strengthen:** session-inject a real items-table row matching
+  the YAML's sentinel so the function produces non-zero
+  `rows_written`, distinguishable from the empty-curated_set
+  state. Probably needs the `_db_required` fixture and the same
+  sentinel-item pattern other DB-backed drift tests use.
+- **Remove:** delete the second method; the first one carries the
+  regression-pin load. Less code; the docstring on method #1
+  already captures the bug-class narrative.
+
+Either is defensible. The smoke-test framing in method #2's
+docstring is honest about the limitation but the test still has
+ambiguous value-add. Decide which post-commit.
+
+---
+
+## item_unavailability_streak removal (Phase 2c, 2026-05-18)
+
+**Status:** closed by deletion. This entry exists so future-me doesn't
+re-introduce the signal for the wrong reason.
+
+### What was removed
+
+- `analytics/unavailability_streak.py` (module)
+- `analytics/scheduler.py` hourly hook for the streak compute
+- `bot/tools.py` insight-dispatch branch + per-source "unavailable"
+  rendering state — sources without observation now uniformly render
+  as `never_observed`
+- `tests/test_analytics.py::TestUnavailabilityStreak` + the
+  `_upsert_observation_log` helper used only by it
+- `tests/test_bot.py::test_fresh_unavailable_never_observed` —
+  rewritten as `test_fresh_and_never_observed` reflecting the
+  two-state model
+
+### Why
+
+The streak counter's original purpose (ADR 015 §4) was rate-limit
+detection on free direct-poll upstreams: count consecutive cycles
+where Steam / Skinport / DMarket failed to return a row for an item
+so the bot could surface "we've been unable to observe this item for
+N cycles." With Pricempire's paid API in place as the breadth layer
+(ADR 018), that signal stopped being useful — the rate-limit-recovery
+diagnostic doesn't usefully drive the bot's user-facing rendering
+once Pricempire fills in catalog coverage for the same items.
+
+The signal also produced unbounded-growth orphan rows (6,328 rows /
+21h per `docs/phase2b-validation.md §4.5`, projected ~2.6M
+rows/year), which surfaced as the "load-bearing operational debt"
+con in ADR 024's earlier revision. **The right fix was deletion,
+not a tier filter.** A tier filter would have stopped the orphan
+growth but kept a signal whose use case had evaporated.
+
+### Do NOT reintroduce because
+
+- "It would give us a tidier per-source freshness signal." Use
+  `observation_log.last_observed_at` directly — it's the substrate
+  the streak compute was reading anyway.
+- "It would help debug a Steam outage." A Steam outage shows up as
+  a `stale` state on the bot's price rendering (4h threshold). Add
+  collector-side metrics if needed — don't re-derive an insight
+  type just to surface the same fact.
+- "We need three states (fresh / unavailable / never_observed)."
+  Two states cover the user-facing path adequately. The historical
+  "unavailable" state was an operator-facing diagnostic; operator
+  tooling lives in `docs/operations.md` / metrics, not in insight
+  rows.
+
+### What was NOT removed
+
+- The `observation_log` table itself (ADR 017's split is load-
+  bearing for drift detection's freshness gate per ADR 022).
+- Pre-existing `item_unavailability_streak` rows in the production
+  `insights` table — they remain queryable for historical context.
+  A future cleanup commit can `DELETE FROM insights WHERE
+  insight_type = 'item_unavailability_streak'` once nobody's
+  reading them.
+
+---
+
 ## Sources-table cadence drift vs. migration 0003
 
 **Filed:** 2026-05-17 (during Phase 2b Step 2).

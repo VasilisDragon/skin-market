@@ -71,31 +71,45 @@ ANOMALIES_TOP_N_THRESHOLD: int = 10
 WATCHLIST_SAMPLE_SIZE: int = 5
 
 # Phase 2b Step 9 — tier-aware response shaping. Pre-composed copy
-# the LLM renders verbatim when an item is broad-tier or orphan;
-# avoids relying on the open-source model to invent the right framing
-# on its own (ADR 016's defensive-handling rationale). Production
-# today: no items are broad-tier; 28 items are orphan after Step 7.1.
-_TIER_NOTE_BROAD: str = (
-    "This item is on the broad watchlist — we track it but with "
-    "less detail than our priority items. Detailed drift checks "
-    "aren't available for this tier."
+# the LLM renders verbatim when an item is featured-tier or
+# substrate; avoids relying on the open-source model to invent the
+# right framing on its own (ADR 016's defensive-handling rationale).
+# (Tier vocabulary renamed deep/broad/orphan → curated/featured/
+# substrate at Phase 2c, ADR 024.)
+_TIER_NOTE_FEATURED: str = (
+    "This item is on the featured watchlist — we track it but with "
+    "less detail than our priority (curated) items. Detailed drift "
+    "checks aren't available for this tier."
 )
 
 
-def _tier_note_orphan(active_wear_display_name: str | None) -> str:
-    """Compose the orphan tier_note. When an actively-tracked sibling
-    wear exists, the note points the user to it."""
+def _tier_note_substrate(active_wear_display_name: str | None) -> str:
+    """Compose the substrate tier_note. When an actively-tracked
+    sibling wear exists, the note points the user to it.
+
+    Substrate covers two semantic subtypes that share the same
+    rendering:
+    - Previously-curated wears that got dropped from the YAML at a
+      re-seed (Phase 2b Step 7.1 dropped 28 from the prior 48-item
+      curated set; 25 of those were re_added to featured at Phase 2c,
+      3 remain substrate).
+    - Never-curated catalog items present in the items table from a
+      Phase 2c bulk-seed (when Path A is live).
+    The envelope copy stays generic; the bot doesn't distinguish the
+    two subtypes today. Phase 3+ on-demand fetch will, when needed.
+    """
     if active_wear_display_name is None:
         return (
-            "This wear is no longer actively tracked. Historical "
-            "data may still be available, but we're not collecting "
+            "This item isn't on our actively-tracked watchlist. "
+            "Pricempire-side data may still be available via direct "
+            "lookup, but no curated/featured cycle is producing "
             "current prices for it."
         )
     return (
-        f"This wear is no longer actively tracked. The currently-"
-        f"tracked wear is {active_wear_display_name}. I can show "
-        f"historical data for the orphaned wear, or you can ask "
-        f"about the active wear instead."
+        f"This wear isn't on our actively-tracked watchlist. The "
+        f"currently-tracked wear is {active_wear_display_name}. I "
+        f"can show historical data for the non-tracked wear, or you "
+        f"can ask about the active wear instead."
     )
 
 
@@ -253,18 +267,21 @@ def _get_json(
 
 
 # ---------------------------------------------------------------------
-# Items cache + sibling-wear matcher (Phase 2b Step 9)
+# Items cache + sibling-wear matcher (Phase 2b Step 9; Phase 2c
+# rename: orphan→substrate, deep→curated)
 #
 # The bot needs to know "which wear of skin X is the currently-active
-# (deep-tier) one" when a user lands on an orphan slug — both for the
-# active_wear_hint surfaced through query_current_price / query_drift /
-# evaluate_deal, and for the system-prompt wear-disambiguation rule.
+# (curated-tier) one" when a user lands on a substrate slug — both
+# for the active_wear_hint surfaced through query_current_price /
+# query_drift / evaluate_deal, and for the system-prompt wear-
+# disambiguation rule.
 #
-# The items list is small (42 today, ~50 cap) and only changes at
-# deploy time (data/watchlist.yaml is operator-edited and followed by
-# a docker restart). One module-level cache for the lifetime of the
-# bot process is sufficient; ``_refresh_items_cache`` allows tests to
-# inject a fixture without reaching the API.
+# The items list grows under Path A (Phase 2c bulk-seed → ~5,000
+# items), but only changes at deploy time (data/watchlist.yaml is
+# operator-edited and seed_catalog.py is operator-invoked). One
+# module-level cache for the lifetime of the bot process is
+# sufficient; ``_refresh_items_cache`` allows tests to inject a
+# fixture without reaching the API.
 # ---------------------------------------------------------------------
 
 
@@ -292,10 +309,10 @@ def _get_items_cache() -> list[dict]:
     return _items_cache
 
 
-def _find_active_wear(orphan_slug: str) -> dict | None:
-    """Given an orphan-tier slug, find the actively-tracked sibling
-    wear (same weapon + skin + StatTrak/Souvenir flags, different
-    wear, ``tier == "deep"``). Returns
+def _find_active_wear(substrate_slug: str) -> dict | None:
+    """Given a non-curated slug (featured or substrate), find the
+    actively-tracked sibling wear (same weapon + skin + StatTrak/
+    Souvenir flags, different wear, ``tier == "curated"``). Returns
     ``{"slug": …, "display_name": …}`` or None.
 
     Match uses the structured fields on /items rows (added in Phase
@@ -303,21 +320,22 @@ def _find_active_wear(orphan_slug: str) -> dict | None:
     parsing display_name strings would be brittle on StatTrak™ /
     Souvenir / star-prefixed knives and gloves."""
     cache = _get_items_cache()
-    orphan = next(
-        (row for row in cache if row.get("slug") == orphan_slug), None
+    target = next(
+        (row for row in cache if row.get("slug") == substrate_slug),
+        None,
     )
-    if orphan is None:
+    if target is None:
         return None
-    weapon = orphan.get("weapon_name")
-    skin = orphan.get("skin_name")
-    stt = orphan.get("is_stattrak", False)
-    sv = orphan.get("is_souvenir", False)
+    weapon = target.get("weapon_name")
+    skin = target.get("skin_name")
+    stt = target.get("is_stattrak", False)
+    sv = target.get("is_souvenir", False)
     if weapon is None or skin is None:
         return None
     for row in cache:
-        if row.get("slug") == orphan_slug:
+        if row.get("slug") == substrate_slug:
             continue
-        if row.get("tier") != "deep":
+        if row.get("tier") != "curated":
             continue
         if (
             row.get("weapon_name") == weapon
@@ -442,19 +460,19 @@ def list_watchlist() -> dict:
 
 
 def query_current_price(slug: str) -> dict:
-    """Return per-source prices + freshness + (for deep-tier items)
+    """Return per-source prices + freshness + (for curated-tier items)
     drift_summary + anomaly_flag.
 
     Phase 2b Step 9 adds three optional response keys:
 
     - ``drift_summary``: per-pair drift verdict from
-      ``/items/{slug}/drift``. Present only for deep-tier items
-      (broad/orphan get tier_note instead).
-    - ``tier_note``: pre-composed user-facing copy for broad/orphan
-      tiers. Absent for deep.
+      ``/items/{slug}/drift``. Present only for curated-tier items
+      (featured/substrate get tier_note instead).
+    - ``tier_note``: pre-composed user-facing copy for featured/substrate
+      tiers. Absent for curated.
     - ``active_wear_hint``: ``{slug, display_name}`` of the
-      currently-tracked sibling wear when the queried slug is orphan
-      AND a deep-tier sibling exists. Absent otherwise.
+      currently-tracked sibling wear when the queried slug is substrate
+      AND a curated-tier sibling exists. Absent otherwise.
 
     The ``anomaly_flag`` (legacy cross_source_divergence rendering)
     is filtered to non-Pricempire pairs only — defense-in-depth
@@ -465,37 +483,30 @@ def query_current_price(slug: str) -> dict:
     with _client() as c:
         price_data = _get_json(c, f"/items/{slug}/price")
         insights_data = _get_json(c, f"/items/{slug}/insights")
-        tier = price_data.get("tier", "deep")
+        tier = price_data.get("tier", "curated")
         drift_data: dict | None = None
-        if tier == "deep":
-            # Only deep-tier items get drift detection (analytics/drift.py
-            # filters on tier=deep before evaluating). Skipping the
-            # /drift call for non-deep tiers avoids one HTTP round-trip
+        if tier == "curated":
+            # Only curated-tier items get drift detection (analytics/drift.py
+            # filters on tier=curated before evaluating). Skipping the
+            # /drift call for non-curated tiers avoids one HTTP
+            # round-trip
             # per query and keeps the response shape consistent.
             drift_data = _get_json(c, f"/items/{slug}/drift")
 
     fresh_by_source: dict[str, dict] = {
         s["source"]: s for s in price_data["sources"]
     }
-    streak_by_source: dict[str, dict] = {}
     divergence_rows: list[dict] = []
+
+    # item_unavailability_streak was removed in Phase 2c (2026-05-18);
+    # see TODO.md. Sources without a recent observation fall through
+    # to the "never_observed" rendering below — the streak-based
+    # "unavailable for N cycles" branch no longer exists.
 
     now = datetime.now(UTC)
     for insight in insights_data["insights"]:
         meta = insight.get("meta") or {}
-        if insight["insight_type"] == "item_unavailability_streak":
-            source_name = meta.get("source_name")
-            if source_name:
-                streak_by_source[source_name] = {
-                    "streak_cycles": meta.get(
-                        "streak_cycles", int(insight.get("value", 0))
-                    ),
-                    "last_seen_observed": meta.get("last_seen_observed"),
-                    "first_seen_unavailable": meta.get(
-                        "first_seen_unavailable"
-                    ),
-                }
-        elif insight["insight_type"] == "cross_source_divergence":
+        if insight["insight_type"] == "cross_source_divergence":
             computed_at = _parse_iso(insight["computed_at"])
             age_h = (now - computed_at).total_seconds() / 3600
             if age_h > ANOMALY_FRESHNESS_HOURS:
@@ -547,23 +558,12 @@ def query_current_price(slug: str) -> dict:
                 if gap_minutes >= 60:
                     entry["price_flat_minutes"] = gap_minutes
             per_source.append(entry)
-        elif source_name in streak_by_source:
-            s = streak_by_source[source_name]
-            per_source.append(
-                {
-                    "source": source_name,
-                    "denomination": _DENOMINATION_BY_SOURCE.get(
-                        source_name
-                    ),
-                    "state": "unavailable",
-                    "streak_cycles": s["streak_cycles"],
-                    "last_seen_observed": s["last_seen_observed"],
-                    "first_seen_unavailable": s[
-                        "first_seen_unavailable"
-                    ],
-                }
-            )
         else:
+            # Three-state availability collapsed to two in Phase 2c
+            # (2026-05-18) with the item_unavailability_streak removal:
+            # the bot used to surface a streak-counted "unavailable"
+            # state here. Sources without observations now render as
+            # never_observed uniformly.
             per_source.append(
                 {
                     "source": source_name,
@@ -601,15 +601,15 @@ def query_current_price(slug: str) -> dict:
         "anomaly_flag": anomaly_flag,
     }
 
-    if tier == "deep" and drift_data is not None:
+    if tier == "curated" and drift_data is not None:
         result["drift_summary"] = {
             "pairs": [_shape_drift_pair(p) for p in drift_data.get("pairs", [])],
         }
-    elif tier == "broad":
-        result["tier_note"] = _TIER_NOTE_BROAD
-    elif tier == "orphan":
+    elif tier == "featured":
+        result["tier_note"] = _TIER_NOTE_FEATURED
+    elif tier == "substrate":
         active = _find_active_wear(slug)
-        result["tier_note"] = _tier_note_orphan(
+        result["tier_note"] = _tier_note_substrate(
             active["display_name"] if active else None
         )
         if active is not None:
@@ -629,7 +629,7 @@ def query_drift(slug: str) -> dict:
         {
             "slug": ...,
             "display_name": ...,
-            "tier": "deep" | "broad" | "orphan",
+            "tier": "curated" | "featured" | "substrate",
             "pairs": [
                 {
                     "source_a": "skinport",
@@ -645,18 +645,18 @@ def query_drift(slug: str) -> dict:
                 },
                 ...
             ],
-            "tier_note": "..." | None,           # set for broad/orphan
-            "active_wear_hint": {...} | None,    # set when orphan + sibling
+            "tier_note": "..." | None,           # set for featured/substrate
+            "active_wear_hint": {...} | None,    # set when substrate + sibling
         }
 
-    Non-deep tiers receive empty ``pairs`` plus a ``tier_note``. The
+    Non-curated tiers receive empty ``pairs`` plus a ``tier_note``. The
     LLM is instructed via the system prompt to render the
     ``framing`` string verbatim per pair, NOT to invent its own
     drift narrative."""
     with _client() as c:
         raw = _get_json(c, f"/items/{slug}/drift")
 
-    tier = raw.get("tier", "deep")
+    tier = raw.get("tier", "curated")
     pairs = [_shape_drift_pair(p) for p in raw.get("pairs", [])]
     result: dict[str, Any] = {
         "slug": raw["slug"],
@@ -664,11 +664,11 @@ def query_drift(slug: str) -> dict:
         "tier": tier,
         "pairs": pairs,
     }
-    if tier == "broad":
-        result["tier_note"] = _TIER_NOTE_BROAD
-    elif tier == "orphan":
+    if tier == "featured":
+        result["tier_note"] = _TIER_NOTE_FEATURED
+    elif tier == "substrate":
         active = _find_active_wear(slug)
-        result["tier_note"] = _tier_note_orphan(
+        result["tier_note"] = _tier_note_substrate(
             active["display_name"] if active else None
         )
         if active is not None:
@@ -698,8 +698,8 @@ def query_price_history(
     with _client() as c:
         raw = _get_json(c, f"/items/{slug}/history", params=params)
     result = _summarize_history(raw)
-    tier = raw.get("tier", "deep")
-    if tier != "deep":
+    tier = raw.get("tier", "curated")
+    if tier != "curated":
         result["tier"] = tier
         _attach_tier_envelope(result, slug=slug, tier=tier)
     return result
@@ -740,15 +740,15 @@ def render_chart(
 def _attach_tier_envelope(
     result: dict, *, slug: str, tier: str
 ) -> None:
-    """Inject ``tier_note`` and (for orphan + sibling exists)
+    """Inject ``tier_note`` and (for substrate + sibling exists)
     ``active_wear_hint`` into the result dict in-place. Centralizes
-    the broad/orphan post-processing so every item-level tool stays
+    the featured/substrate post-processing so every item-level tool stays
     consistent."""
-    if tier == "broad":
-        result["tier_note"] = _TIER_NOTE_BROAD
-    elif tier == "orphan":
+    if tier == "featured":
+        result["tier_note"] = _TIER_NOTE_FEATURED
+    elif tier == "substrate":
         active = _find_active_wear(slug)
-        result["tier_note"] = _tier_note_orphan(
+        result["tier_note"] = _tier_note_substrate(
             active["display_name"] if active else None
         )
         if active is not None:
@@ -779,8 +779,8 @@ def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
                 f"{resp.text[:200]}"
             )
         body = resp.json()
-        tier = body.get("tier", "deep")
-        if tier != "deep":
+        tier = body.get("tier", "curated")
+        if tier != "curated":
             _attach_tier_envelope(body, slug=slug, tier=tier)
         return body
 
@@ -1037,7 +1037,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "Get the current per-source price snapshot for one "
                 "item. Returns prices from each source (Skinport, "
                 "DMarket in USD; Steam in wallet credit), each with "
-                "freshness, plus (for deep-tier items) a "
+                "freshness, plus (for curated-tier items) a "
                 "drift_summary comparing our direct sources to "
                 "Pricempire and an anomaly_flag when a curated "
                 "cross-source divergence is active. Call this when "

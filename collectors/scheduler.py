@@ -159,18 +159,18 @@ def _load_dmarket_alias_map(
     watchlist_path: Path = DEFAULT_WATCHLIST_PATH,
 ) -> dict[str, frozenset[str]]:
     """Read watchlist.yaml, return ``{normalize_name(market_hash_name):
-    frozenset of normalize_name(alias)}`` for deep-tier items with a
+    frozenset of normalize_name(alias)}`` for curated-tier items with a
     non-empty ``dmarket_alias`` list.
 
     Phase 2b Step 6 (ADR 012 §7). Called once at scheduler start.
-    Broad-tier items with ``dmarket_alias`` are silently skipped here
-    — the watchlist loader already logged a WARN at YAML-load time.
-    Items without the field don't appear in the result.
+    Featured-tier items with ``dmarket_alias`` are silently skipped
+    here — the watchlist loader already logged a WARN at YAML-load
+    time. Items without the field don't appear in the result.
     """
     data = load_watchlist(watchlist_path)
     alias_map: dict[str, frozenset[str]] = {}
     for item in data["items"]:
-        if item.get("tier") != "deep":
+        if item.get("tier") != "curated":
             continue
         aliases = item.get("dmarket_alias")
         if not aliases:
@@ -209,17 +209,19 @@ def _load_enabled_sources(session: Session) -> list[SourceJobSpec]:
 # Phase 2b Step 7.1.5 (ADR 024): collectors filter the active
 # watchlist by tier from data/watchlist.yaml. Phase 1's items-table-
 # only read polled every row regardless of YAML state, which meant
-# items orphaned by a Step 7.1-style re-seed still got polled. The
-# gap surfaced at Step 7.2's Gate 1 verification — collectors were
-# polling 70 items (28 of them orphans) instead of the intended 42.
+# items dropped by a Step 7.1-style re-seed (now "substrate" items,
+# previously "orphan") still got polled. The gap surfaced at Step
+# 7.2's Gate 1 verification — collectors were polling 70 items (28
+# of them substrate) instead of the intended 42.
 #
 # Per-source tier filter:
-#   steam_market, dmarket → deep tier ONLY (rate-limit math; ADR 024)
-#   skinport              → deep + broad (bulk-fetch, free to expand)
+#   steam_market, dmarket → curated tier ONLY (rate-limit math; ADR 024)
+#   skinport              → curated + featured (bulk-fetch, free to
+#                           expand)
 #   pricempire            → bypasses this function entirely
 #                           (collect_snapshot() reads items table
-#                           directly, preserving orphan refresh)
-_DEEP_ONLY_SOURCES: frozenset[str] = frozenset(
+#                           directly, preserving substrate refresh)
+_CURATED_ONLY_SOURCES: frozenset[str] = frozenset(
     {"steam_market", "dmarket"}
 )
 
@@ -235,20 +237,21 @@ def _load_watchlist(
     tier per ADR 024.
 
     Reads from ``data/watchlist.yaml`` (NOT the items table). Items
-    orphaned by a re-seed — present in items but absent from YAML —
-    are silently excluded. The ``session`` parameter is retained for
-    signature stability but no longer used; future revisions can drop
-    it once all call sites are updated.
+    dropped by a re-seed — present in items but absent from YAML —
+    are silently excluded (these items are now "substrate"; see
+    api/watchlist_tiers.py). The ``session`` parameter is retained
+    for signature stability but no longer used; future revisions can
+    drop it once all call sites are updated.
 
     Tier filtering:
-    - source_name in {"steam_market", "dmarket"} → deep tier only
+    - source_name in {"steam_market", "dmarket"} → curated tier only
       (rate-limit math: 5s/item × 500 items > 60-min cycle for Steam;
       3s/item × 500 items > 15-min cycle for DMarket).
-    - source_name == "skinport" → deep + broad (bulk-fetch endpoint;
-      filtering happens in Python after a single HTTP call).
+    - source_name == "skinport" → curated + featured (bulk-fetch
+      endpoint; filtering happens in Python after a single HTTP call).
     - Pricempire bypasses this function entirely; its collect_snapshot
-      reads the items table directly so orphan-row data continues to
-      accumulate (ADR 024's orphan-preservation invariant).
+      reads the items table directly so substrate-row data continues
+      to accumulate (ADR 024's data-preservation invariant).
 
     Loaded ONCE per cycle by ``_run_cycle`` (confirmed at the call
     site). Future operator YAML edits require a collector restart to
@@ -259,17 +262,17 @@ def _load_watchlist(
     # tier-from-DB path); ignored under the current YAML-driven shape.
     del session
     data = load_watchlist(watchlist_path)
-    if source_name in _DEEP_ONLY_SOURCES:
+    if source_name in _CURATED_ONLY_SOURCES:
         names = [
             item["market_hash_name"]
             for item in data["items"]
-            if item.get("tier") == "deep"
+            if item.get("tier") == "curated"
         ]
     else:
         names = [
             item["market_hash_name"]
             for item in data["items"]
-            if item.get("tier") in {"deep", "broad"}
+            if item.get("tier") in {"curated", "featured"}
         ]
     names.sort()  # alphabetical, matches prior items-table ORDER BY
     if limit is not None and len(names) > limit:

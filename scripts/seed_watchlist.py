@@ -31,14 +31,17 @@ DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "data" / "watchlist.yaml"
 
 # Bump this if seed_watchlist.py's expectations of the YAML schema change
 # incompatibly. The YAML file declares its own ``schema_version`` we check.
-# Phase 2b (ADR 024) bumped to 2 — every item now requires a ``tier:``
-# field of value ``deep`` or ``broad``. The tier is YAML-side only; it is
-# NOT denormalized into the items table.
-_SUPPORTED_SCHEMA_VERSION = 2
+# Phase 2b (ADR 024) bumped to 2 — every item gained a ``tier:`` field.
+# Phase 2c bumped to 3 — vocabulary renamed deep→curated, broad→featured
+# (substrate is computed at read time, not a YAML value). The tier is
+# YAML-side only; it is NOT denormalized into the items table.
+_SUPPORTED_SCHEMA_VERSION = 3
 
 # Valid values for the per-item ``tier:`` field. Anything else is a
-# fail-fast error at load time.
-_VALID_TIERS: frozenset[str] = frozenset({"deep", "broad"})
+# fail-fast error at load time. ``substrate`` is computed at read time
+# (item exists in items table but not in this YAML); it never appears
+# as a YAML value.
+_VALID_TIERS: frozenset[str] = frozenset({"curated", "featured"})
 
 
 _INSERT_SOURCE_SQL = text(
@@ -129,9 +132,9 @@ def load_watchlist(path: Path) -> dict[str, Any]:
             )
 
         # Phase 2b Step 6: optional dmarket_alias field. Must be a
-        # list of non-empty strings when present. Broad-tier items
+        # list of non-empty strings when present. Featured-tier items
         # with this field log a WARN (dead config — DMarket isn't
-        # polled for broad-tier) but don't error.
+        # polled for featured-tier) but don't error.
         aliases = item.get("dmarket_alias")
         if aliases is not None:
             if not isinstance(aliases, list):
@@ -147,12 +150,12 @@ def load_watchlist(path: Path) -> dict[str, Any]:
                         f"dmarket_alias[{a_idx}] is not a non-empty "
                         f"string (got {alias!r})."
                     )
-            if tier == "broad":
+            if tier == "featured":
                 _log.warning(
                     "%s: items[%d] (%r) has dmarket_alias on a "
-                    "broad-tier item — dead config; DMarket isn't "
-                    "polled for broad tier (ADR 024). Remove the "
-                    "field or move the item to tier: deep.",
+                    "featured-tier item — dead config; DMarket isn't "
+                    "polled for featured tier (ADR 024). Remove the "
+                    "field or move the item to tier: curated.",
                     path,
                     idx,
                     mhn,

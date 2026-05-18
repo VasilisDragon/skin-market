@@ -1,14 +1,15 @@
-"""Broad-tier seeder for the two-tier watchlist (Phase 2b, ADR 024).
+"""Featured-tier seeder for the three-tier watchlist (Phase 2b
+foundation; renamed deep→curated / broad→featured at Phase 2c, ADR 024).
 
 Reads per-item Pricempire metadata (rank), filters out current
-deep-tier items and operator-maintained exclusions, then writes the
-top-N-by-rank set into ``data/watchlist.yaml`` as broad-tier entries.
+curated-tier items and operator-maintained exclusions, then writes the
+top-N-by-rank set into ``data/watchlist.yaml`` as featured-tier entries.
 
 Usage:
-    uv run python -m scripts.seed_broad_tier
-    uv run python -m scripts.seed_broad_tier --dry-run
-    uv run python -m scripts.seed_broad_tier --target-size 200
-    uv run python -m scripts.seed_broad_tier --watchlist /path/to/yaml
+    uv run python -m scripts.seed_featured_tier
+    uv run python -m scripts.seed_featured_tier --dry-run
+    uv run python -m scripts.seed_featured_tier --target-size 200
+    uv run python -m scripts.seed_featured_tier --watchlist /path/to/yaml
 
 Operator workflow:
     1. Run the script. Summary report prints to stdout BEFORE the YAML
@@ -16,21 +17,21 @@ Operator workflow:
     2. Review with ``git diff data/watchlist.yaml``.
     3. Commit if happy; ``git checkout -- data/watchlist.yaml`` otherwise.
     4. Deploy triggers ``scripts/seed_watchlist.py`` which inserts the
-       new broad-tier items into the ``items`` table.
+       new featured-tier items into the ``items`` table.
 
 Idempotent: re-running against the same metadata + exclusions produces
 no diff in ``data/watchlist.yaml``.
 
-Deep tier is never touched. Operators curate deep tier by hand via
-``scripts/watchlist_edit.py`` and direct YAML edits. The broad tier is
-the popularity-driven coverage layer; deep is editorial.
+Curated tier is never touched. Operators curate it by hand via
+``scripts/watchlist_edit.py`` and direct YAML edits. The featured tier
+is the popularity-driven coverage layer; curated is editorial.
 
-Deep-to-broad flow: items dropped from the deep tier (e.g. Step 7's
-re-seed) that still rank in the top-N will get promoted to broad tier
-by this seeder. That's expected — drop from deep is editorial,
-promotion to broad is popularity. The summary report's "Re-added"
-section makes the promotion visible. Use ``broad_tier_exclusions:`` in
-the YAML to veto specific items.
+Curated-to-featured flow: items dropped from the curated tier (e.g.
+Step 7's re-seed) that still rank in the top-N will get promoted to
+featured tier by this seeder. That's expected — drop from curated is
+editorial, promotion to featured is popularity. The summary report's
+"Re-added" section makes the promotion visible. Use
+``featured_tier_exclusions:`` in the YAML to veto specific items.
 
 One-time formatting reflow caveat: ruamel.yaml's round-trip preserves
 content but normalizes flow-style entry spacing (e.g. drops the
@@ -42,7 +43,7 @@ one-shot diff on first run; subsequent runs against the seeder-owned
 output are byte-clean. To keep Step 7's diff-review meaningful, run
 the seeder once on the current YAML in a separate normalize-only
 commit before doing any content-changing run. The semantic invariant
-("deep-tier item content is preserved") holds across the reflow.
+("curated-tier item content is preserved") holds across the reflow.
 """
 
 from __future__ import annotations
@@ -91,18 +92,30 @@ _TOP_RANK_CHANGES = 10
 
 @dataclass(frozen=True)
 class MetadataRow:
-    """One row from the Pricempire latest-per-item rank query."""
+    """One rank+liquidity row from the DB ``pricempire_item_metadata``
+    table, joined to ``items`` for the market_hash_name lookup.
 
-    item_id: uuid.UUID
+    ``item_id`` is ``Optional[UUID]`` for forward-compat with code paths
+    that construct ``MetadataRow`` without an items-table UUID (e.g.,
+    fixture-builders, or hypothetical future feeders that haven't been
+    seeded yet). Downstream pipeline never reads ``item_id`` after
+    construction — the rest of the module keys on ``market_hash_name``
+    end-to-end — so allowing ``None`` is a pure relaxation of the type
+    contract. ``TestComputeFeaturedTierWithNullItemId`` pins this invariant
+    against future refactors that might accidentally start reading the
+    field.
+    """
+
+    item_id: uuid.UUID | None
     market_hash_name: str
     rank: int
     liquidity: Decimal | None
 
 
 @dataclass(frozen=True)
-class BroadTierCandidate:
-    """A market_hash_name that qualifies for the broad tier under the
-    current rank + exclusion + deep-set filters."""
+class FeaturedTierCandidate:
+    """A market_hash_name that qualifies for the featured tier under the
+    current rank + exclusion + curated-set filters."""
 
     market_hash_name: str
     rank: int
@@ -115,29 +128,29 @@ class DiffReport:
     """Summary of what the seeder is about to change in
     ``data/watchlist.yaml``.
 
-    - ``added``: items in the new broad tier that were NOT in the
+    - ``added``: items in the new featured tier that were NOT in the
       items table previously. Genuinely new to the watchlist.
-    - ``re_added``: items in the new broad tier that DO exist in
+    - ``re_added``: items in the new featured tier that DO exist in
       ``items`` but aren't currently in the YAML. The Step-7
-      deep-tier-drop-flowing-into-broad case (or any operator-removed
+      curated-tier-drop-flowing-into-featured case (or any operator-removed
       item that became popular enough to qualify again). Surfaced
       separately so the operator can verify the promotion is
       expected.
-    - ``dropped``: items currently in broad tier no longer in the new
+    - ``dropped``: items currently in featured tier no longer in the new
       composition (rank fell out of top-N or got added to exclusions).
-    - ``kept``: items in both current and new broad tier. Used for
+    - ``kept``: items in both current and new featured tier. Used for
       total composition math and as the source for rank_changes.
     - ``rank_changes``: top-N kept items by |Δrank|. Compares latest
       vs second-latest rank in ``pricempire_item_metadata``. Capped at
       ``_TOP_RANK_CHANGES`` rows.
     - ``exclusion_hits``: items in the exclusion list whose latest
-      rank is at or better than the cutoff rank of the new broad
+      rank is at or better than the cutoff rank of the new featured
       tier — i.e. exclusions doing operational work. Surfaces
       vestigial exclusions vs. active ones.
     """
 
-    added: list[BroadTierCandidate]
-    re_added: list[BroadTierCandidate]
+    added: list[FeaturedTierCandidate]
+    re_added: list[FeaturedTierCandidate]
     dropped: list[str]
     kept: list[str]
     rank_changes: list[tuple[str, int, int]]  # (name, old_rank, new_rank)
@@ -245,36 +258,36 @@ def detect_flags(market_hash_name: str) -> tuple[bool, bool]:
     )
 
 
-def compute_broad_tier(
+def compute_featured_tier(
     metadata_rows: list[MetadataRow],
-    deep_set: set[str],
+    curated_set: set[str],
     exclusions: set[str],
     target_size: int,
-) -> list[BroadTierCandidate]:
+) -> list[FeaturedTierCandidate]:
     """Pick the top-``target_size``-by-rank market_hash_names for the
-    broad tier, skipping deep-set members and exclusions.
+    featured tier, skipping curated-set members and exclusions.
 
     ``target_size`` is the OUTPUT size after filters apply, not the
     input window. Iterates rank-ascending, accumulating candidates
-    until result reaches ``target_size``; deep-set members and
+    until result reaches ``target_size``; curated-set members and
     exclusion members are skipped silently along the way. This means
-    the broad tier maintains its target size as the exclusion list
+    the featured tier maintains its target size as the exclusion list
     grows — adding an exclusion shifts the cutoff rank one notch
     lower, it doesn't shrink the tier.
 
     ``test_exclusions_dont_shrink_output`` pins this invariant.
     """
-    result: list[BroadTierCandidate] = []
+    result: list[FeaturedTierCandidate] = []
     for row in metadata_rows:
         if len(result) >= target_size:
             break
-        if row.market_hash_name in deep_set:
+        if row.market_hash_name in curated_set:
             continue
         if row.market_hash_name in exclusions:
             continue
         stt, sv = detect_flags(row.market_hash_name)
         result.append(
-            BroadTierCandidate(
+            FeaturedTierCandidate(
                 market_hash_name=row.market_hash_name,
                 rank=row.rank,
                 is_stattrak=stt,
@@ -286,8 +299,8 @@ def compute_broad_tier(
 
 def diff_against_current(
     *,
-    new_broad: list[BroadTierCandidate],
-    current_broad_set: set[str],
+    new_featured: list[FeaturedTierCandidate],
+    current_featured_set: set[str],
     existing_items: set[str],
     metadata_rows: list[MetadataRow],
     previous_ranks: dict[str, int],
@@ -299,24 +312,24 @@ def diff_against_current(
     Pure function: takes everything it needs as inputs, no DB or
     filesystem access.
     """
-    new_names = {c.market_hash_name for c in new_broad}
-    new_by_name = {c.market_hash_name: c for c in new_broad}
+    new_names = {c.market_hash_name for c in new_featured}
+    new_by_name = {c.market_hash_name: c for c in new_featured}
 
-    added: list[BroadTierCandidate] = []
-    re_added: list[BroadTierCandidate] = []
-    for c in new_broad:
-        if c.market_hash_name in current_broad_set:
+    added: list[FeaturedTierCandidate] = []
+    re_added: list[FeaturedTierCandidate] = []
+    for c in new_featured:
+        if c.market_hash_name in current_featured_set:
             continue  # kept (rank may have changed; handled below)
         if c.market_hash_name in existing_items:
             re_added.append(c)
         else:
             added.append(c)
 
-    dropped = sorted(current_broad_set - new_names)
-    kept = sorted(current_broad_set & new_names)
+    dropped = sorted(current_featured_set - new_names)
+    kept = sorted(current_featured_set & new_names)
 
     # Rank changes among kept items: compare current rank (from
-    # new_broad's entry) to previous-cycle rank (from previous_ranks).
+    # new_featured's entry) to previous-cycle rank (from previous_ranks).
     rank_changes_all: list[tuple[str, int, int]] = []
     for name in kept:
         new_rank = new_by_name[name].rank
@@ -328,12 +341,12 @@ def diff_against_current(
     rank_changes = rank_changes_all[:_TOP_RANK_CHANGES]
 
     # Exclusion hits: items in exclusions whose latest rank is at or
-    # better than the cutoff rank of the new broad tier. Approximation:
-    # the cutoff is new_broad[-1].rank. If an excluded item's rank is
+    # better than the cutoff rank of the new featured tier. Approximation:
+    # the cutoff is new_featured[-1].rank. If an excluded item's rank is
     # ≤ that, lifting the exclusion would put it in (modulo
     # tie-breaking, which we accept as fuzz for this operator signal).
-    if new_broad:
-        cutoff_rank = new_broad[-1].rank
+    if new_featured:
+        cutoff_rank = new_featured[-1].rank
         metadata_by_name = {r.market_hash_name: r.rank for r in metadata_rows}
         hits = [
             (name, metadata_by_name[name])
@@ -361,33 +374,33 @@ def diff_against_current(
 
 
 def partition_yaml_items(yaml_data: Any) -> tuple[set[str], set[str]]:
-    """Return ``(deep_set, broad_set)`` of market_hash_names from the
+    """Return ``(curated_set, featured_set)`` of market_hash_names from the
     YAML's ``items:`` block. Items lacking a ``tier:`` field are
     skipped silently — the loader fail-fasts on those at load time,
     so this defensive skip is belt-and-braces."""
-    deep_set: set[str] = set()
-    broad_set: set[str] = set()
+    curated_set: set[str] = set()
+    featured_set: set[str] = set()
     for item in yaml_data.get("items") or []:
         name = item.get("market_hash_name") if isinstance(item, dict) else None
         tier = item.get("tier") if isinstance(item, dict) else None
         if not name or tier is None:
             continue
-        if tier == "deep":
-            deep_set.add(name)
-        elif tier == "broad":
-            broad_set.add(name)
-    return deep_set, broad_set
+        if tier == "curated":
+            curated_set.add(name)
+        elif tier == "featured":
+            featured_set.add(name)
+    return curated_set, featured_set
 
 
 def load_exclusions(yaml_data: Any) -> set[str]:
-    """Read the top-level ``broad_tier_exclusions:`` list. Absent or
+    """Read the top-level ``featured_tier_exclusions:`` list. Absent or
     empty → empty set. Non-list values raise ValueError."""
-    raw = yaml_data.get("broad_tier_exclusions")
+    raw = yaml_data.get("featured_tier_exclusions")
     if raw is None:
         return set()
     if not isinstance(raw, list):
         raise ValueError(
-            f"broad_tier_exclusions must be a list, got {type(raw).__name__}"
+            f"featured_tier_exclusions must be a list, got {type(raw).__name__}"
         )
     return set(raw)
 
@@ -402,10 +415,10 @@ def apply_yaml_changes(
     diff: DiffReport,
 ) -> None:
     """Mutate ``yaml_data`` in place: remove dropped items, append
-    added + re_added items with ``tier: broad`` (and StatTrak / Souvenir
-    flags when applicable). Deep-tier items are never touched.
+    added + re_added items with ``tier: featured`` (and StatTrak / Souvenir
+    flags when applicable). Curated-tier items are never touched.
 
-    Existing broad-tier items that survive (kept) are left unchanged —
+    Existing featured-tier items that survive (kept) are left unchanged —
     we don't rewrite them to update rank in the YAML because rank is
     NOT stored in the YAML. The seeder is composition-only; rank lives
     in ``pricempire_item_metadata``.
@@ -427,8 +440,8 @@ def apply_yaml_changes(
                 del items[idx]
 
     # Adds + re-adds: append minimal flow-style entries with
-    # tier: broad. We don't fill item_type/weapon_name/skin_name/wear
-    # for broad-tier items; those columns are nullable in items table
+    # tier: featured. We don't fill item_type/weapon_name/skin_name/wear
+    # for featured-tier items; those columns are nullable in items table
     # and the bot's category dispatch falls back to display-name
     # parsing.
     for candidate in [*diff.re_added, *diff.added]:
@@ -439,7 +452,7 @@ def apply_yaml_changes(
             fields["is_stattrak"] = True
         if candidate.is_souvenir:
             fields["is_souvenir"] = True
-        fields["tier"] = "broad"
+        fields["tier"] = "featured"
         items.append(_flow_entry(fields))
 
 
@@ -490,7 +503,7 @@ def print_summary(
     """
     out = file if file is not None else sys.stdout
 
-    print("Broad-tier seed plan:", file=out)
+    print("Featured-tier seed plan:", file=out)
     print(
         f"  Target size: {target_size}; new composition: "
         f"{total_composition} items",
@@ -505,7 +518,7 @@ def print_summary(
         print(f"    {_format_sample(sample)}", file=out)
 
     print(
-        f"  Re-added (previously tracked, now restored to broad): "
+        f"  Re-added (previously tracked, now restored to featured): "
         f"{len(diff.re_added)}",
         file=out,
     )
@@ -515,11 +528,11 @@ def print_summary(
         ]
         print(f"    {_format_sample(sample)}", file=out)
 
-    print(f"  Dropped from broad: {len(diff.dropped)}", file=out)
+    print(f"  Dropped from featured: {len(diff.dropped)}", file=out)
     if diff.dropped:
         print(f"    {_format_sample(diff.dropped)}", file=out)
 
-    print(f"  Kept in broad: {len(diff.kept)}", file=out)
+    print(f"  Kept in featured: {len(diff.kept)}", file=out)
 
     print(
         f"  Top rank changes among kept (cap {_TOP_RANK_CHANGES}): "
@@ -556,7 +569,7 @@ def run(
     dry_run: bool,
     file: TextIO | None = None,
 ) -> int:
-    """End-to-end: load YAML + metadata, compute new broad tier,
+    """End-to-end: load YAML + metadata, compute new featured tier,
     print report, optionally write YAML. Returns 0 on success.
 
     ``file`` is the report's output stream — defaults to stdout; tests
@@ -576,7 +589,7 @@ def run(
         )
         return 2
 
-    deep_set, current_broad_set = partition_yaml_items(yaml_data)
+    curated_set, current_featured_set = partition_yaml_items(yaml_data)
     exclusions = load_exclusions(yaml_data)
 
     engine = get_engine()
@@ -585,15 +598,15 @@ def run(
         previous_ranks = load_previous_ranks(session)
         existing_items = load_existing_item_names(session)
 
-    new_broad = compute_broad_tier(
+    new_featured = compute_featured_tier(
         metadata_rows=metadata_rows,
-        deep_set=deep_set,
+        curated_set=curated_set,
         exclusions=exclusions,
         target_size=target_size,
     )
     diff = diff_against_current(
-        new_broad=new_broad,
-        current_broad_set=current_broad_set,
+        new_featured=new_featured,
+        current_featured_set=current_featured_set,
         existing_items=existing_items,
         metadata_rows=metadata_rows,
         previous_ranks=previous_ranks,
@@ -602,7 +615,7 @@ def run(
     print_summary(
         diff,
         target_size=target_size,
-        total_composition=len(new_broad),
+        total_composition=len(new_featured),
         file=out,
     )
 
@@ -613,7 +626,7 @@ def run(
     apply_yaml_changes(yaml_data, diff)
     write_yaml(watchlist_path, yaml_data)
     print(
-        f"\nWrote {len(new_broad)} broad-tier items to {watchlist_path}. "
+        f"\nWrote {len(new_featured)} featured-tier items to {watchlist_path}. "
         f"Review with `git diff {watchlist_path.name}`.",
         file=out,
     )
@@ -638,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_TARGET_SIZE,
         help=(
-            f"Number of broad-tier items in the output, after filters. "
+            f"Number of featured-tier items in the output, after filters. "
             f"Default {DEFAULT_TARGET_SIZE}."
         ),
     )

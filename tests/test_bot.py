@@ -61,7 +61,7 @@ def _bot_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def _reset_items_cache():
     """Clear the items cache before AND after each test so a test
-    that populates it (e.g. orphan-tier wear-disambiguation cases)
+    that populates it (e.g. substrate-tier wear-disambiguation cases)
     doesn't leak into the next test. Phase 2b Step 9."""
     _refresh_items_cache(None)
     yield
@@ -74,7 +74,7 @@ def _drift_payload(slug: str = "x", pairs: list[dict] | None = None) -> dict:
     return {
         "slug": slug,
         "display_name": slug.upper(),
-        "tier": "deep",
+        "tier": "curated",
         "pairs": pairs or [],
     }
 
@@ -154,12 +154,15 @@ class TestToolsAuthAndConnectivity:
 
 
 class TestQueryCurrentPriceComposer:
-    """The three-state composer is the only non-trivial tool. Re-test
-    the categorization, the anomaly flag, and the never_observed
-    fallback so a refactor can't quietly break the bot's rendering."""
+    """The two-state composer is the only non-trivial tool. Re-test the
+    categorization, the anomaly flag, and the never_observed fallback
+    so a refactor can't quietly break the bot's rendering. (The
+    three-state composer's "unavailable" state collapsed to
+    never_observed in Phase 2c with the item_unavailability_streak
+    removal.)"""
 
     @staticmethod
-    def _price(sources: list[dict], tier: str = "deep") -> dict:
+    def _price(sources: list[dict], tier: str = "curated") -> dict:
         return {
             "slug": "x",
             "display_name": "X",
@@ -169,21 +172,25 @@ class TestQueryCurrentPriceComposer:
 
     @staticmethod
     def _insights(rows: list[dict]) -> dict:
-        return {"slug": "x", "tier": "deep", "insights": rows}
+        return {"slug": "x", "tier": "curated", "insights": rows}
 
     @staticmethod
     def _register_default_drift(httpx_mock) -> None:
         """Most price-composer tests don't exercise drift; default to
-        empty pairs so the /drift call the bot now makes for deep-tier
+        empty pairs so the /drift call the bot now makes for curated-tier
         items doesn't 404. Tests that want non-empty drift register
         their own response BEFORE calling query_current_price."""
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/drift", json=_drift_payload(),
         )
 
-    def test_fresh_unavailable_never_observed(
-        self, httpx_mock
-    ) -> None:
+    def test_fresh_and_never_observed(self, httpx_mock) -> None:
+        """Sources with no observation collapse to never_observed.
+        Phase 2c collapsed the previous three-state model
+        (fresh / unavailable-with-streak / never_observed) to two
+        states with the removal of item_unavailability_streak — sources
+        the collector has never polled (or hasn't polled in a while)
+        all land in never_observed uniformly."""
         now = datetime.now(UTC)
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/price",
@@ -206,36 +213,17 @@ class TestQueryCurrentPriceComposer:
         )
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/insights",
-            json=self._insights(
-                [
-                    {
-                        "insight_type": "item_unavailability_streak",
-                        "computed_at": now.isoformat(),
-                        "value": "3",
-                        "text_value": None,
-                        "meta": {
-                            "source_name": "steam_market",
-                            "streak_cycles": 3,
-                            "last_seen_observed": (
-                                (now - timedelta(hours=4)).isoformat()
-                            ),
-                            "first_seen_unavailable": (
-                                (now - timedelta(hours=3)).isoformat()
-                            ),
-                        },
-                    }
-                ]
-            ),
+            json=self._insights([]),
         )
         self._register_default_drift(httpx_mock)
         result = query_current_price("x")
         states = {p["source"]: p["state"] for p in result["per_source"]}
         assert states == {
             "skinport": "fresh",
-            "steam_market": "unavailable",
+            "steam_market": "never_observed",
             "dmarket": "never_observed",
         }
-        # Denomination tagged on never_observed too.
+        # Denomination tagged on never_observed entries too.
         denoms = {
             p["source"]: p["denomination"] for p in result["per_source"]
         }
@@ -449,7 +437,7 @@ def _items_fixture_for_orphan_test() -> list[dict]:
             "slug": "usp-s-neo-noir-field-tested",
             "market_hash_name": "USP-S | Neo-Noir (Field-Tested)",
             "display_name": "USP-S | Neo-Noir (Field-Tested)",
-            "tier": "deep",
+            "tier": "curated",
             "weapon_name": "USP-S",
             "skin_name": "Neo-Noir",
             "is_stattrak": False,
@@ -459,7 +447,7 @@ def _items_fixture_for_orphan_test() -> list[dict]:
             "slug": "usp-s-neo-noir-factory-new",
             "market_hash_name": "USP-S | Neo-Noir (Factory New)",
             "display_name": "USP-S | Neo-Noir (Factory New)",
-            "tier": "orphan",
+            "tier": "substrate",
             "weapon_name": "USP-S",
             "skin_name": "Neo-Noir",
             "is_stattrak": False,
@@ -469,7 +457,7 @@ def _items_fixture_for_orphan_test() -> list[dict]:
             "slug": "awp-dragon-lore-factory-new",
             "market_hash_name": "AWP | Dragon Lore (Factory New)",
             "display_name": "AWP | Dragon Lore (Factory New)",
-            "tier": "deep",
+            "tier": "curated",
             "weapon_name": "AWP",
             "skin_name": "Dragon Lore",
             "is_stattrak": False,
@@ -479,7 +467,7 @@ def _items_fixture_for_orphan_test() -> list[dict]:
             "slug": "awp-dragon-lore-field-tested",
             "market_hash_name": "AWP | Dragon Lore (Field-Tested)",
             "display_name": "AWP | Dragon Lore (Field-Tested)",
-            "tier": "orphan",
+            "tier": "substrate",
             "weapon_name": "AWP",
             "skin_name": "Dragon Lore",
             "is_stattrak": False,
@@ -526,13 +514,13 @@ class TestQueryDrift:
     """Direct /drift tool. Mocks /items/{slug}/drift and asserts the
     bot's shaping layer renders the framing strings per verdict."""
 
-    def test_returns_deep_tier_with_pairs(self, httpx_mock) -> None:
+    def test_returns_curated_tier_with_pairs(self, httpx_mock) -> None:
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/drift",
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [
                     _drift_pair(verdict="no_drift", drift="-0.0123"),
                     _drift_pair(
@@ -545,7 +533,7 @@ class TestQueryDrift:
             },
         )
         result = query_drift("x")
-        assert result["tier"] == "deep"
+        assert result["tier"] == "curated"
         assert len(result["pairs"]) == 2
         verdicts = {p["verdict"] for p in result["pairs"]}
         assert verdicts == {"no_drift", "drift_alert"}
@@ -559,7 +547,7 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [_drift_pair(verdict="drift_alert", drift="0.1532")],
             },
         )
@@ -576,7 +564,7 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [_drift_pair(verdict="no_drift", drift="-0.0123")],
             },
         )
@@ -591,7 +579,7 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [
                     _drift_pair(
                         verdict="pattern_skip",
@@ -625,7 +613,7 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [
                     _drift_pair(
                         verdict=verdict,
@@ -649,7 +637,7 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [
                     _drift_pair(
                         verdict="no_comparable_data",
@@ -665,7 +653,7 @@ class TestQueryDrift:
         assert p["drift_pct"] is None
         assert "warming up" in p["framing"].lower()
 
-    def test_broad_tier_carries_tier_note_no_pairs(
+    def test_featured_tier_carries_tier_note_no_pairs(
         self, httpx_mock
     ) -> None:
         httpx_mock.add_response(
@@ -673,19 +661,19 @@ class TestQueryDrift:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "broad",
+                "tier": "featured",
                 "pairs": [],
             },
         )
         result = query_drift("x")
-        assert result["tier"] == "broad"
+        assert result["tier"] == "featured"
         assert result["pairs"] == []
-        assert "broad watchlist" in result["tier_note"]
+        assert "featured watchlist" in result["tier_note"]
         # No active_wear_hint for broad tier — broad isn't a wear-tier
         # swap case.
         assert "active_wear_hint" not in result
 
-    def test_orphan_tier_with_active_wear_hint(
+    def test_substrate_tier_with_active_wear_hint(
         self, httpx_mock
     ) -> None:
         """Two real Step 7.1 wear swaps: USP-S Neo-Noir FN (orphan)
@@ -696,14 +684,14 @@ class TestQueryDrift:
             json={
                 "slug": "usp-s-neo-noir-factory-new",
                 "display_name": "USP-S | Neo-Noir (Factory New)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "pairs": [],
             },
         )
         result = query_drift("usp-s-neo-noir-factory-new")
-        assert result["tier"] == "orphan"
+        assert result["tier"] == "substrate"
         assert result["pairs"] == []
-        assert "no longer actively tracked" in result["tier_note"]
+        assert "actively-tracked watchlist" in result["tier_note"]
         assert (
             result["active_wear_hint"]["slug"]
             == "usp-s-neo-noir-field-tested"
@@ -711,7 +699,7 @@ class TestQueryDrift:
         # The tier_note explicitly references the active wear by name.
         assert "Field-Tested" in result["tier_note"]
 
-    def test_orphan_tier_dragon_lore_swap(self, httpx_mock) -> None:
+    def test_substrate_tier_dragon_lore_swap(self, httpx_mock) -> None:
         """AWP Dragon Lore FT (orphan) → FN (deep) is the other Step
         7.1 wear swap; pin it explicitly so a future YAML edit can't
         silently break the hint."""
@@ -721,7 +709,7 @@ class TestQueryDrift:
             json={
                 "slug": "awp-dragon-lore-field-tested",
                 "display_name": "AWP | Dragon Lore (Field-Tested)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "pairs": [],
             },
         )
@@ -731,10 +719,10 @@ class TestQueryDrift:
             == "awp-dragon-lore-factory-new"
         )
 
-    def test_orphan_tier_without_sibling_falls_back_gracefully(
+    def test_substrate_tier_without_sibling_falls_back_gracefully(
         self, httpx_mock
     ) -> None:
-        """An orphan with no deep-tier sibling (e.g. a unique skin
+        """An orphan with no curated-tier sibling (e.g. a unique skin
         whose only wear was dropped) gets tier_note without an
         active_wear_hint."""
         cache = [
@@ -742,7 +730,7 @@ class TestQueryDrift:
                 "slug": "lonely-orphan-field-tested",
                 "market_hash_name": "Lonely | Orphan (Field-Tested)",
                 "display_name": "Lonely | Orphan (Field-Tested)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "weapon_name": "Lonely",
                 "skin_name": "Orphan",
                 "is_stattrak": False,
@@ -755,18 +743,18 @@ class TestQueryDrift:
             json={
                 "slug": "lonely-orphan-field-tested",
                 "display_name": "Lonely | Orphan (Field-Tested)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "pairs": [],
             },
         )
         result = query_drift("lonely-orphan-field-tested")
         assert "active_wear_hint" not in result
-        assert "no longer actively tracked" in result["tier_note"]
+        assert "actively-tracked watchlist" in result["tier_note"]
 
 
 class TestQueryCurrentPriceDriftIntegration:
     """The extended query_current_price now fetches /drift in
-    addition to /price + /insights for deep-tier items, and merges
+    addition to /price + /insights for curated-tier items, and merges
     the drift_summary block into the response. Pin the integration."""
 
     def test_deep_tier_includes_drift_summary(self, httpx_mock) -> None:
@@ -775,25 +763,25 @@ class TestQueryCurrentPriceDriftIntegration:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "sources": [],
             },
         )
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/insights",
-            json={"slug": "x", "tier": "deep", "insights": []},
+            json={"slug": "x", "tier": "curated", "insights": []},
         )
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/drift",
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "pairs": [_drift_pair(verdict="no_drift", drift="0.0050")],
             },
         )
         result = query_current_price("x")
-        assert result["tier"] == "deep"
+        assert result["tier"] == "curated"
         assert "drift_summary" in result
         assert len(result["drift_summary"]["pairs"]) == 1
         assert result["drift_summary"]["pairs"][0]["verdict"] == "no_drift"
@@ -807,21 +795,21 @@ class TestQueryCurrentPriceDriftIntegration:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "broad",
+                "tier": "featured",
                 "sources": [],
             },
         )
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/insights",
-            json={"slug": "x", "tier": "broad", "insights": []},
+            json={"slug": "x", "tier": "featured", "insights": []},
         )
         result = query_current_price("x")
-        assert result["tier"] == "broad"
+        assert result["tier"] == "featured"
         assert "drift_summary" not in result
         assert "tier_note" in result
-        assert "broad watchlist" in result["tier_note"]
+        assert "featured watchlist" in result["tier_note"]
 
-    def test_orphan_tier_skips_drift_with_active_wear_hint(
+    def test_substrate_tier_skips_drift_with_active_wear_hint(
         self, httpx_mock
     ) -> None:
         _refresh_items_cache(_items_fixture_for_orphan_test())
@@ -830,7 +818,7 @@ class TestQueryCurrentPriceDriftIntegration:
             json={
                 "slug": "usp-s-neo-noir-factory-new",
                 "display_name": "USP-S | Neo-Noir (Factory New)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "sources": [],
             },
         )
@@ -838,12 +826,12 @@ class TestQueryCurrentPriceDriftIntegration:
             url=f"{_BASE}/items/usp-s-neo-noir-factory-new/insights",
             json={
                 "slug": "usp-s-neo-noir-factory-new",
-                "tier": "orphan",
+                "tier": "substrate",
                 "insights": [],
             },
         )
         result = query_current_price("usp-s-neo-noir-factory-new")
-        assert result["tier"] == "orphan"
+        assert result["tier"] == "substrate"
         assert "drift_summary" not in result
         assert (
             result["active_wear_hint"]["slug"]
@@ -863,7 +851,7 @@ class TestQueryCurrentPriceDriftIntegration:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "sources": [],
             },
         )
@@ -871,7 +859,7 @@ class TestQueryCurrentPriceDriftIntegration:
             url=f"{_BASE}/items/x/insights",
             json={
                 "slug": "x",
-                "tier": "deep",
+                "tier": "curated",
                 "insights": [
                     {
                         "insight_type": "cross_source_divergence",
@@ -924,7 +912,7 @@ class TestEvaluateDealTierEnvelope:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "deep",
+                "tier": "curated",
                 "offer": {"amount": "10.00", "currency": "usd"},
                 "verdict": "no_comparable_data",
                 "comparable": [],
@@ -941,7 +929,7 @@ class TestEvaluateDealTierEnvelope:
             json={
                 "slug": "x",
                 "display_name": "X",
-                "tier": "broad",
+                "tier": "featured",
                 "offer": {"amount": "10.00", "currency": "usd"},
                 "verdict": "no_comparable_data",
                 "comparable": [],
@@ -950,11 +938,11 @@ class TestEvaluateDealTierEnvelope:
             },
         )
         result = evaluate_deal("x", "10.00", "usd")
-        assert "broad watchlist" in result["tier_note"]
+        assert "featured watchlist" in result["tier_note"]
 
 
 class TestQueryPriceHistoryTierEnvelope:
-    def test_orphan_history_carries_tier_note(self, httpx_mock) -> None:
+    def test_substrate_history_carries_tier_note(self, httpx_mock) -> None:
         _refresh_items_cache(_items_fixture_for_orphan_test())
         httpx_mock.add_response(
             url=re.compile(
@@ -963,7 +951,7 @@ class TestQueryPriceHistoryTierEnvelope:
             ),
             json={
                 "slug": "usp-s-neo-noir-factory-new",
-                "tier": "orphan",
+                "tier": "substrate",
                 "source": None,
                 "since": "",
                 "until": "",
@@ -973,8 +961,8 @@ class TestQueryPriceHistoryTierEnvelope:
             },
         )
         result = query_price_history("usp-s-neo-noir-factory-new")
-        assert result.get("tier") == "orphan"
-        assert "no longer actively tracked" in result["tier_note"]
+        assert result.get("tier") == "substrate"
+        assert "actively-tracked watchlist" in result["tier_note"]
 
 
 class TestFindActiveWearMatching:
@@ -991,7 +979,7 @@ class TestFindActiveWearMatching:
             {
                 "slug": "rifle-skin-fn-stt",
                 "market_hash_name": "StatTrak™ Rifle | Skin (FN)",
-                "tier": "orphan",
+                "tier": "substrate",
                 "weapon_name": "Rifle",
                 "skin_name": "Skin",
                 "is_stattrak": True,
@@ -1002,7 +990,7 @@ class TestFindActiveWearMatching:
             {
                 "slug": "rifle-skin-ft-base",
                 "market_hash_name": "Rifle | Skin (FT)",
-                "tier": "deep",
+                "tier": "curated",
                 "weapon_name": "Rifle",
                 "skin_name": "Skin",
                 "is_stattrak": False,

@@ -30,7 +30,7 @@ def _isolated_tiers(tmp_path: Path):
 
 
 _BASIC_YAML = """\
-schema_version: 2
+schema_version: 3
 sources:
   - name: skinport
     base_url: https://api.skinport.com
@@ -38,57 +38,57 @@ sources:
     enabled: true
     denomination: usd
 items:
-  - market_hash_name: "Deep Sentinel One (Factory New)"
+  - market_hash_name: "Curated Sentinel One (Factory New)"
     item_type: rifle
     weapon_name: "DSO"
     skin_name: "One"
     wear: "Factory New"
-    tier: deep
-  - market_hash_name: "Deep Sentinel Two (Factory New)"
+    tier: curated
+  - market_hash_name: "Curated Sentinel Two (Factory New)"
     item_type: rifle
     weapon_name: "DST"
     skin_name: "Two"
     wear: "Factory New"
-    tier: deep
-  - market_hash_name: "Broad Sentinel (Factory New)"
+    tier: curated
+  - market_hash_name: "Featured Sentinel (Factory New)"
     item_type: rifle
     weapon_name: "BS"
-    skin_name: "Broad"
+    skin_name: "Featured"
     wear: "Factory New"
-    tier: broad
+    tier: featured
 """
 
 
 class TestGetTier:
-    def test_deep_item_returns_deep(self, _isolated_tiers: Path) -> None:
+    def test_curated_item_returns_curated(self, _isolated_tiers: Path) -> None:
         yaml_path = _isolated_tiers / "watchlist.yaml"
         _write_yaml(yaml_path, _BASIC_YAML)
         watchlist_tiers.reload(yaml_path)
         assert (
-            watchlist_tiers.get_tier("Deep Sentinel One (Factory New)")
-            == "deep"
+            watchlist_tiers.get_tier("Curated Sentinel One (Factory New)")
+            == "curated"
         )
 
-    def test_broad_item_returns_broad(self, _isolated_tiers: Path) -> None:
+    def test_featured_item_returns_featured(self, _isolated_tiers: Path) -> None:
         yaml_path = _isolated_tiers / "watchlist.yaml"
         _write_yaml(yaml_path, _BASIC_YAML)
         watchlist_tiers.reload(yaml_path)
         assert (
-            watchlist_tiers.get_tier("Broad Sentinel (Factory New)")
-            == "broad"
+            watchlist_tiers.get_tier("Featured Sentinel (Factory New)")
+            == "featured"
         )
 
-    def test_unknown_in_yaml_returns_orphan(
+    def test_unknown_in_yaml_returns_substrate(
         self, _isolated_tiers: Path
     ) -> None:
         """An item NOT in YAML — caller's precondition is "this item
-        exists in the items table." That's the orphan case."""
+        exists in the items table." That's the substrate case."""
         yaml_path = _isolated_tiers / "watchlist.yaml"
         _write_yaml(yaml_path, _BASIC_YAML)
         watchlist_tiers.reload(yaml_path)
         assert (
             watchlist_tiers.get_tier("Orphaned Item (Factory New)")
-            == "orphan"
+            == "substrate"
         )
 
     def test_empty_market_hash_name_raises(
@@ -111,35 +111,35 @@ class TestReload:
         _write_yaml(yaml_path, _BASIC_YAML)
         watchlist_tiers.reload(yaml_path)
         assert (
-            watchlist_tiers.get_tier("Broad Sentinel (Factory New)")
-            == "broad"
+            watchlist_tiers.get_tier("Featured Sentinel (Factory New)")
+            == "featured"
         )
 
         # Same item flipped to deep.
         updated = _BASIC_YAML.replace(
-            'market_hash_name: "Broad Sentinel (Factory New)"\n'
+            'market_hash_name: "Featured Sentinel (Factory New)"\n'
             '    item_type: rifle\n'
             '    weapon_name: "BS"\n'
-            '    skin_name: "Broad"\n'
+            '    skin_name: "Featured"\n'
             '    wear: "Factory New"\n'
-            '    tier: broad',
-            'market_hash_name: "Broad Sentinel (Factory New)"\n'
+            '    tier: featured',
+            'market_hash_name: "Featured Sentinel (Factory New)"\n'
             '    item_type: rifle\n'
             '    weapon_name: "BS"\n'
-            '    skin_name: "Broad"\n'
+            '    skin_name: "Featured"\n'
             '    wear: "Factory New"\n'
-            '    tier: deep',
+            '    tier: curated',
         )
         _write_yaml(yaml_path, updated)
         # Without reload, cache still says "broad".
         assert (
-            watchlist_tiers.get_tier("Broad Sentinel (Factory New)")
-            == "broad"
+            watchlist_tiers.get_tier("Featured Sentinel (Factory New)")
+            == "featured"
         )
         watchlist_tiers.reload(yaml_path)
         assert (
-            watchlist_tiers.get_tier("Broad Sentinel (Factory New)")
-            == "deep"
+            watchlist_tiers.get_tier("Featured Sentinel (Factory New)")
+            == "curated"
         )
 
     def test_reload_with_invalid_yaml_raises(
@@ -149,7 +149,7 @@ class TestReload:
         at load time, exactly the way seed_watchlist.load_watchlist
         fails fast. Tier helper delegates validation to load_watchlist."""
         bad_yaml = """\
-        schema_version: 2
+        schema_version: 3
         sources:
           - name: skinport
             base_url: https://api.skinport.com
@@ -179,7 +179,7 @@ class TestLiveWatchlistLoads:
         tier = watchlist_tiers.get_tier(
             "AK-47 | Redline (Field-Tested)"
         )
-        assert tier in {"deep", "broad"}, (
+        assert tier in {"curated", "featured"}, (
             f"Real watchlist item returned tier={tier!r}; expected "
-            f"deep or broad"
+            f"curated or featured"
         )

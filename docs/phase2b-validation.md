@@ -1,5 +1,9 @@
 # Phase 2b live-cycle validation
 
+> **Retrospective note (2026-05-18, Phase 2c rename).** This document was written using the original tier vocabulary `deep / broad / orphan`. Phase 2c renamed these to `curated / featured / substrate` (ADR 024, schema_version bump 2→3). Historical references in §3, §4, §4.5, and §5 are left intact for audit fidelity — readers should mentally map: `deep tier` → `curated tier`, `broad tier` → `featured tier`, `orphan tier` → `substrate tier`. The empirical numbers and canaries documented here remain valid against the post-rename system.
+>
+> Additionally, the `item_unavailability_streak` analytics referenced in §4.5 was **removed entirely** in Phase 2c (see TODO.md "item_unavailability_streak removal"). The 6,328-rows-in-21h orphan-growth observation is no longer relevant; the signal doesn't exist.
+
 **Window:** 2026-05-16 23:16 UTC → 2026-05-17 20:46 UTC (21h 30min, 44 drift cycles).
 **Deploy:** `DRIFT_DETECTION_ENABLED=true` flipped at 2026-05-16 23:16 UTC (the first `drift_verdict` row's `computed_at` is the authoritative deploy marker; the 8c037cb commit's `Sat May 16 18:20:33 -0500` timestamp is commit-creation time, not deploy time).
 **Coverage:** 42 deep-tier items × 2 meaningful pairs = 84 rows/cycle, 44 cycles, 3,696 total `drift_verdict` rows. No misfires.

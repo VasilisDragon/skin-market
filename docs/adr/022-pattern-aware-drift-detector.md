@@ -10,7 +10,7 @@ ADR 023 (pricempire_observation_log), ADR 024 (two-tier watchlist).
 ## Context
 
 Pricempire ingest (ADR 018) gives the project two independent prices
-per deep-tier item per cross-marketplace pair: the direct collector
+per curated-tier item per cross-marketplace pair: the direct collector
 (Skinport, DMarket) and Pricempire's view of the same provider. With
 those streams flowing, there's a question they're now positioned to
 answer: when do they disagree?
@@ -45,7 +45,7 @@ decisions sit on top of.
 
 ### §2.1 Meaningful pairs are direct × Pricempire-mirror only
 
-Two pairs per deep-tier item:
+Two pairs per curated-tier item:
 
 ```
 (skinport, pricempire_skinport)
@@ -58,7 +58,7 @@ pricempire_dmarket`) mix taxonomies and would produce meaningless
 spreads. Pinned in `analytics/drift.py:113-116` and tested at
 `tests/test_drift.py::test_meaningful_pairs_match_adr_018`.
 
-Per cycle: 42 deep-tier items × 2 pairs = 84 evaluations.
+Per cycle: 42 curated-tier items × 2 pairs = 84 evaluations.
 
 ### §2.2 Seven verdict kinds, append-only write pattern
 
@@ -166,10 +166,11 @@ ARCHITECTURE.md's restart-vs-rebuild discipline), not a rebuild.
 
 `compute_and_store` loads `data/pattern_sensitivity.yaml` and
 `data/watchlist.yaml` **once per cycle**, treating both as immutable
-for the cycle's duration. The deep-tier filter applied to the
+for the cycle's duration. The curated-tier filter applied to the
 watchlist YAML is the regression-canary checked in
 `docs/phase2b-validation.md §4 / §4.5`: zero `drift_verdict` rows
-must appear for orphan-tier items in any future cycle. Mid-cycle YAML
+must appear for substrate-tier (post-Phase-2c rename of orphan)
+items in any future cycle. Mid-cycle YAML
 edits don't take effect until the *next* cycle, and an analytics
 service restart is the documented refresh path for both YAMLs.
 

@@ -21,18 +21,18 @@ rows.
 Status-code contract
 
 - 404 when the slug is not in the items table.
-- 200 with ``tier="deep"``, ``pairs=[]`` when the detector hasn't
+- 200 with ``tier="curated"``, ``pairs=[]`` when the detector hasn't
   produced rows yet (fresh deploy, classifier-disabled period).
-- 200 with ``tier="deep"``, ``pairs=[…1 entry…]`` for items where
+- 200 with ``tier="curated"``, ``pairs=[…1 entry…]`` for items where
   only one pair has produced a row — realistic for items added at
   Step 7.1 with sparse Pricempire data while a side fills in
   (USP-S Neo-Noir FT, AWP Dragon Lore FN are the canonical examples).
-- 200 with ``tier="deep"``, ``pairs=[…2 entries…]`` for steady-state
-  deep-tier items.
-- 200 with ``tier="broad"`` or ``tier="orphan"``, ``pairs=[]`` —
-  drift detection skips both tier classes by construction.
+- 200 with ``tier="curated"``, ``pairs=[…2 entries…]`` for steady-
+  state curated-tier items.
+- 200 with ``tier="featured"`` or ``tier="substrate"``, ``pairs=[]``
+  — drift detection skips both tier classes by construction.
 
-Why not 422 for broad/orphan
+Why not 422 for featured/substrate
 The caller asked a sensible question about a known item; the empty
 answer is structural, not a caller error. Matches the precedent of
 ``/deals/evaluate`` returning 200 with ``verdict="no_comparable_data"``

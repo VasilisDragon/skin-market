@@ -219,8 +219,8 @@ class PricempireObservationLog(Base):
 
     Composite PK (item_id, source_id) — one row per pair, upserted via
     INSERT ... ON CONFLICT DO UPDATE. Regular table (NOT hypertable):
-    cardinality is bounded by deep-tier items × Pricempire sub-providers
-    (~44 × 6 ≈ 264 rows total in v1).
+    cardinality is bounded by curated-tier items × Pricempire sub-
+    providers (~42 × 6 ≈ 252 rows total in v1).
 
     The collector helper collectors.pricempire._upsert_observation_log
     MUST be called BEFORE the dedup gate's SELECT. Test

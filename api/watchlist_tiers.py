@@ -1,31 +1,39 @@
-"""Tier-aware response helper for the read API (Phase 2b Step 8).
+"""Tier-aware response helper for the read API (Phase 2b Step 8;
+renamed deep/broad/orphan → curated/featured/substrate at Phase 2c).
 
 Tier lives in ``data/watchlist.yaml`` per ADR 024 — the ``items`` table
 deliberately doesn't carry a tier column, so any code that needs to
 shape responses by tier (e.g. /items/{slug}/drift only makes sense for
-``tier: deep``) must read the YAML.
+``tier: curated``) must read the YAML.
 
 Reading semantics
 
 - Lazy load on first call; cache in module globals.
 - ``reload()`` re-reads the YAML; tests use this to inject synthetic
-  broad-tier items without editing the real watchlist.
+  featured-tier items without editing the real watchlist.
 - Operator restart of the ``api`` service picks up YAML edits — same
   workflow as the collector. The cache deliberately does NOT
   auto-invalidate on disk change.
 
-Orphan handling (ADR 024)
+Substrate handling (ADR 024)
 
 A row in the ``items`` table that is no longer in the YAML watchlist
-is an *orphan*: historical prices/insights remain queryable, but the
-collector no longer polls it (per Step 7.1.5's ``_load_watchlist``
-tier filter). ``get_tier`` returns the literal string ``"orphan"`` for
-these so the routes can shape responses identically to broad-tier
-(empty current data, structural reason for it).
+is "substrate": Pricempire-only observation continues via the bulk
+snapshot collector (which reads items directly), historical
+prices/insights remain queryable, but the item is not surfaced in the
+bot's curated/featured listing. ``get_tier`` returns the literal
+string ``"substrate"`` for these so routes can shape responses
+similarly to featured-tier (Pricempire-only data, no curated cross-
+source view).
+
+(Pre-Phase-2c, this state was called "orphan." The rename reflects
+post-Path-A semantics where the items table is bulk-populated to
+~5,000 catalog rows and the YAML's tracked-list is the editorial
+overlay — "substrate" describes the catalog floor, not a remnant.)
 
 This module assumes the caller has already verified the item exists in
 the ``items`` table — passing an unknown ``market_hash_name`` raises
-``ValueError``. The 404-vs-orphan split happens at the route layer,
+``ValueError``. The 404-vs-substrate split happens at the route layer,
 which already needs to query items for its existence check anyway
 (Option B from the Step 8 design proposal: route handlers query items
 table first, then consult ``get_tier`` for tier branching).
@@ -39,7 +47,7 @@ from typing import Literal
 
 from scripts.seed_watchlist import DEFAULT_WATCHLIST_PATH, load_watchlist
 
-Tier = Literal["deep", "broad", "orphan"]
+Tier = Literal["curated", "featured", "substrate"]
 
 # Module-level cache. ``None`` means "not yet loaded"; an empty dict
 # would be ambiguous with "loaded but empty YAML". The lock protects
@@ -73,7 +81,7 @@ def _load_from_yaml(path: Path) -> dict[str, Tier]:
     data = load_watchlist(path)
     out: dict[str, Tier] = {}
     for item in data["items"]:
-        # ``load_watchlist`` already validated tier ∈ {deep, broad}
+        # ``load_watchlist`` already validated tier ∈ {curated, featured}
         # and market_hash_name presence.
         out[item["market_hash_name"]] = item["tier"]
     return out
@@ -83,17 +91,18 @@ def get_tier(market_hash_name: str) -> Tier:
     """Return the tier for an item that is *known to exist in the items
     table*.
 
-    Returns ``"deep"`` or ``"broad"`` when the item is in the active
-    YAML watchlist; returns ``"orphan"`` when the item exists in the
-    items table (caller's precondition) but is no longer in the YAML.
+    Returns ``"curated"`` or ``"featured"`` when the item is in the
+    active YAML watchlist; returns ``"substrate"`` when the item
+    exists in the items table (caller's precondition) but is no longer
+    in the YAML.
 
     Raises ``ValueError`` if the caller hasn't honored the precondition
     of "item exists in items table." The function has no way to verify
     that itself (no DB session here), but a market_hash_name that the
     caller passes in MUST correspond to a real items row — otherwise
-    the orphan/broad responses would render a non-existent item as if
-    it were a known one. Routes do the existence check via the items
-    table query they already need for 404 handling.
+    the substrate/featured responses would render a non-existent item
+    as if it were a known one. Routes do the existence check via the
+    items table query they already need for 404 handling.
 
     The ``ValueError`` is deliberately a programmer-error signal: it
     means a route forgot the existence check. In production it should
@@ -105,8 +114,9 @@ def get_tier(market_hash_name: str) -> Tier:
             "must verify the item exists in the items table first"
         )
     cache = _ensure_loaded()
-    # In-YAML → deep/broad. Not-in-YAML AND caller-says-exists → orphan.
-    return cache.get(market_hash_name, "orphan")
+    # In-YAML → curated/featured. Not-in-YAML AND caller-says-exists
+    # → substrate.
+    return cache.get(market_hash_name, "substrate")
 
 
 def reload(path: Path | None = None) -> None:
@@ -115,7 +125,7 @@ def reload(path: Path | None = None) -> None:
     Production callers don't need this — operator restart of the
     ``api`` service is the documented refresh mechanism. Tests use
     this to inject a synthetic YAML where one real item is reclassified
-    as broad (or to swap to a fixture path).
+    as featured (or to swap to a fixture path).
 
     If ``path`` is provided, future loads will read that path instead
     of the default watchlist location. Pass ``None`` to keep the
