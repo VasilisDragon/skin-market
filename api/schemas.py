@@ -613,6 +613,30 @@ class AnomaliesResponse(BaseModel):
     anomalies: list[AnomalyRow]
 
 
+class SignalDigestRow(BaseModel):
+    """One ranked market signal for Discord digest rendering."""
+
+    signal_type: AnomalyType
+    slug: str
+    display_name: str
+    computed_at: datetime
+    z_score: MoneyStr
+    severity: Literal["moderate", "high", "extreme"]
+    summary: str
+    meta: dict
+
+
+class SignalDigestResponse(BaseModel):
+    """Ranked recent market signals derived from deterministic insights."""
+
+    generated_at: datetime
+    since: datetime
+    hours: int
+    total_anomalies: int
+    returned_count: int
+    signals: list[SignalDigestRow]
+
+
 # Drift detector output surfaces via /items/{slug}/drift (Phase 2b
 # Step 8). Verdict kinds mirror analytics/drift.py's module-level
 # VERDICT_* constants; ``Classification`` mirrors the labels in

@@ -1630,6 +1630,84 @@ class TestRecentAnomalies:
 
 
 @_db_required
+class TestSignalDigest:
+    def test_returns_ranked_compact_signals(
+        self,
+        client: TestClient,
+        sentinel_item,
+    ) -> None:
+        engine = get_engine()
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO insights (
+                        item_id, computed_at, insight_type, value, meta_info
+                    )
+                    VALUES
+                        (
+                            :i, :t1, 'cross_source_divergence', -99.0,
+                            CAST(:m1 AS jsonb)
+                        ),
+                        (
+                            :i, :t2, 'volume_anomaly', 2.4,
+                            CAST(:m2 AS jsonb)
+                        )
+                    """
+                ),
+                {
+                    "i": sentinel_item,
+                    "t1": now - timedelta(minutes=20),
+                    "t2": now - timedelta(minutes=10),
+                    "m1": json.dumps(
+                        {
+                            "source_a_id": "1",
+                            "source_b_id": "27",
+                            "observed_spread": "0.42",
+                            "baseline_mean": "0.10",
+                        }
+                    ),
+                    "m2": json.dumps(
+                        {
+                            "source_id": 1,
+                            "observed_volume": 10,
+                            "baseline_mean": 3,
+                        }
+                    ),
+                },
+            )
+            session.commit()
+
+        try:
+            resp = client.get("/insights/signals/digest?hours=6&limit=1")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["total_anomalies"] >= 2
+            assert body["returned_count"] == 1
+            signal = body["signals"][0]
+            assert signal["slug"] == _SENTINEL_SLUG
+            assert signal["signal_type"] == "cross_source_divergence"
+            assert signal["severity"] == "extreme"
+            assert "Spread between 1 and 27 is unusual" in signal["summary"]
+        finally:
+            with Session(engine) as session:
+                session.execute(
+                    text(
+                        "DELETE FROM insights "
+                        "WHERE item_id = :i AND insight_type IN "
+                        "('cross_source_divergence', 'volume_anomaly')"
+                    ),
+                    {"i": sentinel_item},
+                )
+                session.commit()
+
+    def test_param_validation(self, client: TestClient) -> None:
+        assert client.get("/insights/signals/digest?limit=0").status_code == 422
+        assert client.get("/insights/signals/digest?hours=99").status_code == 422
+
+
+@_db_required
 class TestOpenAPIDoc:
     def test_openapi_includes_examples_on_substantive_endpoints(
         self, client: TestClient

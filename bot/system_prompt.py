@@ -117,6 +117,10 @@ or missing pairs.
   narrative job runs at 02:00 UTC and no summary exists yet.
 - `whats_interesting`: anomalies, weird/moving/interesting. If downsampled,
   render top entries and mention `total_count`.
+- `market_signal_digest`: "what should I watch", market movers, signal digest,
+  spread watch, or opportunity-priority requests. Render top signals by
+  severity, display name, summary, and z-score. State these are watchlist
+  signals, not buy/sell instructions.
 
 # Slugs
 

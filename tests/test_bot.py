@@ -50,6 +50,7 @@ from bot.tools import (
     market_baseline_inspect_link,
     market_baseline_inventory_item,
     market_baseline_inventory_summary,
+    market_signal_digest,
     narrative_today,
     portfolio_snapshot_trend,
     query_current_price,
@@ -119,6 +120,7 @@ class TestToolsRegistry:
             "query_drift",
             "narrative_today",
             "whats_interesting",
+            "market_signal_digest",
         }
 
     def test_every_definition_has_concrete_trigger_examples(self) -> None:
@@ -749,6 +751,40 @@ class TestWhatsInteresting:
             json={"since": "", "count": 0, "anomalies": []},
         )
         whats_interesting(hours=12)
+
+
+class TestMarketSignalDigest:
+    def test_threads_digest_params(self, httpx_mock) -> None:
+        payload = {
+            "generated_at": "2026-05-23T00:00:00Z",
+            "since": "2026-05-22T18:00:00Z",
+            "hours": 6,
+            "total_anomalies": 1,
+            "returned_count": 1,
+            "signals": [
+                {
+                    "signal_type": "volume_anomaly",
+                    "slug": "ak-47-redline-field-tested",
+                    "display_name": "AK-47 | Redline (Field-Tested)",
+                    "computed_at": "2026-05-23T00:00:00Z",
+                    "z_score": "3.20",
+                    "severity": "high",
+                    "summary": "Volume on 1 is outside its recent baseline.",
+                    "meta": {},
+                }
+            ],
+        }
+        httpx_mock.add_response(
+            url=re.compile(
+                rf"^{re.escape(_BASE)}/insights/signals/digest"
+                r"\?hours=12&limit=4$"
+            ),
+            json=payload,
+        )
+
+        result = market_signal_digest(hours=12, limit=4)
+
+        assert result == payload
 
 
 class TestQueryPriceHistory:

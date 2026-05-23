@@ -30,6 +30,7 @@ Endpoints:
 - ``GET  /items/{slug}/chart``   — PNG chart, one source × N days
 - ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
+- ``GET  /insights/signals/digest`` — ranked market signal digest
 - ``POST /alerts/price``         — create/list/evaluate price alerts
 - ``POST /portfolio/snapshots``  — persist Discord portfolio baselines
 - ``GET  /entitlements/discord/{id}`` — effective Discord quota policy

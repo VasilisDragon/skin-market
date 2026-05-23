@@ -1094,6 +1094,16 @@ def whats_interesting(hours: int = 6) -> dict:
     return _summarize_anomalies(raw)
 
 
+def market_signal_digest(hours: int = 6, limit: int = 8) -> dict:
+    """Ranked compact anomaly digest for Discord rendering."""
+    with _client() as c:
+        return _get_json(
+            c,
+            "/insights/signals/digest",
+            params={"hours": hours, "limit": limit},
+        )
+
+
 # ---------------------------------------------------------------------
 # Size-discipline summarizers (Phase 7c-fix)
 # ---------------------------------------------------------------------
@@ -1707,6 +1717,31 @@ TOOL_DEFINITIONS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "market_signal_digest",
+            "description": (
+                "Call this when the user asks what to watch, asks for a "
+                "market signal digest, market movers, spread watch, or the "
+                "highest-priority opportunities right now."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "integer",
+                        "description": "Lookback in hours. Default 6, max 24.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum signals to return. Default 8.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -1728,6 +1763,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,
+    "market_signal_digest": market_signal_digest,
 }
 
 

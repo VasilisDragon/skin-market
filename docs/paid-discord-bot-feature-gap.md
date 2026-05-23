@@ -64,6 +64,11 @@ References checked:
     `PUT /entitlements/discord/{discord_user_id}`,
   - deterministic `free`, `trader`, and `pro` tier quotas,
   - API-side enforcement for active alerts and daily portfolio snapshots.
+- Added a ranked market signal digest:
+  - `GET /insights/signals/digest`,
+  - `market_signal_digest` Discord tool,
+  - deterministic severity/ranking/summary over recent spread and volume
+    anomalies.
 
 ## Next features worth building
 
@@ -83,9 +88,8 @@ References checked:
    model before it should affect user-facing dollar values.
 
 4. Signal lanes / digest channels.
-   The bot already has anomaly and drift primitives. The paid product version
-   should turn those into concise "liquid flips", "market movers", and
-   "spread watch" digests with configurable thresholds and quiet hours.
+   The bot now has an on-demand digest. The paid product version should add
+   scheduled signal subscriptions with configurable thresholds and quiet hours.
 
 5. Trade safety and execution context.
    Add trade-lock awareness, sold-status context when a source supports it, and
