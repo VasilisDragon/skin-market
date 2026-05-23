@@ -52,7 +52,11 @@ Phase 2c work.
 spanned 2026-05-16T19:33:55Z → 2026-05-23T04:35:39Z (6 days,
 9 hours, 1 minute), short of the required 7-day characterization
 window. Earliest safe pickup is ~2026-05-24 UTC, subject to another
-span check.
+span check. Rechecked again 2026-05-23T07:28Z after slug-v2 seeding:
+`pricempire_observations` for `pricempire_skinport` spanned
+2026-05-16T20:19:47Z → 2026-05-23T07:22:43Z (6 days, 11 hours,
+2 minutes), still short of 7 full days. The next check should wait
+until at least 2026-05-23T20:19:47Z, preferably 2026-05-24 UTC.
 
 ADR 022 §"Open follow-ups" requires a 7-day characterization of the
 Pricempire `pricempire_skinport` upstream refresh cadence to convert
@@ -61,8 +65,10 @@ permanent value. Started 2026-05-17 with the deploy of `75`. Due
 ~2026-05-24.
 
 When the window closes:
-- Query `pricempire_observation_log` aged distribution for the
-  `pricempire_skinport` source over the 7-day window. Compute
+- Query `pricempire_observations` for the `pricempire_skinport`
+  source over the 7-day window. `pricempire_observation_log` stores
+  only the latest freshness row per item/source, not historical cadence.
+  Compute
   jitter distribution (median, p95, p99), time-of-day dependence,
   per-sub-provider variance.
 - Compare against current `STALE_PRICEMPIRE_MINUTES = 75.0`.

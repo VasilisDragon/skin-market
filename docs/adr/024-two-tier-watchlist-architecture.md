@@ -497,7 +497,7 @@ volumes:
 | `news_correlated_move` (future) | ✓ | ✗ (requires curated multi-source view) | TBD when implemented | n/a |
 | Narrative job | Tier-agnostic input, curated-focused output | Reads all `insights` but the daily paragraph naturally surfaces curated because that's where divergence/drift signals live | Reads substrate insight rows transparently; rendering inherits whatever upstream jobs produced | n/a |
 
-**§4.D3-TODO status — retired by Phase 2c.** The original load-bearing
+**§4.D3-TODO status — reviewed 2026-05-23.** The original load-bearing
 gap was `item_unavailability_streak`: it accumulated one row per
 (orphan × source) per cycle forever. Phase 2c removed that analytics
 job entirely before Path A landed, so the unbounded row-rate no longer
@@ -507,6 +507,26 @@ checkpoint, cross-source substrate volume was 0; moving averages wrote
 12 rows over 3 pre-existing substrate items with historical direct
 prices, and no Path-A-created substrate item gained direct-price
 analytics.
+
+Post-slug-v2 review after the 2026-05-23 07:12 UTC analytics cycle
+found the same bounded shape despite the 5,007-row items table:
+
+- latest cycle substrate rows: `cross_source_view=2`,
+  `moving_avg_7d=8`, `moving_avg_30d=8`, `cross_source_spread=0`;
+- the two latest-cycle substrate `cross_source_view` rows were the
+  former featured cutoff replacements dropped by the slug-v2
+  featured-tier recompute (`AUG | Syd Mead (Field-Tested)` and
+  `Desert Eagle | Ocean Drive (Minimal Wear)`);
+- historical all-time substrate rows remain small relative to curated
+  and featured rows: `cross_source_spread=24`, `cross_source_view=157`,
+  `moving_avg_7d=1,168`, `moving_avg_30d=1,168`.
+
+Decision: keep the bounded historical analytics unfiltered for now.
+The row volume is negligible, the rows are explainable as preserved
+historical direct-price data, and adding a substrate filter would remove
+useful continuity for items recently dropped from featured/curated.
+Revisit only if a future expansion creates measurable storage or bot
+rendering noise.
 
 **Implementation today:**
 - `analytics/drift.py:compute_and_store` filters items to
@@ -522,10 +542,12 @@ analytics.
   the structural featured-exclusion holds, the substrate-exclusion does
   not.
 - `analytics/cross_source.py` (cross_source_view) — same shape;
-  160 substrate rows / 21h per §4.5.
+  160 substrate rows / 21h per §4.5. Post-slug-v2 latest cycle had
+  2 substrate rows.
 - `analytics/moving_averages.py` — source-agnostic and
   tier-agnostic by design; 1,288 + 1,288 = 2,576 substrate rows / 21h
-  per §4.5. Window-bounded so doesn't accumulate.
+  per §4.5. Window-bounded so doesn't accumulate; post-slug-v2 latest
+  cycle had 8 substrate rows per moving-average window.
 - `analytics/unavailability_streak.py` — removed in Phase 2c.
 
 **Rejected alternative: gate every insight type on `tier == "curated"`
@@ -739,7 +761,10 @@ construction.
   problem, but bounded jobs still compute over historical direct
   prices. Path A canary saw 12 moving-average rows over 3 pre-existing
   substrate items; cross-source substrate volume was 0, and
-  Path-A-created substrate had no direct-price analytics.
+  Path-A-created substrate had no direct-price analytics. The
+  post-slug-v2 review saw 2 latest-cycle substrate `cross_source_view`
+  rows and 8 rows per moving-average window; this remains acceptable
+  and intentionally unfiltered.
 - **Failure mode (YAML corruption):** A malformed YAML (missing
   schema_version, invalid tier value, missing market_hash_name)
   fails fast at collector / api / analytics startup with a
@@ -770,11 +795,9 @@ construction.
   surfacing in the bot. May want a separate rendering channel
   ("Pricempire-only view") vs. the current uniform price-per-source
   rendering.
-- **Substrate historical-analytics filter (bounded only).**
-  `item_unavailability_streak` is gone, so there is no unbounded
-  substrate row-rate. The remaining question is whether bounded
-  historical jobs should keep writing for substrate items that have
-  old direct prices.
+- **~~Substrate historical-analytics filter (bounded only).~~** ✓ Reviewed
+  2026-05-23. Current substrate row volume is negligible and explainable
+  as preserved historical direct-price data, so no filter is added.
 - **Substrate-cleanup tooling (operator-triggered, never automatic).**
   Long-tail substrate may eventually be worth a
   `scripts/prune_substrate.py` that deletes items + their historical
