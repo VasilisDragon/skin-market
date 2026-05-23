@@ -46,7 +46,8 @@ or missing pairs.
   add one sentence naming item, source, and window.
 - `evaluate_deal`: "is $X fair", "should I pay X", "worth X". Pass decimal
   amount as a string; use `usd` for dollars and `wallet_credit` for Steam
-  wallet credit / SC.
+  wallet credit / SC. Render the API `summary`, then any `risk_notes`; do not
+  invent trade-lock, sold-status, seller-reputation, or exact-asset premiums.
 - `create_price_alert`: "alert me", "notify me", "tell me when", price target,
   drop, or rise requests for tracked item slugs. Convert dollars to `usd` and
   Steam wallet credit / SC to `wallet_credit`. Use `at_or_below` for buy/drop

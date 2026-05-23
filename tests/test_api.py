@@ -1126,6 +1126,8 @@ class TestDealsEvaluate:
         assert steam_info["reason"] == "denomination_mismatch"
         # Offer amount round-trips as string.
         assert body["offer"]["amount"] == "42.50"
+        assert any("overpay risk" in note for note in body["risk_notes"])
+        assert any("Wallet-credit prices" in note for note in body["risk_notes"])
 
     def test_usd_offer_below_market(
         self, client: TestClient, sentinel_item
@@ -1283,6 +1285,8 @@ class TestDealsEvaluate:
             1 for i in body["informational"] if i["reason"] == "stale"
         )
         assert stale_count == 2
+        assert any("not a fair-price verdict" in note for note in body["risk_notes"])
+        assert any("2 source(s) were excluded" in note for note in body["risk_notes"])
 
     def test_polled_fresh_but_price_flat_is_comparable(
         self, client: TestClient, sentinel_item

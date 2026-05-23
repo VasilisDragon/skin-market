@@ -182,6 +182,12 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
         informational=informational,
         display_name=item["display_name"],
     )
+    risk_notes = _deal_risk_notes(
+        verdict=verdict,
+        offer_currency=offer_currency,
+        comparable=comparable,
+        informational=informational,
+    )
 
     return DealEvaluateResponse(
         slug=req.slug,
@@ -192,6 +198,7 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
         comparable=comparable,
         informational=informational,
         summary=summary,
+        risk_notes=risk_notes,
     )
 
 
@@ -284,3 +291,63 @@ def _decide_verdict(
         f"±{int(AT_MARKET_TOLERANCE_PCT * 100)}%)."
     )
     return verdict, summary
+
+
+def _deal_risk_notes(
+    *,
+    verdict: str,
+    offer_currency: str,
+    comparable: list[ComparableSource],
+    informational: list[InformationalSource],
+) -> list[str]:
+    notes = [
+        (
+            "Market-name comparison only; this does not include exact float, "
+            "paint seed, sticker/charm premiums, trade-lock status, seller "
+            "reputation, or sold-status verification."
+        )
+    ]
+    if verdict == "above_market":
+        notes.append(
+            "Above-market offers have overpay risk unless exact asset attributes "
+            "or verified recent sales justify the premium."
+        )
+    elif verdict == "below_market":
+        notes.append(
+            "Below-market offers can be opportunity or missing-context risk; "
+            "verify the exact asset and counterparty before acting."
+        )
+    elif verdict == "no_comparable_data":
+        notes.append(
+            "No fresh comparable source matched the offer currency, so this is "
+            "not a fair-price verdict."
+        )
+    else:
+        notes.append(
+            "At-market means within the configured comparable-source tolerance, "
+            "not a guarantee that a trade is safe or executable."
+        )
+
+    stale_count = sum(1 for row in informational if row.reason == "stale")
+    if stale_count:
+        notes.append(
+            f"{stale_count} source(s) were excluded as stale; re-check live "
+            "listings before trading."
+        )
+    if any(row.reason == "denomination_mismatch" for row in informational):
+        if offer_currency == "usd":
+            notes.append(
+                "Wallet-credit prices are separated from USD offers; no cashout "
+                "conversion is assumed."
+            )
+        else:
+            notes.append(
+                "USD prices are separated from wallet-credit offers; no wallet "
+                "conversion is assumed."
+            )
+    if len(comparable) == 1:
+        notes.append(
+            "Only one fresh comparable source anchored this verdict; treat it as "
+            "lower-confidence than a multi-source comparison."
+        )
+    return notes

@@ -84,6 +84,14 @@ Verdict math compares `offer.amount` to `min(comparable.current)` (the cheapest 
 
 `min(comparable.current)` (cheapest) anchors the verdict because the buyer's natural question is "could I do better elsewhere?". Symmetric for sellers: "should I list at this?" is the same comparison with the same labels.
 
+The response also includes `risk_notes[]`: deterministic trade-safety context
+that the bot must render rather than invent. These notes state that
+`/deals/evaluate` is a market-name comparison only and does not verify exact
+float, paint seed, sticker/charm premiums, trade-lock status, seller reputation,
+or sold status. Conditional notes call out above-market overpay risk,
+below-market missing-context risk, stale-source exclusions, denomination
+separation, and single-source confidence limits.
+
 ### 5. `/items/{slug}/insights` excludes `daily_narrative`
 
 `analytics.narrative.generate_and_store` inserts the daily-narrative row with `item_id = (SELECT id FROM items ORDER BY created_at ASC LIMIT 1)` — i.e. pinned to whichever item was inserted first. The narrative isn't about that item; it's a global recap. Exposing it via a per-item endpoint would either lie ("here's the narrative for AK Redline") or be inconsistent (it only appears under one arbitrary slug).

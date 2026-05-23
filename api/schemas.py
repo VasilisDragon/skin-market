@@ -702,6 +702,7 @@ class DealEvaluateResponse(BaseModel):
     comparable: list[ComparableSource]
     informational: list[InformationalSource]
     summary: str
+    risk_notes: list[str]
 
     model_config = {
         "json_schema_extra": {
@@ -741,6 +742,14 @@ class DealEvaluateResponse(BaseModel):
                         "$42.50 USD is above market for AK-47 | Redline "
                         "(Field-Tested) — Skinport listings start at $28.00."
                     ),
+                    "risk_notes": [
+                        (
+                            "Market-name comparison only; this does not "
+                            "include exact float, paint seed, sticker/charm "
+                            "premiums, trade-lock status, seller reputation, "
+                            "or sold-status verification."
+                        )
+                    ],
                 }
             ]
         }

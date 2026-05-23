@@ -90,6 +90,10 @@ References checked:
     `POST /portfolio/monitors/{id}/delivery`,
   - scheduled summary-level snapshot creation,
   - thresholded Discord updates for market-baseline movement.
+- Added deterministic deal risk notes:
+  - `/deals/evaluate` now returns structured `risk_notes`,
+  - notes call out market-name-only scope, stale-source exclusions,
+    denomination separation, and overpay/missing-context risk.
 
 ## Next features worth building
 
@@ -116,5 +120,6 @@ References checked:
    exposed as product promises.
 
 5. Trade safety and execution context.
-   Add trade-lock awareness, sold-status context when a source supports it, and
-   safer "offer risk" explanations for shark/scam prevention.
+   Deal evaluation now includes safer deterministic offer-risk explanations.
+   True trade-lock awareness and sold-status context still need source-backed
+   listing data before they should be surfaced as verified facts.
