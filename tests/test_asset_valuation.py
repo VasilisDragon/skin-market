@@ -11,11 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.asset_valuation import (
+    PREMIUM_SIGNAL_AVAILABILITY,
     CSGOReferenceData,
     CSGOReferenceUnavailableError,
     InspectLinkUnsupportedError,
     InventoryUnavailableError,
     PricePoint,
+    build_asset_evidence,
     build_market_baseline,
     decode_modern_inspect_link,
     fetch_csgo_reference_data,
@@ -42,6 +44,18 @@ _LEGACY_INSPECT_URL = (
     "S76561199272523861A36450856127D12136724830466029386"
 )
 _LIVE_CROSSCHECK_ENV = "RUN_LIVE_ASSET_CROSSCHECKS"
+_FORBIDDEN_PREMIUM_FIELDS = {
+    "premium_price",
+    "premium_value",
+    "premium_range",
+    "premium_low",
+    "premium_mid",
+    "premium_high",
+    "premium_multiplier",
+    "estimated_true_value",
+    "estimated_value",
+    "appraisal",
+}
 
 
 def _known_answer_cases() -> list[dict]:
@@ -117,6 +131,18 @@ def client() -> TestClient:
     return c
 
 
+def _assert_no_premium_price_fields(value) -> None:
+    if isinstance(value, dict):
+        forbidden = _FORBIDDEN_PREMIUM_FIELDS.intersection(value)
+        assert not forbidden
+        for child in value.values():
+            _assert_no_premium_price_fields(child)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _assert_no_premium_price_fields(child)
+
+
 def test_parse_numeric_profile_inventory_link() -> None:
     ref = parse_inventory_item_url(_INVENTORY_URL)
     assert ref.steam_id == "76561199276192848"
@@ -182,6 +208,90 @@ def test_build_market_baseline_uses_median_min_max() -> None:
     assert baseline["confidence"] == "high"
 
 
+def test_asset_evidence_flags_low_float_and_doppler_phase() -> None:
+    evidence = build_asset_evidence(
+        {
+            "market_hash_name": "★ StatTrak™ Karambit | Doppler (Factory New) - Ruby",
+            "float_value": "0.006441197823733091",
+            "paint_seed": 400,
+            "paint_id": 415,
+            "low_rank": 3,
+            "high_rank": 14,
+            "stickers": [],
+            "charms": [],
+        }
+    )
+
+    flags = {row["code"]: row for row in evidence["driver_flags"]}
+    assert flags["low_float_for_wear_band"]["present"] is True
+    assert flags["low_float_for_wear_band"]["category"] == "low"
+    assert flags["pattern_sensitive_family"]["present"] is True
+    assert flags["pattern_sensitive_family"]["category"] == "doppler"
+    assert flags["phase_already_in_market_name"]["present"] is True
+    assert flags["phase_already_in_market_name"]["category"] == "ruby"
+    assert flags["rank_present"]["present"] is True
+    assert evidence["attributes"]["wear_band"]["name"] == "Factory New"
+    assert evidence["attributes"]["is_stattrak"] is True
+    assert evidence["signal_availability"]["low_float_for_wear_band"] == (
+        PREMIUM_SIGNAL_AVAILABILITY["low_float_for_wear_band"]
+    )
+
+
+def test_asset_evidence_flags_applied_stickers_without_price_signal() -> None:
+    evidence = build_asset_evidence(
+        {
+            "market_hash_name": "StatTrak™ M4A4 | Howl (Factory New)",
+            "float_value": "0.059376537799835205",
+            "paint_seed": 447,
+            "paint_id": None,
+            "stickers": [
+                {
+                    "name": "Sticker | Titan (Holo) | Katowice 2014",
+                    "slot": 0,
+                    "wear": "0",
+                    "sticker_id": None,
+                }
+            ],
+            "charms": [],
+        }
+    )
+
+    flags = {row["code"]: row for row in evidence["driver_flags"]}
+    assert flags["applied_stickers"]["present"] is True
+    assert flags["applied_stickers"]["category"] == "1_stickers"
+    assert flags["low_float_for_wear_band"]["present"] is False
+    assert (
+        evidence["signal_availability"]["applied_stickers"]["status"]
+        == "not_available"
+    )
+    assert "cannot currently price" in evidence["summary"]
+    _assert_no_premium_price_fields(evidence)
+
+
+def test_asset_evidence_flags_crimson_web_pattern_and_rank() -> None:
+    evidence = build_asset_evidence(
+        {
+            "market_hash_name": "★ StatTrak™ Karambit | Crimson Web (Factory New)",
+            "float_value": "0.06860896944999695",
+            "paint_seed": 323,
+            "low_rank": 1,
+            "high_rank": 1,
+            "stickers": [],
+            "charms": [],
+        }
+    )
+
+    flags = {row["code"]: row for row in evidence["driver_flags"]}
+    assert flags["pattern_sensitive_family"]["present"] is True
+    assert flags["pattern_sensitive_family"]["category"] == "crimson_web"
+    assert flags["rank_present"]["present"] is True
+    assert flags["phase_already_in_market_name"]["present"] is False
+    assert (
+        evidence["signal_availability"]["pattern_sensitive_family"]["status"]
+        == "not_available"
+    )
+
+
 def test_inventory_route_returns_structured_decline(
     client, monkeypatch
 ) -> None:
@@ -202,6 +312,7 @@ def test_inventory_route_returns_structured_decline(
     assert body["status"] == "unreadable"
     assert body["reason"] == "private_or_unavailable"
     assert "private inventory" in body["message"]
+    assert body["evidence"] is None
 
 
 def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
@@ -271,6 +382,10 @@ def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
     assert body["market_baseline"]["low"] == "150.13"
     assert body["market_baseline"]["mid"] == "174.42"
     assert body["market_baseline"]["high"] == "198.70"
+    assert body["evidence"]["attributes"]["wear_band"]["name"] == "Factory New"
+    assert body["evidence"]["driver_flags"][1]["code"] == "applied_stickers"
+    assert body["evidence"]["driver_flags"][1]["present"] is True
+    _assert_no_premium_price_fields(body["evidence"])
 
 
 def test_inventory_summary_route_returns_portfolio_baseline(client, monkeypatch) -> None:
@@ -351,6 +466,10 @@ def test_inventory_summary_route_returns_portfolio_baseline(client, monkeypatch)
     assert [row["asset_id"] for row in body["largest_spread_items"]] == ["1", "2"]
     assert body["largest_spread_items"][0]["baseline_spread_pct"] == "33.33"
     assert body["unpriced_sample"][0]["market_hash_name"] == "Unpriced Item (Factory New)"
+    assert body["evidence"]["attributes"]["total_count"] == 3
+    assert body["evidence"]["driver_counts"]["applied_stickers"] == 1
+    assert body["top_items"][0]["evidence"]["driver_flags"][1]["present"] is True
+    _assert_no_premium_price_fields(body["evidence"])
 
 
 def test_legacy_inspect_link_is_scope_boundary() -> None:
@@ -368,6 +487,7 @@ def test_inspect_route_returns_structured_scope_decline(client) -> None:
     assert body["status"] == "unreadable"
     assert body["reason"] == "legacy_inspect_link"
     assert "Steam account" in body["message"]
+    assert body["evidence"] is None
 
 
 @pytest.mark.parametrize("case", _inspect_known_answer_cases())
@@ -461,6 +581,11 @@ def test_inspect_route_passthrough_fixture_shapes_attributes_and_baseline(
     assert [row["name"] for row in body["asset"]["stickers"]] == case[
         "expected_stickers"
     ]
+    assert body["evidence"]["attributes"]["market_hash_name"] == case[
+        "market_hash_name"
+    ]
+    assert "driver_flags" in body["evidence"]
+    _assert_no_premium_price_fields(body["evidence"])
 
     expected = Decimal(case["expected_value_usd"])
     mid = Decimal(body["market_baseline"]["mid"])
@@ -562,6 +687,11 @@ def test_inventory_route_passthrough_fixture_shapes_attributes_and_baseline(
     assert [row["name"] for row in body["asset"]["stickers"]] == case[
         "expected_stickers"
     ]
+    assert body["evidence"]["attributes"]["market_hash_name"] == case[
+        "market_hash_name"
+    ]
+    assert "driver_flags" in body["evidence"]
+    _assert_no_premium_price_fields(body["evidence"])
 
     expected = Decimal(case["expected_value_usd"])
     mid = Decimal(body["market_baseline"]["mid"])

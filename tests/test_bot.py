@@ -1720,9 +1720,10 @@ class TestSystemPromptPhase2bStep9:
         assert "names exactly" in SYSTEM_PROMPT
         assert "market-name baseline" in SYSTEM_PROMPT
         assert "float, seed, sticker, or charm premiums" in SYSTEM_PROMPT
-        assert "After rendering `market_baseline`, stop" in SYSTEM_PROMPT
+        assert "Premium Evidence (Not Priced)" in SYSTEM_PROMPT
+        assert "premium dollar amounts" in SYSTEM_PROMPT
+        assert "After rendering `evidence`, stop" in SYSTEM_PROMPT
         assert "Render `market_baseline` under the heading" in SYSTEM_PROMPT
-        assert "market baseline section must be the final section" in SYSTEM_PROMPT
         assert "portfolio_baseline" in SYSTEM_PROMPT
         assert "priced/unpriced counts" in SYSTEM_PROMPT
         assert "stickered count" in SYSTEM_PROMPT

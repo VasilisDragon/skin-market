@@ -1915,8 +1915,9 @@ TOOL_DEFINITIONS: list[dict] = [
                 "item link or asks about float, seed, stickers, or a "
                 "market baseline for an exact inventory asset. Returns "
                 "exact float/seed/stickers plus a market-name USD baseline "
-                "when local market data exists. It does not price float, "
-                "seed, sticker, or charm premiums."
+                "and a deterministic premium-evidence section when local "
+                "market data exists. It does not price float, seed, sticker, "
+                "or charm premiums."
             ),
             "parameters": {
                 "type": "object",
@@ -1941,8 +1942,9 @@ TOOL_DEFINITIONS: list[dict] = [
                 "Call this when the user asks for total inventory value, "
                 "portfolio value, top inventory items, or a public Steam "
                 "inventory summary. Returns a summed market-name USD baseline "
-                "for priced CS2 inventory assets plus top items. It does not "
-                "price float, seed, sticker, or charm premiums."
+                "for priced CS2 inventory assets plus top items and a "
+                "deterministic premium-evidence summary. It does not price "
+                "float, seed, sticker, or charm premiums."
             ),
             "parameters": {
                 "type": "object",
@@ -2156,8 +2158,9 @@ TOOL_DEFINITIONS: list[dict] = [
                 "steam://run link, or asks about float, seed, stickers, "
                 "or a market baseline for an exact inspect asset. Returns "
                 "decoded float/seed/stickers plus a market-name USD "
-                "baseline when local market data exists. It does not price "
-                "float, seed, sticker, or charm premiums."
+                "baseline and a deterministic premium-evidence section when "
+                "local market data exists. It does not price float, seed, "
+                "sticker, or charm premiums."
             ),
             "parameters": {
                 "type": "object",

@@ -63,26 +63,29 @@ or missing pairs.
 - `market_baseline_inventory_item`: public Steam inventory item links, exact
   asset attributes, or market-baseline questions for a pasted inventory asset.
   Render in this order: `message`, asset float/seed/stickers, then
-  `market_baseline`. Render `market_baseline` under the heading
+  `market_baseline`, then `evidence`. Render `market_baseline` under the heading
   `Market Baseline Range (USD)` as three bullets: Low, Mid, High, followed by
-  a confidence/source-count bullet. The market baseline section must be the
-  final section.
+  a confidence/source-count bullet. Render `evidence` under the heading
+  `Premium Evidence (Not Priced)` after the market baseline: include
+  `evidence.summary`, present driver flags, and signal availability statuses.
   Do not render a table, name individual sources, or enumerate `price_points`
   unless the user asks for source detail; summarize source_count/confidence
   instead. Say plainly that the range is a market-name baseline and does not
   include float, seed, sticker, or charm premiums. Do not add sale predictions,
-  buyer-demand commentary, or premium estimates beyond the tool's limitations
+  buyer-demand commentary, premium dollar amounts, premium ranges, premium
+  multipliers, or exact-asset value estimates beyond the tool's limitations
   text. Copy sticker/charm names exactly; do not infer events, years, teams, or
-  rarity beyond returned names. After rendering `market_baseline`, stop; add no
-  post-baseline commentary unless the user explicitly asked for source or
-  method details.
+  rarity beyond returned names. After rendering `evidence`, stop; add no
+  post-evidence commentary unless the user explicitly asked for source or method
+  details.
   If status is `unreadable`, say the inventory/profile is private or the link
   could not be read; do not fall back to market_hash_name averages.
 - `market_baseline_inventory_summary`: public Steam inventory links when the
   user asks for total inventory value, portfolio value, inventory summary, or
   top inventory items. Render `message`, then `portfolio_baseline` as Low/Mid/
   High plus priced/unpriced counts, stickered count, and top-item share, then
-  up to five `top_items`, then up to three `largest_spread_items` when present.
+  `evidence.summary`, then up to five `top_items`, then up to three
+  `largest_spread_items` when present.
   Say plainly that totals are market-name baselines and do not include float,
   seed, sticker, or charm premiums. Do not list every inventory item unless
   explicitly asked. If status is `unreadable`, say the inventory/profile is
@@ -112,19 +115,23 @@ or missing pairs.
 - `market_baseline_inspect_link`: raw CS2 inspect links
   (`steam://run/730...` or `steam://rungame/730...`), exact inspect-asset
   attributes, or market-baseline questions for a pasted inspect link. Render in
-  this order: `message`, asset float/seed/stickers, then `market_baseline`.
+  this order: `message`, asset float/seed/stickers, then `market_baseline`,
+  then `evidence`.
   Render `market_baseline` under the heading `Market Baseline Range (USD)` as
   three bullets: Low, Mid, High, followed by a confidence/source-count bullet.
-  The market baseline section must be the final section. Do not render a table,
-  name individual sources, or enumerate `price_points` unless the user asks for
-  source detail. Say plainly that the range is a market-name baseline and does
-  not include float, seed, sticker, or charm premiums. Do not add sale
-  predictions, buyer-demand commentary, or premium estimates beyond the tool's
-  limitations text. Copy sticker/charm names exactly; do not infer events,
-  years, teams, or rarity beyond returned names. After rendering
-  `market_baseline`, stop; add no post-baseline commentary unless the user
-  explicitly asked for source or method details. If status is `unreadable`, say
-  the inspect link is invalid or needs legacy Steam Game Coordinator
+  Render `evidence` under `Premium Evidence (Not Priced)` after the market
+  baseline: include `evidence.summary`, present driver flags, and signal
+  availability statuses. Do not render a table, name individual sources, or
+  enumerate `price_points` unless the user asks for source detail. Say plainly
+  that the range is a market-name baseline and does not include float, seed,
+  sticker, or charm premiums. Do not add sale predictions, buyer-demand
+  commentary, premium dollar amounts, premium ranges, premium multipliers, or
+  exact-asset value estimates beyond the tool's limitations text. Copy
+  sticker/charm names exactly; do not infer events, years, teams, or rarity
+  beyond returned names. After rendering `evidence`, stop; add no post-evidence
+  commentary unless the user explicitly asked for source or method details. If
+  status is `unreadable`, say the inspect link is invalid or needs legacy Steam
+  Game Coordinator
   resolution; ask only for a modern encoded CS2 inspect link or a public Steam
   inventory item URL. Do not mention CSFloat/Skinport/DMarket as alternate
   resolvers, and do not fall back to market_hash_name averages.

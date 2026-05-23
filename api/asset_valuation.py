@@ -37,6 +37,74 @@ CS2_CONTEXT_ID = "2"
 _STEAM_ID64_RE = re.compile(r"^7656\d{13}$")
 _INVENTORY_FRAGMENT_RE = re.compile(r"^(?P<app_id>\d+)_(?P<context_id>\d+)_(?P<asset_id>\d+)$")
 _CENTS = Decimal("0.01")
+_WEAR_BANDS: tuple[tuple[str, str, Decimal, Decimal], ...] = (
+    ("factory_new", "Factory New", Decimal("0"), Decimal("0.07")),
+    ("minimal_wear", "Minimal Wear", Decimal("0.07"), Decimal("0.15")),
+    ("field_tested", "Field-Tested", Decimal("0.15"), Decimal("0.38")),
+    ("well_worn", "Well-Worn", Decimal("0.38"), Decimal("0.45")),
+    ("battle_scarred", "Battle-Scarred", Decimal("0.45"), Decimal("1")),
+)
+_LOW_FLOAT_POSITION_PCT = Decimal("15")
+
+PREMIUM_SIGNAL_AVAILABILITY: dict[str, dict[str, Any]] = {
+    "low_float_for_wear_band": {
+        "status": "not_available",
+        "source": None,
+        "explanation": (
+            "Exact float is known, but no integrated per-float comparable-sales "
+            "source or operator-confirmed sales corpus is available."
+        ),
+    },
+    "applied_stickers": {
+        "status": "not_available",
+        "source": None,
+        "explanation": (
+            "Applied stickers are known, but the system has no integrated "
+            "source for applied-sticker sale premiums."
+        ),
+    },
+    "applied_charms": {
+        "status": "not_available",
+        "source": None,
+        "explanation": (
+            "Applied charms are known, but the system has no integrated "
+            "source for applied-charm sale premiums."
+        ),
+    },
+    "pattern_sensitive_family": {
+        "status": "not_available",
+        "source": None,
+        "explanation": (
+            "The skin family can be pattern-sensitive, but no approved "
+            "pattern-tier or confirmed-sales source is integrated."
+        ),
+    },
+    "phase_already_in_market_name": {
+        "status": "covered_by_market_baseline",
+        "source": "market_hash_name",
+        "explanation": (
+            "This phase is already separated in the market_hash_name, so the "
+            "generic market baseline reflects that named variant. No extra "
+            "phase premium is computed."
+        ),
+    },
+    "rank_present": {
+        "status": "not_available",
+        "source": None,
+        "explanation": (
+            "Rank metadata is present, but the system has no integrated source "
+            "that converts rank into a validated sale premium."
+        ),
+    },
+}
+_PREMIUM_DRIVER_LABELS: dict[str, str] = {
+    "low_float_for_wear_band": "low float for wear band",
+    "applied_stickers": "applied stickers",
+    "applied_charms": "applied charms",
+    "pattern_sensitive_family": "pattern-sensitive skin family",
+    "phase_already_in_market_name": "phase already in market name",
+    "rank_present": "rank metadata",
+}
 
 
 class InventoryLinkError(ValueError):
@@ -493,6 +561,107 @@ def build_market_baseline(price_points: list[PricePoint]) -> dict[str, Any] | No
     }
 
 
+def build_asset_evidence(asset: dict[str, Any]) -> dict[str, Any]:
+    """Describe exact premium drivers without computing any premium value."""
+    market_hash_name = str(asset.get("market_hash_name") or "")
+    stickers = asset.get("stickers") or []
+    charms = asset.get("charms") or []
+    wear_band = _wear_band_evidence(asset.get("float_value"))
+    pattern_families = _pattern_families(market_hash_name)
+    phase = _phase_marker(market_hash_name)
+    ranks = {
+        "low_rank": asset.get("low_rank"),
+        "high_rank": asset.get("high_rank"),
+    }
+    attributes = {
+        "market_hash_name": market_hash_name or None,
+        "float_value": _decimal_text(asset.get("float_value")),
+        "wear_band": wear_band,
+        "paint_seed": asset.get("paint_seed"),
+        "paint_id": asset.get("paint_id"),
+        "is_stattrak": bool(asset.get("is_stattrak"))
+        or _market_name_is_stattrak(market_hash_name),
+        "is_souvenir": bool(asset.get("is_souvenir"))
+        or _market_name_is_souvenir(market_hash_name),
+        "ranks": ranks if any(value is not None for value in ranks.values()) else None,
+        "stickers": stickers,
+        "charms": charms,
+    }
+    flags = [
+        _driver_flag(
+            "low_float_for_wear_band",
+            bool(wear_band and wear_band.get("float_position") == "low"),
+            "low" if wear_band and wear_band.get("float_position") == "low" else "not_low",
+            (
+                "Float is in the lowest "
+                f"{_LOW_FLOAT_POSITION_PCT}% of its wear band."
+                if wear_band and wear_band.get("float_position") == "low"
+                else "Float is not in the configured low-float slice of its wear band."
+            ),
+        ),
+        _driver_flag(
+            "applied_stickers",
+            bool(stickers),
+            f"{len(stickers)}_stickers" if stickers else "none",
+            (
+                f"{len(stickers)} applied sticker(s) are present."
+                if stickers
+                else "No applied stickers are present."
+            ),
+        ),
+        _driver_flag(
+            "applied_charms",
+            bool(charms),
+            f"{len(charms)}_charms" if charms else "none",
+            (
+                f"{len(charms)} applied charm(s) are present."
+                if charms
+                else "No applied charms are present."
+            ),
+        ),
+        _driver_flag(
+            "pattern_sensitive_family",
+            bool(pattern_families),
+            ",".join(row["code"] for row in pattern_families) if pattern_families else "none",
+            (
+                "Market name matches pattern-sensitive family: "
+                + ", ".join(row["name"] for row in pattern_families)
+                if pattern_families
+                else "Market name does not match the configured pattern-sensitive families."
+            ),
+        ),
+        _driver_flag(
+            "phase_already_in_market_name",
+            phase is not None,
+            phase["code"] if phase else "none",
+            (
+                f"Doppler/Gamma phase is already named as {phase['name']}."
+                if phase
+                else "No Doppler/Gamma phase marker is separated in the market name."
+            ),
+        ),
+        _driver_flag(
+            "rank_present",
+            attributes["ranks"] is not None,
+            "ranked" if attributes["ranks"] is not None else "none",
+            (
+                "Rank metadata is present on the asset."
+                if attributes["ranks"] is not None
+                else "No rank metadata is present on the asset."
+            ),
+        ),
+    ]
+    present_codes = [flag["code"] for flag in flags if flag["present"]]
+    return {
+        "attributes": attributes,
+        "driver_flags": flags,
+        "signal_availability": {
+            code: PREMIUM_SIGNAL_AVAILABILITY[code] for code in present_codes
+        },
+        "summary": _evidence_summary(market_hash_name, flags),
+    }
+
+
 def build_inventory_baseline_response(
     *,
     reference: InventoryItemReference,
@@ -505,6 +674,18 @@ def build_inventory_baseline_response(
     market_baseline = build_market_baseline(price_points)
     status = "ok" if market_baseline is not None else "no_value_data"
     explanation = _explanation(status=status, market_hash_name=market_hash_name)
+    asset_payload = {
+        "asset_id": str(asset.get("asset_id")),
+        "market_hash_name": market_hash_name,
+        "slug": slugify(market_hash_name) if market_hash_name else None,
+        "float_value": _decimal_text(asset.get("float_value")),
+        "paint_seed": asset.get("paint_seed"),
+        "paint_id": item.get("paint_id"),
+        "low_rank": asset.get("low_rank"),
+        "high_rank": asset.get("high_rank"),
+        "stickers": [_shape_sticker(row) for row in asset.get("stickers") or []],
+        "charms": asset.get("charms") or [],
+    }
     return {
         "status": status,
         "reason": None if status == "ok" else "no_local_price_data",
@@ -515,18 +696,8 @@ def build_inventory_baseline_response(
             "context_id": reference.context_id,
             "asset_id": reference.asset_id,
         },
-        "asset": {
-            "asset_id": str(asset.get("asset_id")),
-            "market_hash_name": market_hash_name,
-            "slug": slugify(market_hash_name) if market_hash_name else None,
-            "float_value": _decimal_text(asset.get("float_value")),
-            "paint_seed": asset.get("paint_seed"),
-            "paint_id": item.get("paint_id"),
-            "low_rank": asset.get("low_rank"),
-            "high_rank": asset.get("high_rank"),
-            "stickers": [_shape_sticker(row) for row in asset.get("stickers") or []],
-            "charms": asset.get("charms") or [],
-        },
+        "asset": asset_payload,
+        "evidence": build_asset_evidence(asset_payload),
         "market_baseline": market_baseline,
         "price_points": [
             {
@@ -566,6 +737,27 @@ def build_inspect_baseline_response(
             market_hash_name=market_hash_name,
         )
 
+    asset_payload = {
+        "asset_id": str(decoded.itemid) if decoded.itemid else None,
+        "market_hash_name": market_hash_name,
+        "slug": slugify(market_hash_name) if market_hash_name else None,
+        "float_value": _float_text(decoded.paintwear),
+        "paint_seed": decoded.paintseed,
+        "paint_id": decoded.paintindex,
+        "defindex": decoded.defindex,
+        "rarity": decoded.rarity,
+        "quality": decoded.quality,
+        "is_stattrak": _is_stattrak_quality(decoded.quality),
+        "is_souvenir": _is_souvenir_quality(decoded.quality),
+        "stickers": [
+            _shape_decoded_sticker(row, reference_data)
+            for row in decoded.stickers
+        ],
+        "charms": [
+            _shape_decoded_keychain(row, reference_data)
+            for row in decoded.keychains
+        ],
+    }
     return {
         "status": status,
         "reason": reason,
@@ -575,27 +767,8 @@ def build_inspect_baseline_response(
             "inspect_link_format": "modern_encoded",
             "decoder": "cs2-inspect-lite",
         },
-        "asset": {
-            "asset_id": str(decoded.itemid) if decoded.itemid else None,
-            "market_hash_name": market_hash_name,
-            "slug": slugify(market_hash_name) if market_hash_name else None,
-            "float_value": _float_text(decoded.paintwear),
-            "paint_seed": decoded.paintseed,
-            "paint_id": decoded.paintindex,
-            "defindex": decoded.defindex,
-            "rarity": decoded.rarity,
-            "quality": decoded.quality,
-            "is_stattrak": _is_stattrak_quality(decoded.quality),
-            "is_souvenir": _is_souvenir_quality(decoded.quality),
-            "stickers": [
-                _shape_decoded_sticker(row, reference_data)
-                for row in decoded.stickers
-            ],
-            "charms": [
-                _shape_decoded_keychain(row, reference_data)
-                for row in decoded.keychains
-            ],
-        },
+        "asset": asset_payload,
+        "evidence": build_asset_evidence(asset_payload),
         "market_baseline": market_baseline,
         "price_points": [
             {
@@ -641,6 +814,18 @@ def build_inventory_summary_response(
         baseline = build_market_baseline(
             price_points_by_name.get(str(market_hash_name), [])
         )
+        asset_payload = {
+            "asset_id": str(asset.get("asset_id")),
+            "market_hash_name": market_hash_name,
+            "float_value": _decimal_text(asset.get("float_value")),
+            "paint_seed": asset.get("paint_seed"),
+            "paint_id": item.get("paint_id"),
+            "low_rank": asset.get("low_rank"),
+            "high_rank": asset.get("high_rank"),
+            "stickers": [_shape_sticker(row) for row in stickers],
+            "charms": asset.get("charms") or [],
+        }
+        evidence = build_asset_evidence(asset_payload)
         shaped = {
             "asset_id": str(asset.get("asset_id")),
             "market_hash_name": market_hash_name,
@@ -649,6 +834,7 @@ def build_inventory_summary_response(
             "paint_id": item.get("paint_id"),
             "sticker_count": len(stickers),
             "market_baseline": baseline,
+            "evidence": evidence,
         }
         if baseline is None:
             unpriced_items.append(shaped)
@@ -686,6 +872,11 @@ def build_inventory_summary_response(
             "Exact inventory assets were read, but no local USD market rows "
             "were available for a portfolio baseline."
         )
+    evidence = _portfolio_evidence(
+        [*priced_items, *unpriced_items],
+        priced_count=priced_count,
+        unpriced_count=unpriced_count,
+    )
 
     return {
         "status": status,
@@ -696,6 +887,7 @@ def build_inventory_summary_response(
             "app_id": reference.app_id,
             "context_id": reference.context_id,
         },
+        "evidence": evidence,
         "portfolio_baseline": {
             "currency": "usd",
             "low": _money(total_low),
@@ -737,6 +929,7 @@ def unreadable_response(reason: str, message: str) -> dict[str, Any]:
         "message": message,
         "reference": None,
         "asset": None,
+        "evidence": None,
         "market_baseline": None,
         "price_points": [],
     }
@@ -748,6 +941,7 @@ def unreadable_inventory_summary_response(reason: str, message: str) -> dict[str
         "reason": reason,
         "message": message,
         "reference": None,
+        "evidence": None,
         "portfolio_baseline": None,
         "top_items": [],
         "largest_spread_items": [],
@@ -784,6 +978,173 @@ def _float_text(value: float | None) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _wear_band_evidence(value: Any) -> dict[str, Any] | None:
+    text = _decimal_text(value)
+    if text is None:
+        return None
+    try:
+        wear = Decimal(text)
+    except Exception:
+        return None
+    for code, name, low, high in _WEAR_BANDS:
+        if low <= wear < high or (code == "battle_scarred" and wear <= high):
+            position_pct = (wear - low) / (high - low) * Decimal("100")
+            return {
+                "code": code,
+                "name": name,
+                "min_float": str(low),
+                "max_float": str(high),
+                "position_pct": _pct(position_pct),
+                "float_position": (
+                    "low"
+                    if position_pct <= _LOW_FLOAT_POSITION_PCT
+                    else "standard"
+                ),
+                "low_float_threshold_pct": str(_LOW_FLOAT_POSITION_PCT),
+            }
+    return None
+
+
+def _driver_flag(
+    code: str,
+    present: bool,
+    category: str,
+    explanation: str,
+) -> dict[str, Any]:
+    availability = PREMIUM_SIGNAL_AVAILABILITY[code]
+    return {
+        "code": code,
+        "label": _PREMIUM_DRIVER_LABELS[code],
+        "present": present,
+        "category": category,
+        "explanation": explanation,
+        "signal_status": availability["status"],
+    }
+
+
+def _market_name_is_stattrak(market_hash_name: str) -> bool:
+    return "stattrak" in market_hash_name.lower()
+
+
+def _market_name_is_souvenir(market_hash_name: str) -> bool:
+    return market_hash_name.lower().startswith("souvenir ")
+
+
+def _pattern_families(market_hash_name: str) -> list[dict[str, str]]:
+    name = market_hash_name.lower()
+    families: list[dict[str, str]] = []
+    if "case hardened" in name or "heat treated" in name:
+        families.append({"code": "case_hardened", "name": "Case Hardened"})
+    if "marble fade" in name:
+        families.append({"code": "marble_fade", "name": "Marble Fade"})
+    elif " | fade" in name or name.endswith(" fade"):
+        families.append({"code": "fade", "name": "Fade"})
+    if "gamma doppler" in name:
+        families.append({"code": "gamma_doppler", "name": "Gamma Doppler"})
+    elif "doppler" in name:
+        families.append({"code": "doppler", "name": "Doppler"})
+    if "crimson web" in name:
+        families.append({"code": "crimson_web", "name": "Crimson Web"})
+    return families
+
+
+def _phase_marker(market_hash_name: str) -> dict[str, str] | None:
+    name = market_hash_name.lower()
+    if "doppler" not in name:
+        return None
+    markers = (
+        ("black_pearl", "Black Pearl"),
+        ("sapphire", "Sapphire"),
+        ("emerald", "Emerald"),
+        ("ruby", "Ruby"),
+        ("phase_1", "Phase 1"),
+        ("phase_2", "Phase 2"),
+        ("phase_3", "Phase 3"),
+        ("phase_4", "Phase 4"),
+    )
+    for code, label in markers:
+        if label.lower() in name:
+            return {"code": code, "name": label}
+    return None
+
+
+def _evidence_summary(market_hash_name: str, flags: list[dict[str, Any]]) -> str:
+    present = [flag["label"] for flag in flags if flag["present"]]
+    item_name = market_hash_name or "this asset"
+    if not present:
+        return (
+            f"The market baseline for {item_name} is a generic market-name "
+            "range. No configured premium drivers were detected, and the "
+            "system does not compute any per-asset premium."
+        )
+    driver_text = ", ".join(present)
+    return (
+        f"The market baseline for {item_name} is a generic market-name range. "
+        f"Premium drivers detected: {driver_text}. The system cannot currently "
+        "price those drivers; a real appraisal requires an approved data source "
+        "and an operator-confirmed sales corpus."
+    )
+
+
+def _portfolio_evidence(
+    items: list[dict[str, Any]],
+    *,
+    priced_count: int,
+    unpriced_count: int,
+) -> dict[str, Any]:
+    driver_counts = dict.fromkeys(PREMIUM_SIGNAL_AVAILABILITY, 0)
+    for item in items:
+        evidence = item.get("evidence") or {}
+        for flag in evidence.get("driver_flags") or []:
+            if flag.get("present"):
+                driver_counts[flag["code"]] += 1
+    present_driver_counts = {
+        code: count for code, count in driver_counts.items() if count
+    }
+    return {
+        "attributes": {
+            "priced_count": priced_count,
+            "unpriced_count": unpriced_count,
+            "total_count": priced_count + unpriced_count,
+        },
+        "driver_counts": present_driver_counts,
+        "signal_availability": {
+            code: PREMIUM_SIGNAL_AVAILABILITY[code]
+            for code in present_driver_counts
+        },
+        "summary": _portfolio_evidence_summary(
+            present_driver_counts,
+            priced_count=priced_count,
+            unpriced_count=unpriced_count,
+        ),
+    }
+
+
+def _portfolio_evidence_summary(
+    driver_counts: dict[str, int],
+    *,
+    priced_count: int,
+    unpriced_count: int,
+) -> str:
+    total_count = priced_count + unpriced_count
+    if not driver_counts:
+        return (
+            f"The portfolio baseline covers {priced_count} of {total_count} "
+            "assets with generic market-name ranges. No configured premium "
+            "drivers were detected in the returned sample."
+        )
+    drivers = ", ".join(
+        f"{_PREMIUM_DRIVER_LABELS[code]} ({count})"
+        for code, count in driver_counts.items()
+    )
+    return (
+        f"The portfolio baseline covers {priced_count} of {total_count} assets "
+        "with generic market-name ranges. Premium drivers detected in the "
+        f"returned assets: {drivers}. The system cannot currently price those "
+        "drivers without an approved data source and confirmed-sales corpus."
+    )
 
 
 def _shape_sticker(row: dict[str, Any]) -> dict[str, Any]:

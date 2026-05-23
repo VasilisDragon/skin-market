@@ -208,6 +208,7 @@ class AssetBaselineResponse(BaseModel):
     message: str
     reference: dict[str, Any] | None
     asset: dict[str, Any] | None
+    evidence: dict[str, Any] | None
     market_baseline: dict[str, Any] | None
     price_points: list[dict[str, Any]]
 
@@ -219,6 +220,7 @@ class InventorySummaryResponse(BaseModel):
     reason: str | None
     message: str
     reference: dict[str, Any] | None
+    evidence: dict[str, Any] | None
     portfolio_baseline: dict[str, Any] | None
     top_items: list[dict[str, Any]]
     largest_spread_items: list[dict[str, Any]]
