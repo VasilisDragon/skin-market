@@ -73,6 +73,14 @@ class InventoryItemReference:
 
 
 @dataclass(frozen=True)
+class InventoryOwnerReference:
+    steam_id: str | None
+    vanity_id: str | None
+    app_id: str
+    context_id: str
+
+
+@dataclass(frozen=True)
 class PricePoint:
     source: str
     source_family: str
@@ -141,7 +149,53 @@ def parse_inventory_item_url(url: str) -> InventoryItemReference:
     raise InventoryLinkError("Could not find a SteamID64 or vanity id.")
 
 
-def resolve_steam_id(reference: InventoryItemReference) -> str:
+def parse_inventory_owner_url(url: str) -> InventoryOwnerReference:
+    """Parse a Steam inventory URL for whole-inventory baseline summaries."""
+    parsed = urlparse(url.strip())
+    host = (parsed.netloc or "").lower()
+    if host not in {"steamcommunity.com", "www.steamcommunity.com"}:
+        raise InventoryLinkError("Expected a steamcommunity.com inventory link.")
+
+    if parsed.fragment:
+        fragment_match = _INVENTORY_FRAGMENT_RE.match(parsed.fragment)
+        if fragment_match is None:
+            raise InventoryLinkError(
+                "Expected an inventory URL, optionally with #730_2_<asset_id>."
+            )
+        app_id = fragment_match.group("app_id")
+        context_id = fragment_match.group("context_id")
+        if app_id != CS2_APP_ID or context_id != CS2_CONTEXT_ID:
+            raise InventoryLinkError(
+                "Only CS2 inventory links with fragment #730_2_<asset_id> "
+                "are supported."
+            )
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 3 or parts[2] != "inventory":
+        raise InventoryLinkError(
+            "Expected /profiles/<steamid>/inventory/ or "
+            "/id/<vanity>/inventory/."
+        )
+
+    if parts[0] == "profiles" and _STEAM_ID64_RE.match(parts[1]):
+        return InventoryOwnerReference(
+            steam_id=parts[1],
+            vanity_id=None,
+            app_id=CS2_APP_ID,
+            context_id=CS2_CONTEXT_ID,
+        )
+    if parts[0] == "id" and parts[1]:
+        return InventoryOwnerReference(
+            steam_id=None,
+            vanity_id=parts[1],
+            app_id=CS2_APP_ID,
+            context_id=CS2_CONTEXT_ID,
+        )
+
+    raise InventoryLinkError("Could not find a SteamID64 or vanity id.")
+
+
+def resolve_steam_id(reference: InventoryItemReference | InventoryOwnerReference) -> str:
     """Resolve a parsed reference to SteamID64.
 
     Numeric profile URLs already carry the SteamID64. Vanity URLs are
@@ -556,6 +610,126 @@ def build_inspect_baseline_response(
     }
 
 
+def build_inventory_summary_response(
+    *,
+    reference: InventoryOwnerReference,
+    steam_id: str,
+    inventory: dict[str, Any],
+    price_points_by_name: dict[str, list[PricePoint]],
+) -> dict[str, Any]:
+    items = inventory.get("items")
+    if not isinstance(items, list):
+        raise InventoryUnavailableError(
+            "Pricempire returned an inventory without an items list."
+        )
+
+    total_low = Decimal("0")
+    total_mid = Decimal("0")
+    total_high = Decimal("0")
+    priced_items: list[dict[str, Any]] = []
+    unpriced_items: list[dict[str, Any]] = []
+    stickered_count = 0
+
+    for asset in items:
+        item = asset.get("item") or {}
+        market_hash_name = item.get("market_hash_name")
+        if not market_hash_name:
+            continue
+        stickers = asset.get("stickers") or []
+        if stickers:
+            stickered_count += 1
+        baseline = build_market_baseline(
+            price_points_by_name.get(str(market_hash_name), [])
+        )
+        shaped = {
+            "asset_id": str(asset.get("asset_id")),
+            "market_hash_name": market_hash_name,
+            "float_value": _decimal_text(asset.get("float_value")),
+            "paint_seed": asset.get("paint_seed"),
+            "paint_id": item.get("paint_id"),
+            "sticker_count": len(stickers),
+            "market_baseline": baseline,
+        }
+        if baseline is None:
+            unpriced_items.append(shaped)
+            continue
+        total_low += Decimal(baseline["low"])
+        total_mid += Decimal(baseline["mid"])
+        total_high += Decimal(baseline["high"])
+        shaped["baseline_spread_pct"] = _pct(
+            (Decimal(baseline["high"]) - Decimal(baseline["low"]))
+            / Decimal(baseline["mid"])
+            * 100
+        )
+        priced_items.append(shaped)
+
+    priced_items.sort(
+        key=lambda row: Decimal(row["market_baseline"]["mid"]),
+        reverse=True,
+    )
+    largest_spread_items = sorted(
+        priced_items,
+        key=lambda row: Decimal(row["baseline_spread_pct"]),
+        reverse=True,
+    )
+    status = "ok" if priced_items else "no_value_data"
+    priced_count = len(priced_items)
+    unpriced_count = len(unpriced_items)
+    total_count = priced_count + unpriced_count
+    message = (
+        f"Found market baselines for {priced_count} of {total_count} CS2 "
+        "inventory assets. Totals are market-name baselines and do not include "
+        "float, seed, sticker, or charm premiums."
+    )
+    if status == "no_value_data":
+        message = (
+            "Exact inventory assets were read, but no local USD market rows "
+            "were available for a portfolio baseline."
+        )
+
+    return {
+        "status": status,
+        "reason": None if status == "ok" else "no_local_price_data",
+        "message": message,
+        "reference": {
+            "steam_id": steam_id,
+            "app_id": reference.app_id,
+            "context_id": reference.context_id,
+        },
+        "portfolio_baseline": {
+            "currency": "usd",
+            "low": _money(total_low),
+            "mid": _money(total_mid),
+            "high": _money(total_high),
+            "priced_count": priced_count,
+            "unpriced_count": unpriced_count,
+            "stickered_count": stickered_count,
+            "top_item_share_pct": (
+                _pct(
+                    Decimal(priced_items[0]["market_baseline"]["mid"])
+                    / total_mid
+                    * 100
+                )
+                if total_mid > 0
+                else None
+            ),
+            "method": (
+                "Sum of each priced asset's market-name low/mid/high baseline "
+                "from latest local USD rows. Steam Wallet credit is excluded."
+            ),
+            "limitations": (
+                "This is a portfolio market baseline. It does not reprice "
+                "float, seed, sticker, charm, or pattern premiums."
+            ),
+        }
+        if priced_items
+        else None,
+        "top_items": priced_items[:10],
+        "largest_spread_items": largest_spread_items[:10],
+        "unpriced_sample": unpriced_items[:10],
+    }
+
+
 def unreadable_response(reason: str, message: str) -> dict[str, Any]:
     return {
         "status": "unreadable",
@@ -565,6 +739,19 @@ def unreadable_response(reason: str, message: str) -> dict[str, Any]:
         "asset": None,
         "market_baseline": None,
         "price_points": [],
+    }
+
+
+def unreadable_inventory_summary_response(reason: str, message: str) -> dict[str, Any]:
+    return {
+        "status": "unreadable",
+        "reason": reason,
+        "message": message,
+        "reference": None,
+        "portfolio_baseline": None,
+        "top_items": [],
+        "largest_spread_items": [],
+        "unpriced_sample": [],
     }
 
 
@@ -579,6 +766,10 @@ def _median(values: list[Decimal]) -> Decimal:
 
 def _money(value: Decimal) -> str:
     return str(value.quantize(_CENTS, rounding=ROUND_HALF_UP))
+
+
+def _pct(value: Decimal) -> str:
+    return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _decimal_text(value: Any) -> str | None:

@@ -22,6 +22,7 @@ from api.asset_valuation import (
     fetch_pricempire_inventory,
     find_inventory_asset,
     parse_inventory_item_url,
+    parse_inventory_owner_url,
     resolve_decoded_market_hash_name,
     resolve_steam_id,
 )
@@ -132,6 +133,23 @@ def test_parse_vanity_inventory_link_defers_resolution() -> None:
     assert ref.steam_id is None
     assert ref.vanity_id == "some-trader"
     assert ref.asset_id == "123"
+
+
+def test_parse_inventory_owner_link_accepts_profile_inventory() -> None:
+    ref = parse_inventory_owner_url(
+        "https://steamcommunity.com/profiles/76561199276192848/inventory/"
+    )
+    assert ref.steam_id == "76561199276192848"
+    assert ref.vanity_id is None
+    assert ref.app_id == "730"
+    assert ref.context_id == "2"
+
+
+def test_parse_inventory_owner_link_accepts_item_fragment() -> None:
+    ref = parse_inventory_owner_url(_INVENTORY_URL)
+    assert ref.steam_id == "76561199276192848"
+    assert ref.app_id == "730"
+    assert ref.context_id == "2"
 
 
 def test_rejects_non_cs2_inventory_fragment() -> None:
@@ -253,6 +271,86 @@ def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
     assert body["market_baseline"]["low"] == "150.13"
     assert body["market_baseline"]["mid"] == "174.42"
     assert body["market_baseline"]["high"] == "198.70"
+
+
+def test_inventory_summary_route_returns_portfolio_baseline(client, monkeypatch) -> None:
+    inventory = {
+        "items": [
+            {
+                "asset_id": "1",
+                "float_value": Decimal("0.035"),
+                "paint_seed": 169,
+                "stickers": [{"name": "Sticker | Example", "slot": 0}],
+                "item": {
+                    "market_hash_name": "Souvenir MP9 | Hot Rod (Factory New)",
+                    "paint_id": 33,
+                },
+            },
+            {
+                "asset_id": "2",
+                "float_value": Decimal("0.202"),
+                "paint_seed": 712,
+                "stickers": [],
+                "item": {
+                    "market_hash_name": "StatTrak™ M4A1-S | Cyrex (Field-Tested)",
+                    "paint_id": 360,
+                },
+            },
+            {
+                "asset_id": "3",
+                "float_value": Decimal("0.066"),
+                "paint_seed": 520,
+                "stickers": [],
+                "item": {
+                    "market_hash_name": "Unpriced Item (Factory New)",
+                    "paint_id": 645,
+                },
+            },
+        ]
+    }
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.fetch_pricempire_inventory",
+        lambda steam_id, *, force=False: inventory,
+    )
+
+    def _price_points(session, name):
+        rows = {
+            "Souvenir MP9 | Hot Rod (Factory New)": [
+                PricePoint("pricempire_a", "pricempire", Decimal("100.00"), 1, None),
+                PricePoint("pricempire_b", "pricempire", Decimal("140.00"), 1, None),
+            ],
+            "StatTrak™ M4A1-S | Cyrex (Field-Tested)": [
+                PricePoint("pricempire_a", "pricempire", Decimal("50.00"), 1, None),
+                PricePoint("pricempire_b", "pricempire", Decimal("70.00"), 1, None),
+            ],
+        }
+        return rows.get(name, [])
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.load_latest_usd_price_points",
+        _price_points,
+    )
+
+    resp = client.post(
+        "/asset-valuations/inventory/summary",
+        json={"inventory_url": _INVENTORY_URL},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["portfolio_baseline"]["low"] == "150.00"
+    assert body["portfolio_baseline"]["mid"] == "180.00"
+    assert body["portfolio_baseline"]["high"] == "210.00"
+    assert body["portfolio_baseline"]["priced_count"] == 2
+    assert body["portfolio_baseline"]["unpriced_count"] == 1
+    assert body["portfolio_baseline"]["stickered_count"] == 1
+    assert body["portfolio_baseline"]["top_item_share_pct"] == "66.67"
+    assert [row["asset_id"] for row in body["top_items"]] == ["1", "2"]
+    assert [row["asset_id"] for row in body["largest_spread_items"]] == ["1", "2"]
+    assert body["largest_spread_items"][0]["baseline_spread_pct"] == "33.33"
+    assert body["unpriced_sample"][0]["market_hash_name"] == "Unpriced Item (Factory New)"
 
 
 def test_legacy_inspect_link_is_scope_boundary() -> None:

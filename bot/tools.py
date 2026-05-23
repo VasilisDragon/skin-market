@@ -806,6 +806,27 @@ def market_baseline_inventory_item(inventory_url: str) -> dict:
         return resp.json()
 
 
+def market_baseline_inventory_summary(inventory_url: str) -> dict:
+    """Return a public inventory's summed market-name USD baseline."""
+    payload = {"inventory_url": inventory_url}
+    with _client(timeout_read=90.0) as c:
+        try:
+            resp = c.post("/asset-valuations/inventory/summary", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /asset-valuations/inventory/summary: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /asset-valuations/inventory/summary: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def market_baseline_inspect_link(inspect_url: str) -> dict:
     """Return decoded inspect attributes plus a market-name USD baseline."""
     payload = {"inspect_url": inspect_url}
@@ -1221,6 +1242,32 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "market_baseline_inventory_summary",
+            "description": (
+                "Call this when the user asks for total inventory value, "
+                "portfolio value, top inventory items, or a public Steam "
+                "inventory summary. Returns a summed market-name USD baseline "
+                "for priced CS2 inventory assets plus top items. It does not "
+                "price float, seed, sticker, or charm premiums."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inventory_url": {
+                        "type": "string",
+                        "description": (
+                            "Steam inventory URL, optionally with a "
+                            "#730_2_<asset_id> fragment."
+                        ),
+                    }
+                },
+                "required": ["inventory_url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "market_baseline_inspect_link",
             "description": (
                 "Call this when the user pastes a CS2 inspect link, "
@@ -1301,6 +1348,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "render_chart": render_chart,
     "evaluate_deal": evaluate_deal,
     "market_baseline_inventory_item": market_baseline_inventory_item,
+    "market_baseline_inventory_summary": market_baseline_inventory_summary,
     "market_baseline_inspect_link": market_baseline_inspect_link,
     "query_drift": query_drift,
     "narrative_today": narrative_today,

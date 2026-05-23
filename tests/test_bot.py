@@ -42,6 +42,7 @@ from bot.tools import (
     list_watchlist,
     market_baseline_inspect_link,
     market_baseline_inventory_item,
+    market_baseline_inventory_summary,
     narrative_today,
     query_current_price,
     query_drift,
@@ -98,6 +99,7 @@ class TestToolsRegistry:
             "render_chart",
             "evaluate_deal",
             "market_baseline_inventory_item",
+            "market_baseline_inventory_summary",
             "market_baseline_inspect_link",
             "query_drift",
             "narrative_today",
@@ -221,6 +223,44 @@ class TestToolsAuthAndConnectivity:
         assert request is not None
         assert json.loads(request.content) == {
             "inspect_url": "steam://run/730//+csgo_econ_action_preview%20A0B016"
+        }
+
+    def test_market_baseline_inventory_summary_wraps_api_route(self, httpx_mock) -> None:
+        payload = {
+            "status": "ok",
+            "reason": None,
+            "message": "summary",
+            "reference": {"steam_id": "76561199276192848"},
+            "portfolio_baseline": {
+                "low": "151.12",
+                "mid": "175.41",
+                "high": "201.07",
+                "priced_count": 2,
+                "unpriced_count": 1,
+                "stickered_count": 1,
+                "top_item_share_pct": "68.41",
+            },
+            "top_items": [],
+            "largest_spread_items": [],
+            "unpriced_sample": [],
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/asset-valuations/inventory/summary",
+            json=payload,
+        )
+
+        result = market_baseline_inventory_summary(
+            "https://steamcommunity.com/profiles/76561199276192848/inventory/"
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "inventory_url": (
+                "https://steamcommunity.com/profiles/76561199276192848/inventory/"
+            )
         }
 
 
@@ -1121,6 +1161,7 @@ class TestSystemPromptPhase2bStep9:
         from bot.system_prompt import SYSTEM_PROMPT
 
         assert "market_baseline_inventory_item" in SYSTEM_PROMPT
+        assert "market_baseline_inventory_summary" in SYSTEM_PROMPT
         assert "market_baseline_inspect_link" in SYSTEM_PROMPT
         assert "Do not render a table" in SYSTEM_PROMPT
         assert "name individual sources" in SYSTEM_PROMPT
@@ -1132,6 +1173,10 @@ class TestSystemPromptPhase2bStep9:
         assert "After rendering `market_baseline`, stop" in SYSTEM_PROMPT
         assert "Render `market_baseline` under the heading" in SYSTEM_PROMPT
         assert "market baseline section must be the final section" in SYSTEM_PROMPT
+        assert "portfolio_baseline" in SYSTEM_PROMPT
+        assert "priced/unpriced counts" in SYSTEM_PROMPT
+        assert "stickered count" in SYSTEM_PROMPT
+        assert "largest_spread_items" in SYSTEM_PROMPT
         assert "Do not mention CSFloat/Skinport/DMarket" in SYSTEM_PROMPT
         assert "do not fall back to market_hash_name averages" in SYSTEM_PROMPT
 

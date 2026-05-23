@@ -14,20 +14,25 @@ from api.asset_valuation import (
     InventoryUnavailableError,
     build_inspect_baseline_response,
     build_inventory_baseline_response,
+    build_inventory_summary_response,
     decode_modern_inspect_link,
     fetch_csgo_reference_data,
     fetch_pricempire_inventory,
     find_inventory_asset,
     load_latest_usd_price_points,
     parse_inventory_item_url,
+    parse_inventory_owner_url,
     resolve_decoded_market_hash_name,
     resolve_steam_id,
+    unreadable_inventory_summary_response,
     unreadable_response,
 )
 from api.schemas import (
     AssetBaselineResponse,
     InspectBaselineRequest,
     InventoryBaselineRequest,
+    InventorySummaryRequest,
+    InventorySummaryResponse,
 )
 from db.connection import get_engine
 
@@ -81,6 +86,53 @@ def inventory_market_baseline(
             steam_id=steam_id,
             asset=asset,
             price_points=price_points,
+        )
+    )
+
+
+@router.post(
+    "/asset-valuations/inventory/summary",
+    response_model=InventorySummaryResponse,
+)
+def inventory_portfolio_market_baseline(
+    request: InventorySummaryRequest,
+) -> InventorySummaryResponse:
+    """Return a public inventory's summed market-name portfolio baseline."""
+    try:
+        reference = parse_inventory_owner_url(request.inventory_url)
+        steam_id = resolve_steam_id(reference)
+        inventory = fetch_pricempire_inventory(steam_id)
+    except InventoryLinkError as exc:
+        return InventorySummaryResponse.model_validate(
+            unreadable_inventory_summary_response("invalid_inventory_link", str(exc))
+        )
+    except InventoryUnavailableError as exc:
+        return InventorySummaryResponse.model_validate(
+            unreadable_inventory_summary_response("private_or_unavailable", str(exc))
+        )
+
+    market_hash_names = sorted(
+        {
+            str((asset.get("item") or {}).get("market_hash_name"))
+            for asset in inventory.get("items", [])
+            if (asset.get("item") or {}).get("market_hash_name")
+        }
+    )
+    price_points_by_name = {}
+    if market_hash_names:
+        engine = get_engine()
+        with Session(engine) as session:
+            price_points_by_name = {
+                name: load_latest_usd_price_points(session, name)
+                for name in market_hash_names
+            }
+
+    return InventorySummaryResponse.model_validate(
+        build_inventory_summary_response(
+            reference=reference,
+            steam_id=steam_id,
+            inventory=inventory,
+            price_points_by_name=price_points_by_name,
         )
     )
 

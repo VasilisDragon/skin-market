@@ -164,6 +164,18 @@ class InventoryBaselineRequest(BaseModel):
     )
 
 
+class InventorySummaryRequest(BaseModel):
+    """Request body for whole public-inventory portfolio baseline lookup."""
+
+    inventory_url: str = Field(
+        ...,
+        description=(
+            "Steam inventory URL, optionally including a #730_2_<asset_id> "
+            "fragment."
+        ),
+    )
+
+
 class InspectBaselineRequest(BaseModel):
     """Request body for inspect-link asset baseline lookup."""
 
@@ -189,6 +201,19 @@ class AssetBaselineResponse(BaseModel):
     asset: dict[str, Any] | None
     market_baseline: dict[str, Any] | None
     price_points: list[dict[str, Any]]
+
+
+class InventorySummaryResponse(BaseModel):
+    """Structured public-inventory portfolio market baseline result."""
+
+    status: Literal["ok", "no_value_data", "unreadable"]
+    reason: str | None
+    message: str
+    reference: dict[str, Any] | None
+    portfolio_baseline: dict[str, Any] | None
+    top_items: list[dict[str, Any]]
+    largest_spread_items: list[dict[str, Any]]
+    unpriced_sample: list[dict[str, Any]]
 
 
 class HistoryObservation(BaseModel):

@@ -65,6 +65,15 @@ or missing pairs.
   method details.
   If status is `unreadable`, say the inventory/profile is private or the link
   could not be read; do not fall back to market_hash_name averages.
+- `market_baseline_inventory_summary`: public Steam inventory links when the
+  user asks for total inventory value, portfolio value, inventory summary, or
+  top inventory items. Render `message`, then `portfolio_baseline` as Low/Mid/
+  High plus priced/unpriced counts, stickered count, and top-item share, then
+  up to five `top_items`, then up to three `largest_spread_items` when present.
+  Say plainly that totals are market-name baselines and do not include float,
+  seed, sticker, or charm premiums. Do not list every inventory item unless
+  explicitly asked. If status is `unreadable`, say the inventory/profile is
+  private or the link could not be read.
 - `market_baseline_inspect_link`: raw CS2 inspect links
   (`steam://run/730...` or `steam://rungame/730...`), exact inspect-asset
   attributes, or market-baseline questions for a pasted inspect link. Render in
