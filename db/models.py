@@ -301,3 +301,45 @@ class Insight(Base):
     # writes ``insight.metadata = {...}`` would silently reassign the
     # registry instead of setting a column value.
     meta_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class LLMUsageLog(Base):
+    """One row per DeepSeek API request.
+
+    Stores the model-reported token counts, price rates in effect at
+    request time, computed request cost, and a bounded prompt audit
+    fingerprint. ``full_prompt`` stays NULL unless an explicit dev flag
+    enables full prompt retention.
+    """
+
+    __tablename__ = "llm_usage_log"
+
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    discord_user_id: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_cache_hit_tokens: Mapped[int | None] = mapped_column(Integer)
+    prompt_cache_miss_tokens: Mapped[int | None] = mapped_column(Integer)
+    input_cache_hit_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(14, 8), nullable=False
+    )
+    input_cache_miss_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(14, 8), nullable=False
+    )
+    output_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(14, 8), nullable=False
+    )
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    prompt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_preview: Mapped[str] = mapped_column(Text, nullable=False)
+    full_prompt: Mapped[str | None] = mapped_column(Text)
+    raw_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
