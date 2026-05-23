@@ -69,6 +69,13 @@ References checked:
   - `market_signal_digest` Discord tool,
   - deterministic severity/ranking/summary over recent spread and volume
     anomalies.
+- Added recurring signal digest subscriptions:
+  - `POST /signals/subscriptions`, `GET /signals/subscriptions`,
+    `POST /signals/subscriptions/{id}/cancel`,
+    `POST /signals/subscriptions/evaluate`, and
+    `POST /signals/subscriptions/{id}/delivery`,
+  - channel delivery loop with deterministic digest messages,
+  - quiet-hour support and entitlement-backed subscription quotas.
 
 ## Next features worth building
 
@@ -88,8 +95,9 @@ References checked:
    model before it should affect user-facing dollar values.
 
 4. Signal lanes / digest channels.
-   The bot now has an on-demand digest. The paid product version should add
-   scheduled signal subscriptions with configurable thresholds and quiet hours.
+   The bot now has on-demand and scheduled signal digests. The next version
+   should split digest types into named lanes such as liquid flips, market
+   movers, sticker crafts, and float hunts.
 
 5. Trade safety and execution context.
    Add trade-lock awareness, sold-status context when a source supports it, and

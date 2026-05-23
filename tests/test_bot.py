@@ -29,6 +29,7 @@ import pytest
 
 from bot import deepseek_client, discord_render
 from bot.price_alert_delivery import format_price_alert_message
+from bot.signal_subscription_delivery import format_signal_digest_message
 from bot.tools import (
     HISTORY_DOWNSAMPLE_THRESHOLD,
     TOOL_DEFINITIONS,
@@ -41,12 +42,16 @@ from bot.tools import (
     ItemNotInWatchlistError,
     _refresh_items_cache,
     cancel_price_alert,
+    cancel_signal_subscription,
     create_price_alert,
+    create_signal_subscription,
     evaluate_deal,
     list_portfolio_snapshots,
     list_price_alerts,
+    list_signal_subscriptions,
     list_watchlist,
     mark_price_alert_delivery,
+    mark_signal_subscription_delivery,
     market_baseline_inspect_link,
     market_baseline_inventory_item,
     market_baseline_inventory_summary,
@@ -111,6 +116,9 @@ class TestToolsRegistry:
             "create_price_alert",
             "list_price_alerts",
             "cancel_price_alert",
+            "create_signal_subscription",
+            "list_signal_subscriptions",
+            "cancel_signal_subscription",
             "market_baseline_inventory_item",
             "market_baseline_inventory_summary",
             "market_baseline_inspect_link",
@@ -500,6 +508,114 @@ class TestToolsAuthAndConnectivity:
         assert request is not None
         assert json.loads(request.content) == {
             "delivered": True,
+            "error": None,
+        }
+
+    def test_signal_subscription_wrappers(self, httpx_mock) -> None:
+        subscription_id = "33333333-3333-3333-3333-333333333333"
+        subscription = {
+            "id": subscription_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "hours": 6,
+            "limit": 4,
+            "threshold_z": "3.00",
+            "interval_minutes": 360,
+            "quiet_start_hour": 22,
+            "quiet_end_hour": 7,
+            "timezone_offset_minutes": -300,
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": None,
+            "last_sent_at": None,
+            "last_delivery_attempt_at": None,
+            "delivery_attempts": 0,
+            "last_delivery_error": None,
+            "last_digest_fingerprint": None,
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/signals/subscriptions",
+            json=subscription,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url=(
+                f"{_BASE}/signals/subscriptions"
+                "?discord_user_id=1234&include_inactive=false"
+            ),
+            json=[subscription],
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/signals/subscriptions/{subscription_id}/cancel",
+            json={**subscription, "status": "cancelled"},
+        )
+
+        created = create_signal_subscription(
+            hours=6,
+            limit=4,
+            threshold_z="3.00",
+            interval_minutes=360,
+            quiet_start_hour=22,
+            quiet_end_hour=7,
+            timezone_offset_minutes=-300,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+        listed = list_signal_subscriptions(discord_user_id="1234")
+        cancelled = cancel_signal_subscription(
+            subscription_id,
+            discord_user_id="1234",
+        )
+
+        assert created == subscription
+        assert listed == {"subscriptions": [subscription], "count": 1}
+        assert cancelled["status"] == "cancelled"
+
+    def test_mark_signal_subscription_delivery_wraps_api_route(
+        self,
+        httpx_mock,
+    ) -> None:
+        subscription_id = "33333333-3333-3333-3333-333333333333"
+        payload = {
+            "id": subscription_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "hours": 6,
+            "limit": 4,
+            "threshold_z": "3.00",
+            "interval_minutes": 360,
+            "quiet_start_hour": None,
+            "quiet_end_hour": None,
+            "timezone_offset_minutes": 0,
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": "2026-05-23T00:01:00Z",
+            "last_sent_at": "2026-05-23T00:02:00Z",
+            "last_delivery_attempt_at": "2026-05-23T00:02:00Z",
+            "delivery_attempts": 1,
+            "last_delivery_error": None,
+            "last_digest_fingerprint": "abc123",
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/signals/subscriptions/{subscription_id}/delivery",
+            json=payload,
+        )
+
+        result = mark_signal_subscription_delivery(
+            subscription_id,
+            delivered=True,
+            digest_fingerprint="abc123",
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "delivered": True,
+            "digest_fingerprint": "abc123",
             "error": None,
         }
 
@@ -2433,6 +2549,62 @@ class TestDeepSeekClientSingleToolCall:
         assert "discord_channel_id" not in json.loads(request.content)
         assert reply.text == "Snapshot saved."
 
+    async def test_signal_subscription_tool_receives_hidden_discord_context(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/signals/subscriptions",
+            json={
+                "id": "33333333-3333-3333-3333-333333333333",
+                "discord_user_id": "1234",
+                "discord_channel_id": "5678",
+                "hours": 6,
+                "limit": 8,
+                "threshold_z": "3.00",
+                "interval_minutes": 360,
+                "quiet_start_hour": None,
+                "quiet_end_hour": None,
+                "timezone_offset_minutes": 0,
+                "status": "active",
+                "created_at": "2026-05-23T00:00:00Z",
+                "last_checked_at": None,
+                "last_sent_at": None,
+                "last_delivery_attempt_at": None,
+                "delivery_attempts": 0,
+                "last_delivery_error": None,
+                "last_digest_fingerprint": None,
+            },
+        )
+        client = _scripted_client(
+            [
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "create_signal_subscription",
+                            {"interval_minutes": 360},
+                        )
+                    ]
+                ),
+                _make_msg(content="Signal digest subscription created."),
+            ]
+        )
+
+        reply = await deepseek_client.handle_user_message(
+            "send this channel a signal digest every six hours",
+            client=client,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content)["discord_user_id"] == "1234"
+        assert json.loads(request.content)["discord_channel_id"] == "5678"
+        assert reply.text == "Signal digest subscription created."
+
 
 class TestDeepSeekClientDefensive:
     """Open-source model failure modes that must NOT crash the bot."""
@@ -2681,6 +2853,36 @@ class TestPriceAlertDelivery:
         assert "Target: at or below 25.00 USD" in text
         assert "Current: 24.00 USD on skinport" in text
         assert "Alert id: `11111111-1111-1111-1111-111111111111`" in text
+
+
+class TestSignalSubscriptionDelivery:
+    def test_formats_signal_digest_message(self) -> None:
+        text = format_signal_digest_message(
+            {
+                "subscription": {
+                    "id": "33333333-3333-3333-3333-333333333333",
+                    "limit": 4,
+                },
+                "digest": {
+                    "hours": 6,
+                    "total_anomalies": 1,
+                    "signals": [
+                        {
+                            "severity": "high",
+                            "display_name": "AK-47 | Redline (Field-Tested)",
+                            "z_score": "3.20",
+                            "summary": "Spread between 1 and 27 is unusual.",
+                        }
+                    ],
+                },
+            }
+        )
+
+        assert "Market signal digest" in text
+        assert "last 6h; 1 qualifying signals" in text
+        assert "High | AK-47 | Redline (Field-Tested) (3.20 z)" in text
+        assert "Spread between 1 and 27 is unusual." in text
+        assert "not buy/sell instructions" in text
 
 
 class TestSystemPrompt:

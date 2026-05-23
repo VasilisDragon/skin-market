@@ -51,6 +51,7 @@ Denomination = Literal["usd", "wallet_credit"]
 Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
 AlertStatus = Literal["active", "triggered", "cancelled"]
+SignalSubscriptionStatus = Literal["active", "cancelled"]
 DiscordEntitlementTier = Literal["free", "trader", "pro"]
 EffectiveEntitlementTier = Literal["default", "free", "trader", "pro"]
 DiscordEntitlementStatus = Literal["active", "disabled"]
@@ -345,6 +346,76 @@ class DiscordEntitlementResponse(BaseModel):
     created_at: datetime | None
     updated_at: datetime | None
     quotas: dict[str, int]
+
+
+class SignalSubscriptionCreateRequest(BaseModel):
+    """Create a recurring Discord market-signal digest subscription."""
+
+    discord_user_id: str
+    discord_channel_id: str
+    hours: int = Field(default=6, ge=1, le=24)
+    limit: int = Field(default=8, ge=1, le=20)
+    threshold_z: MoneyStr = Field(default=Decimal("3.00"), ge=0)
+    interval_minutes: int = Field(default=360, ge=15, le=10080)
+    quiet_start_hour: int | None = Field(default=None, ge=0, le=23)
+    quiet_end_hour: int | None = Field(default=None, ge=0, le=23)
+    timezone_offset_minutes: int = Field(default=0, ge=-720, le=840)
+
+
+class SignalSubscriptionCancelRequest(BaseModel):
+    """Cancel a recurring signal digest subscription for one Discord user."""
+
+    discord_user_id: str
+
+
+class SignalSubscriptionEvaluateRequest(BaseModel):
+    """Evaluate due signal subscriptions for Discord delivery."""
+
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class SignalSubscriptionDeliveryRequest(BaseModel):
+    """Record Discord delivery state for one signal digest subscription."""
+
+    delivered: bool
+    digest_fingerprint: str | None = Field(default=None, max_length=128)
+    error: str | None = Field(default=None, max_length=500)
+
+
+class SignalSubscriptionResponse(BaseModel):
+    """Persisted signal digest subscription settings and delivery state."""
+
+    id: str
+    discord_user_id: str
+    discord_channel_id: str
+    hours: int
+    limit: int
+    threshold_z: MoneyStr
+    interval_minutes: int
+    quiet_start_hour: int | None
+    quiet_end_hour: int | None
+    timezone_offset_minutes: int
+    status: SignalSubscriptionStatus
+    created_at: datetime
+    last_checked_at: datetime | None
+    last_sent_at: datetime | None
+    last_delivery_attempt_at: datetime | None
+    delivery_attempts: int
+    last_delivery_error: str | None
+    last_digest_fingerprint: str | None
+
+
+class SignalSubscriptionDigest(BaseModel):
+    """Due subscription plus deterministic digest payload for delivery."""
+
+    subscription: SignalSubscriptionResponse
+    digest: dict[str, Any]
+    digest_fingerprint: str
+
+
+class SignalSubscriptionEvaluateResponse(BaseModel):
+    checked_count: int
+    due: list[SignalSubscriptionDigest]
 
 
 class HistoryObservation(BaseModel):

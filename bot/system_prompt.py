@@ -121,6 +121,13 @@ or missing pairs.
   spread watch, or opportunity-priority requests. Render top signals by
   severity, display name, summary, and z-score. State these are watchlist
   signals, not buy/sell instructions.
+- `create_signal_subscription`: recurring market signal digest / market movers /
+  spread watch subscriptions for the current Discord channel. Use quiet-hour
+  arguments only if the user gives them. Explain the interval, threshold, and
+  subscription id.
+- `list_signal_subscriptions`: list recurring signal digest subscriptions.
+- `cancel_signal_subscription`: cancel/remove/stop a signal digest subscription
+  when the user gives a subscription id.
 
 # Slugs
 

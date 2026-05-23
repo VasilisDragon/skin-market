@@ -257,6 +257,16 @@ def get_signal_digest(
     ] = SIGNAL_DIGEST_DEFAULT_LIMIT,
 ) -> SignalDigestResponse:
     """Return a compact ranked signal digest for Discord rendering."""
+    return build_signal_digest(hours=hours, limit=limit)
+
+
+def build_signal_digest(
+    *,
+    hours: int,
+    limit: int,
+    min_abs_z: float = 0.0,
+) -> SignalDigestResponse:
+    """Build a deterministic ranked signal digest from stored insight rows."""
     generated_at = datetime.now(UTC)
     since = generated_at - timedelta(hours=hours)
 
@@ -272,9 +282,10 @@ def get_signal_digest(
                     'volume_anomaly'
                 )
                   AND computed_at >= :since
+                  AND ABS(value) >= :min_abs_z
                 """
             ),
-            {"since": since},
+            {"since": since, "min_abs_z": min_abs_z},
         ).scalar_one()
         rows = (
             session.execute(
@@ -294,11 +305,12 @@ def get_signal_digest(
                         'volume_anomaly'
                     )
                       AND ins.computed_at >= :since
+                      AND ABS(ins.value) >= :min_abs_z
                     ORDER BY ABS(ins.value) DESC, ins.computed_at DESC
                     LIMIT :limit
                     """
                 ),
-                {"since": since, "limit": limit},
+                {"since": since, "min_abs_z": min_abs_z, "limit": limit},
             )
             .mappings()
             .all()

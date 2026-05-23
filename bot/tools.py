@@ -1104,6 +1104,163 @@ def market_signal_digest(hours: int = 6, limit: int = 8) -> dict:
         )
 
 
+def create_signal_subscription(
+    hours: int = 6,
+    limit: int = 8,
+    threshold_z: str = "3.00",
+    interval_minutes: int = 360,
+    quiet_start_hour: int | None = None,
+    quiet_end_hour: int | None = None,
+    timezone_offset_minutes: int = 0,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Create a recurring signal digest subscription for the current channel."""
+    if discord_user_id is None or discord_channel_id is None:
+        raise ApiUnexpectedError("Missing Discord context for signal subscription.")
+    payload = {
+        "discord_user_id": discord_user_id,
+        "discord_channel_id": discord_channel_id,
+        "hours": hours,
+        "limit": limit,
+        "threshold_z": threshold_z,
+        "interval_minutes": interval_minutes,
+        "quiet_start_hour": quiet_start_hour,
+        "quiet_end_hour": quiet_end_hour,
+        "timezone_offset_minutes": timezone_offset_minutes,
+    }
+    with _client() as c:
+        try:
+            resp = c.post("/signals/subscriptions", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /signals/subscriptions: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 409:
+            raise ApiUnexpectedError(
+                f"Signal subscription quota reached: {resp.text[:200]}"
+            )
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /signals/subscriptions: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def list_signal_subscriptions(
+    include_inactive: bool = False,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """List signal digest subscriptions for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for signal digests.")
+    with _client() as c:
+        raw = _get_json(
+            c,
+            "/signals/subscriptions",
+            params={
+                "discord_user_id": discord_user_id,
+                "include_inactive": include_inactive,
+            },
+        )
+    return {"subscriptions": raw, "count": len(raw)}
+
+
+def cancel_signal_subscription(
+    subscription_id: str,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Cancel one signal digest subscription owned by the current user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for signal digests.")
+    payload = {"discord_user_id": discord_user_id}
+    with _client() as c:
+        try:
+            resp = c.post(
+                f"/signals/subscriptions/{subscription_id}/cancel",
+                json=payload,
+            )
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                "Couldn't reach "
+                f"/signals/subscriptions/{subscription_id}/cancel: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Signal subscription not found.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /signals/subscriptions/"
+                f"{subscription_id}/cancel: {resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def evaluate_signal_subscriptions(limit: int = 100) -> dict:
+    """Evaluate due signal digest subscriptions for delivery."""
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post("/signals/subscriptions/evaluate", json={"limit": limit})
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /signals/subscriptions/evaluate: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /signals/subscriptions/evaluate: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def mark_signal_subscription_delivery(
+    subscription_id: str,
+    delivered: bool,
+    digest_fingerprint: str | None = None,
+    error: str | None = None,
+) -> dict:
+    """Record Discord delivery state for one signal digest subscription."""
+    payload = {
+        "delivered": delivered,
+        "digest_fingerprint": digest_fingerprint,
+        "error": error,
+    }
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post(
+                f"/signals/subscriptions/{subscription_id}/delivery",
+                json=payload,
+            )
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                "Couldn't reach "
+                f"/signals/subscriptions/{subscription_id}/delivery: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Signal subscription not found.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /signals/subscriptions/"
+                f"{subscription_id}/delivery: {resp.text[:200]}"
+            )
+        return resp.json()
+
+
 # ---------------------------------------------------------------------
 # Size-discipline summarizers (Phase 7c-fix)
 # ---------------------------------------------------------------------
@@ -1742,6 +1899,92 @@ TOOL_DEFINITIONS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_signal_subscription",
+            "description": (
+                "Call this when the user asks to subscribe a channel to "
+                "recurring market signal digests, market movers, or spread "
+                "watch updates. Discord user/channel context is injected by "
+                "the bot; do not ask the user for IDs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "integer",
+                        "description": "Lookback in hours. Default 6, max 24.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum signals per digest. Default 8.",
+                    },
+                    "threshold_z": {
+                        "type": "string",
+                        "description": "Minimum absolute z-score. Default 3.00.",
+                    },
+                    "interval_minutes": {
+                        "type": "integer",
+                        "description": "Delivery interval in minutes. Default 360.",
+                    },
+                    "quiet_start_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet start hour, 0-23.",
+                    },
+                    "quiet_end_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet end hour, 0-23.",
+                    },
+                    "timezone_offset_minutes": {
+                        "type": "integer",
+                        "description": "User local offset from UTC in minutes.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_signal_subscriptions",
+            "description": (
+                "Call this when the user asks to list recurring signal digest "
+                "subscriptions or market-mover channel subscriptions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_inactive": {
+                        "type": "boolean",
+                        "description": "Include cancelled subscriptions when true.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_signal_subscription",
+            "description": (
+                "Call this when the user asks to cancel, remove, or stop a "
+                "signal digest subscription by subscription id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subscription_id": {
+                        "type": "string",
+                        "description": "Subscription id from list_signal_subscriptions.",
+                    }
+                },
+                "required": ["subscription_id"],
+            },
+        },
+    },
 ]
 
 
@@ -1764,6 +2007,9 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,
     "market_signal_digest": market_signal_digest,
+    "create_signal_subscription": create_signal_subscription,
+    "list_signal_subscriptions": list_signal_subscriptions,
+    "cancel_signal_subscription": cancel_signal_subscription,
 }
 
 

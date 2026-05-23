@@ -478,3 +478,74 @@ class DiscordEntitlement(Base):
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'active'")
     )
+
+
+class SignalSubscription(Base):
+    """Recurring Discord delivery settings for ranked market signal digests."""
+
+    __tablename__ = "signal_subscriptions"
+    __table_args__ = (
+        CheckConstraint(
+            "hours >= 1 AND hours <= 24",
+            name="ck_signal_subscriptions_hours",
+        ),
+        CheckConstraint(
+            '"limit" >= 1 AND "limit" <= 20',
+            name="ck_signal_subscriptions_limit",
+        ),
+        CheckConstraint(
+            "threshold_z >= 0",
+            name="ck_signal_subscriptions_threshold_z",
+        ),
+        CheckConstraint(
+            "interval_minutes >= 15 AND interval_minutes <= 10080",
+            name="ck_signal_subscriptions_interval",
+        ),
+        CheckConstraint(
+            "quiet_start_hour IS NULL OR "
+            "(quiet_start_hour >= 0 AND quiet_start_hour <= 23)",
+            name="ck_signal_subscriptions_quiet_start",
+        ),
+        CheckConstraint(
+            "quiet_end_hour IS NULL OR "
+            "(quiet_end_hour >= 0 AND quiet_end_hour <= 23)",
+            name="ck_signal_subscriptions_quiet_end",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'cancelled')",
+            name="ck_signal_subscriptions_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    discord_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[str] = mapped_column(Text, nullable=False)
+    hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    threshold_z: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    quiet_start_hour: Mapped[int | None] = mapped_column(Integer)
+    quiet_end_hour: Mapped[int | None] = mapped_column(Integer)
+    timezone_offset_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'active'")
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_delivery_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    delivery_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_delivery_error: Mapped[str | None] = mapped_column(Text)
+    last_digest_fingerprint: Mapped[str | None] = mapped_column(Text)

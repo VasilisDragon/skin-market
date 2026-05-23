@@ -13,14 +13,17 @@ TIER_QUOTAS: dict[str, dict[str, int]] = {
     "free": {
         "active_price_alerts": 3,
         "portfolio_snapshots_per_day": 3,
+        "signal_subscriptions": 1,
     },
     "trader": {
         "active_price_alerts": 25,
         "portfolio_snapshots_per_day": 20,
+        "signal_subscriptions": 5,
     },
     "pro": {
         "active_price_alerts": 100,
         "portfolio_snapshots_per_day": 100,
+        "signal_subscriptions": 20,
     },
 }
 
@@ -33,11 +36,13 @@ class EntitlementPolicy:
     source: str
     active_price_alerts: int
     portfolio_snapshots_per_day: int
+    signal_subscriptions: int
 
     def quotas(self) -> dict[str, int]:
         return {
             "active_price_alerts": self.active_price_alerts,
             "portfolio_snapshots_per_day": self.portfolio_snapshots_per_day,
+            "signal_subscriptions": self.signal_subscriptions,
         }
 
 
@@ -47,6 +52,7 @@ def effective_entitlement_policy(
     *,
     default_active_price_alerts: int,
     default_portfolio_snapshots_per_day: int,
+    default_signal_subscriptions: int = 1,
 ) -> EntitlementPolicy:
     row = session.execute(
         select(DiscordEntitlement).where(
@@ -61,6 +67,7 @@ def effective_entitlement_policy(
             source="default",
             active_price_alerts=default_active_price_alerts,
             portfolio_snapshots_per_day=default_portfolio_snapshots_per_day,
+            signal_subscriptions=default_signal_subscriptions,
         )
     if row.status != "active":
         return EntitlementPolicy(
@@ -70,6 +77,7 @@ def effective_entitlement_policy(
             source="stored",
             active_price_alerts=0,
             portfolio_snapshots_per_day=0,
+            signal_subscriptions=0,
         )
 
     quotas = TIER_QUOTAS[row.tier]
@@ -80,4 +88,5 @@ def effective_entitlement_policy(
         source="stored",
         active_price_alerts=quotas["active_price_alerts"],
         portfolio_snapshots_per_day=quotas["portfolio_snapshots_per_day"],
+        signal_subscriptions=quotas["signal_subscriptions"],
     )
