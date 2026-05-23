@@ -1068,8 +1068,10 @@ def market_baseline_inspect_link(inspect_url: str) -> dict:
 def create_price_alert(
     slug: str,
     direction: str,
-    threshold_price: str,
+    threshold_price: str | None = None,
     currency: str = "usd",
+    alert_mode: str = "price_threshold",
+    threshold_pct: str | None = None,
     quiet_start_hour: int | None = None,
     quiet_end_hour: int | None = None,
     timezone_offset_minutes: int = 0,
@@ -1083,8 +1085,10 @@ def create_price_alert(
         "discord_user_id": discord_user_id,
         "discord_channel_id": discord_channel_id,
         "slug": slug,
+        "alert_mode": alert_mode,
         "direction": direction,
         "threshold_price": threshold_price,
+        "threshold_pct": threshold_pct,
         "currency": currency,
         "quiet_start_hour": quiet_start_hour,
         "quiet_end_hour": quiet_end_hour,
@@ -1805,10 +1809,13 @@ TOOL_DEFINITIONS: list[dict] = [
             "name": "create_price_alert",
             "description": (
                 "Call this when the user asks to alert, notify, or remind "
-                "them when a tracked item's price reaches a threshold. "
+                "them when a tracked item's price reaches a threshold or "
+                "moves by a requested percent from the current price. "
                 "Use at_or_below for buy/drop alerts and at_or_above for "
-                "rise/sell alerts. Discord user/channel context is injected "
-                "by the bot; do not ask the user for IDs."
+                "rise/sell alerts. Use alert_mode=percent_move plus "
+                "threshold_pct for percent drop/rise requests. Discord "
+                "user/channel context is injected by the bot; do not ask "
+                "the user for IDs."
             ),
             "parameters": {
                 "type": "object",
@@ -1821,9 +1828,21 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "enum": ["at_or_below", "at_or_above"],
                     },
+                    "alert_mode": {
+                        "type": "string",
+                        "enum": ["price_threshold", "percent_move"],
+                        "description": (
+                            "Default price_threshold; use percent_move for "
+                            "percent drop/rise alerts."
+                        ),
+                    },
                     "threshold_price": {
                         "type": "string",
-                        "description": "Decimal threshold, e.g. 25.50.",
+                        "description": "Decimal price threshold, e.g. 25.50.",
+                    },
+                    "threshold_pct": {
+                        "type": "string",
+                        "description": "Percent move threshold, e.g. 10.00.",
                     },
                     "currency": {
                         "type": "string",
@@ -1843,7 +1862,7 @@ TOOL_DEFINITIONS: list[dict] = [
                         "description": "User local offset from UTC in minutes.",
                     },
                 },
-                "required": ["slug", "direction", "threshold_price"],
+                "required": ["slug", "direction"],
             },
         },
     },

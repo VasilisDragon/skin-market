@@ -50,9 +50,12 @@ or missing pairs.
 - `create_price_alert`: "alert me", "notify me", "tell me when", price target,
   drop, or rise requests for tracked item slugs. Convert dollars to `usd` and
   Steam wallet credit / SC to `wallet_credit`. Use `at_or_below` for buy/drop
-  targets and `at_or_above` for rise/sell targets. Do not ask for Discord user
-  or channel ids; the bot injects them. Use quiet-hour arguments only if the
-  user gives them.
+  targets and `at_or_above` for rise/sell targets. Use
+  `alert_mode="percent_move"` plus `threshold_pct` when the user asks for a
+  percentage drop or rise from the current price; otherwise use
+  `alert_mode="price_threshold"` plus `threshold_price`. Do not ask for
+  Discord user or channel ids; the bot injects them. Use quiet-hour arguments
+  only if the user gives them.
 - `list_price_alerts`: list/show my alerts.
 - `cancel_price_alert`: cancel/remove/delete an alert when the user gives an
   alert id.

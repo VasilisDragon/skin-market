@@ -83,32 +83,12 @@ def alert_item():
         session.execute(text("DELETE FROM prices WHERE item_id = :i"), {"i": item_id})
         session.execute(text("DELETE FROM observation_log WHERE item_id = :i"), {"i": item_id})
         source_id = _ensure_source(session, "skinport", "usd")
-        session.execute(
-            pg_insert(Price)
-            .values(
-                item_id=item_id,
-                source_id=source_id,
-                timestamp=now,
-                price=Decimal("24.00"),
-                volume=7,
-                currency="USD",
-                raw_response={"synthetic": True},
-            )
-            .on_conflict_do_nothing(
-                index_elements=["item_id", "source_id", "timestamp"]
-            )
-        )
-        session.execute(
-            text(
-                """
-                INSERT INTO observation_log
-                    (item_id, source_id, last_observed_at)
-                VALUES (:item_id, :source_id, :observed_at)
-                ON CONFLICT (item_id, source_id)
-                DO UPDATE SET last_observed_at = EXCLUDED.last_observed_at
-                """
-            ),
-            {"item_id": item_id, "source_id": source_id, "observed_at": now},
+        _insert_price(
+            session,
+            item_id=item_id,
+            source_id=source_id,
+            observed_at=now,
+            price="24.00",
         )
         session.commit()
 
@@ -137,6 +117,43 @@ def _ensure_source(session: Session, name: str, denomination: str) -> int:
         ),
         {"name": name, "denomination": denomination},
     ).scalar_one()
+
+
+def _insert_price(
+    session: Session,
+    *,
+    item_id: uuid.UUID,
+    source_id: int,
+    observed_at: datetime,
+    price: str,
+) -> None:
+    session.execute(
+        pg_insert(Price)
+        .values(
+            item_id=item_id,
+            source_id=source_id,
+            timestamp=observed_at,
+            price=Decimal(price),
+            volume=7,
+            currency="USD",
+            raw_response={"synthetic": True},
+        )
+        .on_conflict_do_nothing(
+            index_elements=["item_id", "source_id", "timestamp"]
+        )
+    )
+    session.execute(
+        text(
+            """
+            INSERT INTO observation_log
+                (item_id, source_id, last_observed_at)
+            VALUES (:item_id, :source_id, :observed_at)
+            ON CONFLICT (item_id, source_id)
+            DO UPDATE SET last_observed_at = EXCLUDED.last_observed_at
+            """
+        ),
+        {"item_id": item_id, "source_id": source_id, "observed_at": observed_at},
+    )
 
 
 def test_create_list_and_cancel_price_alert(client, alert_item) -> None:
@@ -322,3 +339,49 @@ def test_create_price_alert_rejects_partial_quiet_hours(client, alert_item) -> N
     )
 
     assert response.status_code == 422
+
+
+def test_percent_move_price_alert_baselines_current_price(
+    client,
+    alert_item,
+) -> None:
+    created = client.post(
+        "/alerts/price",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "discord_channel_id": _DISCORD_CHANNEL_ID,
+            "slug": _SENTINEL_SLUG,
+            "alert_mode": "percent_move",
+            "direction": "at_or_below",
+            "threshold_pct": "10.00",
+            "currency": "usd",
+        },
+    )
+    assert created.status_code == 200
+    alert = created.json()
+    assert alert["alert_mode"] == "percent_move"
+    assert alert["threshold_pct"] == "10.00"
+    assert alert["baseline_price"] == "24.00"
+    assert alert["baseline_source"] == "skinport"
+    assert alert["threshold_price"] == "21.60"
+
+    initial = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
+    assert alert["id"] not in [row["id"] for row in initial["triggered"]]
+
+    engine = get_engine()
+    with Session(engine) as session:
+        source_id = _ensure_source(session, "skinport", "usd")
+        _insert_price(
+            session,
+            item_id=alert_item,
+            source_id=source_id,
+            observed_at=datetime.now(UTC),
+            price="21.50",
+        )
+        session.commit()
+
+    evaluated = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
+    triggered = [row for row in evaluated["triggered"] if row["id"] == alert["id"]]
+
+    assert len(triggered) == 1
+    assert triggered[0]["trigger_price"] == "21.50"

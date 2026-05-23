@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -28,6 +28,7 @@ from db.models import Item, PriceAlert
 router = APIRouter(tags=["alerts"])
 DEFAULT_PRICE_ALERT_MAX_ACTIVE_PER_USER = 25
 DEFAULT_PRICE_ALERT_MAX_DELIVERY_ATTEMPTS = 5
+_CENTS = Decimal("0.01")
 
 
 @router.post("/alerts/price", response_model=PriceAlertResponse)
@@ -63,6 +64,37 @@ def create_price_alert(req: PriceAlertCreateRequest) -> PriceAlertResponse:
                 ),
             )
 
+        threshold_price = req.threshold_price
+        threshold_pct = None
+        baseline_price = None
+        baseline_source = None
+        if req.alert_mode == "percent_move":
+            current = _current_price_for_item(
+                session,
+                market_hash_name=item.market_hash_name,
+                item_id=item.id,
+                currency=req.currency,
+                direction=req.direction,
+            )
+            if current is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="No current price available to baseline percent alert.",
+                )
+            baseline_price = current["price"]
+            baseline_source = current["source"]
+            threshold_pct = req.threshold_pct
+            threshold_price = _percent_move_threshold(
+                baseline_price,
+                threshold_pct,
+                req.direction,
+            )
+        if threshold_price is None:
+            raise HTTPException(
+                status_code=422,
+                detail="threshold_price is required for price threshold alerts.",
+            )
+
         alert = PriceAlert(
             discord_user_id=req.discord_user_id,
             discord_channel_id=req.discord_channel_id,
@@ -70,8 +102,12 @@ def create_price_alert(req: PriceAlertCreateRequest) -> PriceAlertResponse:
             slug_snapshot=item.slug,
             display_name_snapshot=item.display_name,
             currency=req.currency,
+            alert_mode=req.alert_mode,
             direction=req.direction,
-            threshold_price=req.threshold_price,
+            threshold_price=threshold_price,
+            threshold_pct=threshold_pct,
+            baseline_price=baseline_price,
+            baseline_source=baseline_source,
             status="active",
             quiet_start_hour=req.quiet_start_hour,
             quiet_end_hour=req.quiet_end_hour,
@@ -227,14 +263,31 @@ def _current_alert_price(
     if item is None:
         return None
 
-    if alert.currency == "usd":
-        points = load_latest_usd_price_points(session, item)
+    return _current_price_for_item(
+        session,
+        market_hash_name=item,
+        item_id=alert.item_id,
+        currency=alert.currency,
+        direction=alert.direction,
+    )
+
+
+def _current_price_for_item(
+    session: Session,
+    *,
+    market_hash_name: str,
+    item_id: uuid.UUID,
+    currency: str,
+    direction: str,
+) -> dict[str, Any] | None:
+    if currency == "usd":
+        points = load_latest_usd_price_points(session, market_hash_name)
     else:
-        points = _latest_wallet_credit_points(session, alert.item_id)
+        points = _latest_wallet_credit_points(session, item_id)
     if not points:
         return None
 
-    key = min if alert.direction == "at_or_below" else max
+    key = min if direction == "at_or_below" else max
     selected = key(points, key=lambda point: point.price)
     return {"price": selected.price, "source": selected.source}
 
@@ -291,6 +344,18 @@ def _is_triggered(alert: PriceAlert, current_price: Decimal) -> bool:
     return current_price >= alert.threshold_price
 
 
+def _percent_move_threshold(
+    baseline_price: Decimal,
+    threshold_pct: Decimal | None,
+    direction: str,
+) -> Decimal:
+    if threshold_pct is None:
+        raise ValueError("threshold_pct is required for percent_move alerts")
+    pct = threshold_pct / Decimal("100")
+    multiplier = Decimal("1") - pct if direction == "at_or_below" else Decimal("1") + pct
+    return (baseline_price * multiplier).quantize(_CENTS, rounding=ROUND_HALF_UP)
+
+
 def _alert_response(alert: PriceAlert) -> PriceAlertResponse:
     return PriceAlertResponse(
         id=str(alert.id),
@@ -298,8 +363,12 @@ def _alert_response(alert: PriceAlert) -> PriceAlertResponse:
         discord_channel_id=alert.discord_channel_id,
         slug=alert.slug_snapshot,
         display_name=alert.display_name_snapshot,
+        alert_mode=alert.alert_mode,  # type: ignore[arg-type]
         direction=alert.direction,  # type: ignore[arg-type]
         threshold_price=alert.threshold_price,
+        threshold_pct=alert.threshold_pct,
+        baseline_price=alert.baseline_price,
+        baseline_source=alert.baseline_source,
         currency=alert.currency,  # type: ignore[arg-type]
         status=alert.status,  # type: ignore[arg-type]
         created_at=alert.created_at,

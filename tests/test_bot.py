@@ -505,8 +505,12 @@ class TestToolsAuthAndConnectivity:
             "discord_channel_id": "5678",
             "slug": "ak-47-redline-field-tested",
             "display_name": "AK-47 | Redline (Field-Tested)",
+            "alert_mode": "price_threshold",
             "direction": "at_or_below",
             "threshold_price": "25.00",
+            "threshold_pct": None,
+            "baseline_price": None,
+            "baseline_source": None,
             "currency": "usd",
             "status": "active",
             "created_at": "2026-05-23T00:00:00Z",
@@ -536,8 +540,10 @@ class TestToolsAuthAndConnectivity:
             "discord_user_id": "1234",
             "discord_channel_id": "5678",
             "slug": "ak-47-redline-field-tested",
+            "alert_mode": "price_threshold",
             "direction": "at_or_below",
             "threshold_price": "25.00",
+            "threshold_pct": None,
             "currency": "usd",
             "quiet_start_hour": None,
             "quiet_end_hour": None,
@@ -2589,8 +2595,12 @@ class TestDeepSeekClientSingleToolCall:
                 "discord_channel_id": "5678",
                 "slug": "ak-47-redline-field-tested",
                 "display_name": "AK-47 | Redline (Field-Tested)",
+                "alert_mode": "price_threshold",
                 "direction": "at_or_below",
                 "threshold_price": "25.00",
+                "threshold_pct": None,
+                "baseline_price": None,
+                "baseline_source": None,
                 "currency": "usd",
                 "status": "active",
                 "created_at": "2026-05-23T00:00:00Z",
@@ -2598,6 +2608,12 @@ class TestDeepSeekClientSingleToolCall:
                 "triggered_at": None,
                 "trigger_price": None,
                 "trigger_source": None,
+                "delivered_at": None,
+                "delivery_attempts": 0,
+                "last_delivery_error": None,
+                "quiet_start_hour": None,
+                "quiet_end_hour": None,
+                "timezone_offset_minutes": 0,
             },
         )
         client = _scripted_client(
@@ -3056,8 +3072,11 @@ class TestPriceAlertDelivery:
             {
                 "id": "11111111-1111-1111-1111-111111111111",
                 "display_name": "AK-47 | Redline (Field-Tested)",
+                "alert_mode": "percent_move",
                 "direction": "at_or_below",
                 "threshold_price": "25.00",
+                "threshold_pct": "10.00",
+                "baseline_price": "27.78",
                 "currency": "usd",
                 "trigger_price": "24.00",
                 "trigger_source": "skinport",
@@ -3067,6 +3086,7 @@ class TestPriceAlertDelivery:
         assert "Price alert triggered: AK-47 | Redline (Field-Tested)" in text
         assert "Target: at or below 25.00 USD" in text
         assert "Current: 24.00 USD on skinport" in text
+        assert "Move: 10.00% from 27.78 USD" in text
         assert "Alert id: `11111111-1111-1111-1111-111111111111`" in text
 
 

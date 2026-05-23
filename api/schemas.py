@@ -50,6 +50,7 @@ Denomination = Literal["usd", "wallet_credit"]
 # is the editorial overlay.
 Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
+AlertMode = Literal["price_threshold", "percent_move"]
 AlertStatus = Literal["active", "triggered", "cancelled"]
 SignalSubscriptionStatus = Literal["active", "cancelled"]
 SignalLane = Literal["all", "market_movers", "spread_watch"]
@@ -303,19 +304,28 @@ class PriceAlertCreateRequest(BaseModel):
     discord_user_id: str
     discord_channel_id: str | None = None
     slug: str
+    alert_mode: AlertMode = "price_threshold"
     direction: AlertDirection
-    threshold_price: MoneyStr
+    threshold_price: MoneyStr | None = None
+    threshold_pct: MoneyStr | None = Field(default=None, gt=0, le=1000)
     currency: Denomination = "usd"
     quiet_start_hour: int | None = Field(default=None, ge=0, le=23)
     quiet_end_hour: int | None = Field(default=None, ge=0, le=23)
     timezone_offset_minutes: int = Field(default=0, ge=-720, le=840)
 
     @model_validator(mode="after")
-    def quiet_hours_are_complete(self) -> PriceAlertCreateRequest:
+    def validate_price_alert_fields(self) -> PriceAlertCreateRequest:
         if (self.quiet_start_hour is None) != (self.quiet_end_hour is None):
             raise ValueError(
                 "quiet_start_hour and quiet_end_hour must be provided together"
             )
+        if self.alert_mode == "price_threshold" and self.threshold_price is None:
+            raise ValueError("threshold_price is required for price_threshold alerts")
+        if self.alert_mode == "percent_move":
+            if self.threshold_pct is None:
+                raise ValueError("threshold_pct is required for percent_move alerts")
+            if self.direction == "at_or_below" and self.threshold_pct >= 100:
+                raise ValueError("drop percent alerts must be below 100 percent")
         return self
 
 
@@ -346,8 +356,12 @@ class PriceAlertResponse(BaseModel):
     discord_channel_id: str | None
     slug: str
     display_name: str
+    alert_mode: AlertMode
     direction: AlertDirection
     threshold_price: MoneyStr
+    threshold_pct: MoneyStr | None
+    baseline_price: MoneyStr | None
+    baseline_source: str | None
     currency: Denomination
     status: AlertStatus
     created_at: datetime

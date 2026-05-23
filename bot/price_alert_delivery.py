@@ -31,13 +31,24 @@ def price_alert_batch_limit() -> int:
 def format_price_alert_message(alert: dict[str, Any]) -> str:
     direction = "at or below" if alert["direction"] == "at_or_below" else "at or above"
     currency = "USD" if alert["currency"] == "usd" else "SC"
-    return (
-        f"Price alert triggered: {alert['display_name']}\n"
-        f"- Target: {direction} {Decimal(str(alert['threshold_price'])):.2f} {currency}\n"
-        f"- Current: {Decimal(str(alert['trigger_price'])):.2f} {currency}"
-        f" on {alert['trigger_source']}\n"
-        f"- Alert id: `{alert['id']}`"
-    )
+    lines = [
+        f"Price alert triggered: {alert['display_name']}",
+        f"- Target: {direction} {Decimal(str(alert['threshold_price'])):.2f} {currency}",
+        (
+            f"- Current: {Decimal(str(alert['trigger_price'])):.2f} {currency}"
+            f" on {alert['trigger_source']}"
+        ),
+    ]
+    if alert.get("alert_mode") == "percent_move":
+        baseline = alert.get("baseline_price")
+        pct = alert.get("threshold_pct")
+        if baseline is not None and pct is not None:
+            lines.append(
+                f"- Move: {Decimal(str(pct)):.2f}% from "
+                f"{Decimal(str(baseline)):.2f} {currency}"
+            )
+    lines.append(f"- Alert id: `{alert['id']}`")
+    return "\n".join(lines)
 
 
 async def price_alert_delivery_loop(client) -> None:

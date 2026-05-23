@@ -356,8 +356,16 @@ class PriceAlert(Base):
             name="ck_price_alerts_currency",
         ),
         CheckConstraint(
+            "alert_mode IN ('price_threshold', 'percent_move')",
+            name="ck_price_alerts_alert_mode",
+        ),
+        CheckConstraint(
             "direction IN ('at_or_below', 'at_or_above')",
             name="ck_price_alerts_direction",
+        ),
+        CheckConstraint(
+            "threshold_pct IS NULL OR threshold_pct > 0",
+            name="ck_price_alerts_threshold_pct",
         ),
         CheckConstraint(
             "status IN ('active', 'triggered', 'cancelled')",
@@ -395,8 +403,14 @@ class PriceAlert(Base):
     slug_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     display_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     currency: Mapped[str] = mapped_column(Text, nullable=False)
+    alert_mode: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'price_threshold'")
+    )
     direction: Mapped[str] = mapped_column(Text, nullable=False)
     threshold_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    threshold_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    baseline_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    baseline_source: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'active'")
     )

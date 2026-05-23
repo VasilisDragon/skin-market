@@ -22,8 +22,10 @@ stores:
 
 - the item id plus slug/display-name snapshots,
 - the denomination (`usd` or `wallet_credit`),
+- alert mode (`price_threshold` or `percent_move`),
 - the direction (`at_or_below` or `at_or_above`),
-- the threshold,
+- the stored absolute threshold,
+- optional percent-move baseline price/source and requested percent,
 - lifecycle state (`active`, `triggered`, `cancelled`),
 - the latest evaluation and trigger metadata,
 - delivery acknowledgement and retry metadata.
@@ -59,9 +61,10 @@ Alert evaluation stays API-side:
 2. Resolve the latest local price points for the alert denomination.
 3. Use the lowest current price for `at_or_below` and the highest current price
    for `at_or_above`.
-4. Mark matched rows as `triggered` with trigger price/source metadata.
-5. Return triggered rows that still need Discord delivery.
-6. Suppress pending-delivery rows while their quiet-hour window is active.
+4. Compare against the stored absolute threshold.
+5. Mark matched rows as `triggered` with trigger price/source metadata.
+6. Return triggered rows that still need Discord delivery.
+7. Suppress pending-delivery rows while their quiet-hour window is active.
 
 ## Consequences
 
@@ -75,6 +78,9 @@ Alert evaluation stays API-side:
   evaluation.
 - Overnight notifications can be deferred without cancelling or losing the
   triggered alert.
+- Percent-move alerts are reduced to an absolute trigger price at creation time,
+  using the current deterministic source price as the baseline. Evaluation stays
+  as cheap and deterministic as fixed-threshold alerts.
 - The active-alert cap prevents one user from creating unbounded background work.
 - The first version intentionally watches current market-name prices. It does
   not account for float, pattern, sticker, charm, trade-lock, or liquidity
