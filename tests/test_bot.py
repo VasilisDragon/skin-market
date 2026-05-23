@@ -18,6 +18,7 @@ Three test modules in one file:
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
@@ -1390,12 +1391,353 @@ def _make_msg(content="", tool_calls=None):
     return msg
 
 
+def _make_tool_call(name: str, arguments: dict | None = None) -> dict:
+    return {"function": {"name": name, "arguments": arguments or {}}}
+
+
 def _scripted_client(responses: list[dict]):
     """Build a mock AsyncClient whose ``chat`` returns each response
     in order."""
     client = AsyncMock()
     client.chat.side_effect = [{"message": r} for r in responses]
     return client
+
+
+def _tool_messages_from_last_chat_call(client) -> list[dict]:
+    messages = client.chat.call_args_list[-1].kwargs["messages"]
+    return [m for m in messages if m.get("role") == "tool"]
+
+
+def _tool_json(content: str) -> dict:
+    return json.loads(content)
+
+
+class TestToolCallingRegressionFixture:
+    """Representative user-query → tool-selection fixtures.
+
+    This is the offline guardrail for the LLM backend swap: each case
+    fixes the first tool(s) the model must select for a Discord query
+    and the shaped tool_result the bot feeds back into the conversation.
+    The model is scripted here so the test is deterministic; optional
+    live-provider checks can use the same case names, but this fixture
+    must stay green in the normal suite.
+    """
+
+    async def test_price_lookup_routes_to_current_price_with_drift_shape(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        now = datetime.now(UTC)
+        slug = "ak-47-redline-field-tested"
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{slug}/price",
+            json={
+                "slug": slug,
+                "display_name": "AK-47 | Redline (Field-Tested)",
+                "tier": "curated",
+                "sources": [
+                    {
+                        "source": "skinport",
+                        "denomination": "usd",
+                        "price": "31.25",
+                        "volume": 18,
+                        "last_polled_at": (now - timedelta(minutes=5)).isoformat(),
+                        "last_changed_at": (now - timedelta(minutes=50)).isoformat(),
+                    }
+                ],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{slug}/insights",
+            json={"slug": slug, "tier": "curated", "insights": []},
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{slug}/drift",
+            json=_drift_payload(
+                slug,
+                [
+                    {
+                        "source_a": "skinport",
+                        "source_b": "pricempire_skinport",
+                        "verdict": "no_drift",
+                        "drift": "0.0123",
+                        "threshold_used": "0.10",
+                        "classification": "pattern_agnostic",
+                        "computed_at": now.isoformat(),
+                        "curated_price": "31.25",
+                        "pricempire_price": "30.87",
+                    }
+                ],
+            ),
+        )
+        client = _scripted_client(
+            [
+                _make_msg(tool_calls=[_make_tool_call("query_current_price", {"slug": slug})]),
+                _make_msg(content="Skinport is $31.25 USD."),
+            ]
+        )
+
+        reply = await ollama_client.handle_user_message(
+            "what's the AK Redline FT price?", client=client
+        )
+
+        assert "Skinport" in reply.text
+        first_call = client.chat.call_args_list[0].kwargs
+        assert first_call["messages"][1]["content"] == "what's the AK Redline FT price?"
+        assert first_call["tools"] == TOOL_DEFINITIONS
+        tool_result = _tool_json(_tool_messages_from_last_chat_call(client)[0]["content"])
+        assert tool_result["tier"] == "curated"
+        assert tool_result["per_source"][0]["source"] == "skinport"
+        assert tool_result["per_source"][0]["state"] == "fresh"
+        assert tool_result["per_source"][2]["source"] == "steam_market"
+        assert tool_result["drift_summary"]["pairs"][0]["verdict"] == "no_drift"
+
+    async def test_drift_query_routes_to_query_drift_shape(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        slug = "m4a4-buzz-kill-field-tested"
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{slug}/drift",
+            json=_drift_payload(
+                slug,
+                [
+                    {
+                        "source_a": "dmarket",
+                        "source_b": "pricempire_dmarket",
+                        "verdict": "drift_alert",
+                        "drift": "0.1046",
+                        "threshold_used": "0.10",
+                        "classification": "pattern_agnostic",
+                        "computed_at": datetime.now(UTC).isoformat(),
+                        "curated_price": "275.00",
+                        "pricempire_price": "248.97",
+                    }
+                ],
+            ),
+        )
+        client = _scripted_client(
+            [
+                _make_msg(tool_calls=[_make_tool_call("query_drift", {"slug": slug})]),
+                _make_msg(content="DMarket is above Pricempire."),
+            ]
+        )
+
+        await ollama_client.handle_user_message(
+            "is M4A4 Buzz Kill drifting from Pricempire?", client=client
+        )
+
+        tool_result = _tool_json(_tool_messages_from_last_chat_call(client)[0]["content"])
+        assert tool_result["pairs"][0]["verdict"] == "drift_alert"
+        assert tool_result["pairs"][0]["drift_pct"] == "+10.5%"
+        assert "framing" in tool_result["pairs"][0]
+
+    async def test_history_query_routes_to_history_shape(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        slug = "ak-47-redline-field-tested"
+        httpx_mock.add_response(
+            url=re.compile(rf"^{re.escape(_BASE)}/items/{slug}/history\?.*"),
+            json={
+                "slug": slug,
+                "source": "skinport",
+                "tier": "curated",
+                "since": "2026-05-16T00:00:00+00:00",
+                "until": "2026-05-23T00:00:00+00:00",
+                "count": 2,
+                "observations": [
+                    {
+                        "source": "skinport",
+                        "denomination": "usd",
+                        "price": "30.00",
+                        "volume": 11,
+                        "timestamp": "2026-05-22T00:00:00+00:00",
+                    },
+                    {
+                        "source": "skinport",
+                        "denomination": "usd",
+                        "price": "31.25",
+                        "volume": 18,
+                        "timestamp": "2026-05-23T00:00:00+00:00",
+                    },
+                ],
+            },
+        )
+        client = _scripted_client(
+            [
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "query_price_history",
+                            {"slug": slug, "source": "skinport", "days": 7},
+                        )
+                    ]
+                ),
+                _make_msg(content="It moved from $30.00 to $31.25 USD."),
+            ]
+        )
+
+        await ollama_client.handle_user_message(
+            "how has AK Redline FT moved this week?", client=client
+        )
+
+        tool_result = _tool_json(_tool_messages_from_last_chat_call(client)[0]["content"])
+        assert tool_result["slug"] == slug
+        assert tool_result["count"] == 2
+        assert tool_result["observations"][0]["source"] == "skinport"
+
+    async def test_watchlist_query_routes_to_summarized_watchlist_shape(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        httpx_mock.add_response(
+            url=f"{_BASE}/items",
+            json=[
+                {
+                    "slug": "ak-47-redline-field-tested",
+                    "market_hash_name": "AK-47 | Redline (Field-Tested)",
+                    "display_name": "AK-47 | Redline (Field-Tested)",
+                },
+                {
+                    "slug": "awp-asiimov-field-tested",
+                    "market_hash_name": "AWP | Asiimov (Field-Tested)",
+                    "display_name": "AWP | Asiimov (Field-Tested)",
+                },
+            ],
+        )
+        client = _scripted_client(
+            [
+                _make_msg(tool_calls=[_make_tool_call("list_watchlist")]),
+                _make_msg(content="We track rifles and snipers."),
+            ]
+        )
+
+        await ollama_client.handle_user_message(
+            "what items do you track?", client=client
+        )
+
+        tool_result = _tool_json(_tool_messages_from_last_chat_call(client)[0]["content"])
+        assert tool_result == {
+            "count": 2,
+            "by_category": {"rifle": 1, "sniper": 1},
+            "sample": [
+                {
+                    "slug": "ak-47-redline-field-tested",
+                    "display_name": "AK-47 | Redline (Field-Tested)",
+                },
+                {
+                    "slug": "awp-asiimov-field-tested",
+                    "display_name": "AWP | Asiimov (Field-Tested)",
+                },
+            ],
+        }
+
+    async def test_wear_ambiguity_routes_list_then_curated_price(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        now = datetime.now(UTC)
+        curated_slug = "usp-s-neo-noir-field-tested"
+        httpx_mock.add_response(
+            url=f"{_BASE}/items",
+            json=[
+                {
+                    "slug": curated_slug,
+                    "market_hash_name": "USP-S | Neo-Noir (Field-Tested)",
+                    "display_name": "USP-S | Neo-Noir (Field-Tested)",
+                    "tier": "curated",
+                },
+                {
+                    "slug": "usp-s-neo-noir-factory-new",
+                    "market_hash_name": "USP-S | Neo-Noir (Factory New)",
+                    "display_name": "USP-S | Neo-Noir (Factory New)",
+                    "tier": "substrate",
+                },
+            ],
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{curated_slug}/price",
+            json={
+                "slug": curated_slug,
+                "display_name": "USP-S | Neo-Noir (Field-Tested)",
+                "tier": "curated",
+                "sources": [
+                    {
+                        "source": "dmarket",
+                        "denomination": "usd",
+                        "price": "22.10",
+                        "volume": 8,
+                        "last_polled_at": (now - timedelta(minutes=3)).isoformat(),
+                        "last_changed_at": (now - timedelta(minutes=3)).isoformat(),
+                    }
+                ],
+            },
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{curated_slug}/insights",
+            json={"slug": curated_slug, "tier": "curated", "insights": []},
+        )
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{curated_slug}/drift",
+            json=_drift_payload(curated_slug),
+        )
+        client = _scripted_client(
+            [
+                _make_msg(tool_calls=[_make_tool_call("list_watchlist")]),
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "query_current_price", {"slug": curated_slug}
+                        )
+                    ]
+                ),
+                _make_msg(content="Use the Field-Tested wear."),
+            ]
+        )
+
+        await ollama_client.handle_user_message(
+            "what's the USP-S Neo-Noir price?", client=client
+        )
+
+        tool_results = [
+            _tool_json(m["content"])
+            for m in _tool_messages_from_last_chat_call(client)
+        ]
+        assert tool_results[0]["count"] == 2
+        assert tool_results[1]["slug"] == curated_slug
+        assert tool_results[1]["tier"] == "curated"
+        assert tool_results[1]["per_source"][1]["source"] == "dmarket"
+
+    async def test_items_not_tracked_routes_to_price_and_surfaces_not_found(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        slug = "glock-18-fade-factory-new"
+        httpx_mock.add_response(
+            url=f"{_BASE}/items/{slug}/price",
+            status_code=404,
+        )
+        client = _scripted_client(
+            [
+                _make_msg(tool_calls=[_make_tool_call("query_current_price", {"slug": slug})]),
+                _make_msg(content="I don't track that item yet."),
+            ]
+        )
+
+        await ollama_client.handle_user_message(
+            "what's the Glock Fade FN price?", client=client
+        )
+
+        tool_message = _tool_messages_from_last_chat_call(client)[0]
+        assert "Not found on the api" in tool_message["content"]
+        assert slug in tool_message["content"]
 
 
 class TestOllamaClientTextOnly:
