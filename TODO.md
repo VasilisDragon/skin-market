@@ -47,7 +47,12 @@ Phase 2c work.
 ## 7-day Pricempire-skinport cadence characterization
 
 **Filed:** 2026-05-17 (ADR 022 §2.5 follow-up).
-**Status:** in flight; ~5 days remaining as of 2026-05-18.
+**Status:** deferred until the 7-day window matures. Rechecked
+2026-05-23 after Path A: `pricempire_skinport` observation history
+spanned 2026-05-16T19:33:55Z → 2026-05-23T04:35:39Z (6 days,
+9 hours, 1 minute), short of the required 7-day characterization
+window. Earliest safe pickup is ~2026-05-24 UTC, subject to another
+span check.
 
 ADR 022 §"Open follow-ups" requires a 7-day characterization of the
 Pricempire `pricempire_skinport` upstream refresh cadence to convert
