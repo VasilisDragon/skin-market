@@ -1,13 +1,14 @@
-# ADR 029 - Modern inspect-link valuation
+# ADR 029 - Modern inspect-link market baseline
 
 **Status:** Accepted  
 **Date:** 2026-05-23  
 **Related:** ADR 016 (bot runtime), ADR 027 (cost control), ADR 028
-(public-inventory asset valuation)
+(public-inventory asset market baseline)
 
 ## Context
 
-Phase B adds valuation for raw CS2 inspect links. The scope boundary forbids
+Phase B adds exact-attribute extraction and market-baseline output for raw CS2
+inspect links. The scope boundary forbids
 paths that require a CSFloat account, Steam 2FA, or prior CSFloat trade
 history. It also forbids half-building account-gated Steam Game Coordinator
 paths.
@@ -56,20 +57,28 @@ The deterministic API path is:
 3. Resolve `defindex`, `paintindex`, wear, and quality to
    `market_hash_name` through the public ByMykel CSGO-API static schema.
 4. Resolve sticker/keychain ids through the same public schema.
-5. Reuse ADR 028's local USD value-gauge computation for the resolved
+5. Reuse ADR 028's local USD market-baseline computation for the resolved
    market hash name.
 
 The LLM still does not parse links, decode payloads, call external schema
-sources, or compute values. It only chooses `value_inspect_link` and renders
-the structured result.
+sources, or compute values. It only chooses
+`market_baseline_inspect_link` and renders the structured result.
 
 ## Known-answer fixture
 
 `tests/fixtures/inspect_known_answers.json` uses DMarket fixture rows as
-independent evidence. Each row supplies a real modern inspect link plus exact
-DMarket attributes and a listing price. Tests assert the fixture still matches
-the DMarket row, then assert the offline decoder reproduces the exact asset
-attributes and the valuation route stays inside the documented tolerance.
+research-backed evidence. Each row supplies a real modern inspect link plus
+exact DMarket attributes and a listing price. Tests assert the fixture still
+matches the DMarket row, then assert the offline decoder reproduces the exact
+asset attributes and the route's market baseline stays inside the documented
+tolerance.
+
+Corrective note, 2026-05-23: the original route test used a fake CSGO schema
+and mocked price rows derived from the same expected values it asserted on. It
+now remains only as a passthrough/shape test. A network-gated pytest marker,
+skipped by default, loads the live ByMykel CSGO-API schema and checks that the
+decoded inspect links resolve to the expected market hash names and sticker
+names.
 
 Pinned cases:
 
@@ -85,7 +94,7 @@ Pinned cases:
 - Legacy pointer links are an explicit unsupported state, not a silent fallback.
 - Item and sticker names depend on the public CSGO-API schema being reachable.
   If the schema cannot be loaded, the API still returns decoded exact
-  attributes, but no market hash name or value gauge.
+  attributes, but no market hash name or market baseline.
 - Value computation remains shared with Phase A and retains the same limitation:
   sticker, charm, float, and pattern premiums are surfaced as attributes but are
   not independently repriced.
@@ -98,5 +107,11 @@ Pinned cases:
 - **Call CSFloat account APIs.** Rejected by the session boundary.
 - **Use legacy links by contacting the Steam Game Coordinator.** Rejected by
   the session boundary because that requires Steam account/session state.
-- **Duplicate Phase A value math.** Rejected. The implementation reuses the
-  shared `build_value_gauge` and local USD price-point loader.
+- **Duplicate Phase A baseline math.** Rejected. The implementation reuses the
+  shared `build_market_baseline` and local USD price-point loader.
+
+The optional live check is:
+
+```text
+RUN_LIVE_ASSET_CROSSCHECKS=1 uv run pytest -m network tests/test_asset_valuation.py
+```

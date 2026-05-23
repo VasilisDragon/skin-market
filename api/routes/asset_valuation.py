@@ -1,4 +1,4 @@
-"""Public-inventory asset valuation routes."""
+"""Public-inventory and inspect-link asset market-baseline routes."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from api.asset_valuation import (
     InventoryAssetNotFoundError,
     InventoryLinkError,
     InventoryUnavailableError,
-    build_inspect_valuation_response,
-    build_inventory_valuation_response,
+    build_inspect_baseline_response,
+    build_inventory_baseline_response,
     decode_modern_inspect_link,
     fetch_csgo_reference_data,
     fetch_pricempire_inventory,
@@ -25,23 +25,23 @@ from api.asset_valuation import (
     unreadable_response,
 )
 from api.schemas import (
-    InspectValuationRequest,
-    InventoryValuationRequest,
-    InventoryValuationResponse,
+    AssetBaselineResponse,
+    InspectBaselineRequest,
+    InventoryBaselineRequest,
 )
 from db.connection import get_engine
 
-router = APIRouter(tags=["asset valuation"])
+router = APIRouter(tags=["asset market baseline"])
 
 
 @router.post(
     "/asset-valuations/inventory",
-    response_model=InventoryValuationResponse,
+    response_model=AssetBaselineResponse,
 )
-def value_inventory_item(
-    request: InventoryValuationRequest,
-) -> InventoryValuationResponse:
-    """Value one exact asset from a public Steam inventory link.
+def inventory_market_baseline(
+    request: InventoryBaselineRequest,
+) -> AssetBaselineResponse:
+    """Return exact attributes plus a market-name baseline for one inventory asset.
 
     The route returns structured decline states instead of raising 4xx for
     user-input problems so the Discord bot can render a plain explanation.
@@ -54,15 +54,15 @@ def value_inventory_item(
         inventory = fetch_pricempire_inventory(steam_id)
         asset = find_inventory_asset(inventory, reference.asset_id)
     except InventoryLinkError as exc:
-        return InventoryValuationResponse.model_validate(
+        return AssetBaselineResponse.model_validate(
             unreadable_response("invalid_inventory_link", str(exc))
         )
     except InventoryAssetNotFoundError as exc:
-        return InventoryValuationResponse.model_validate(
+        return AssetBaselineResponse.model_validate(
             unreadable_response("asset_not_found", str(exc))
         )
     except InventoryUnavailableError as exc:
-        return InventoryValuationResponse.model_validate(
+        return AssetBaselineResponse.model_validate(
             unreadable_response("private_or_unavailable", str(exc))
         )
 
@@ -75,8 +75,8 @@ def value_inventory_item(
                 session, market_hash_name
             )
 
-    return InventoryValuationResponse.model_validate(
-        build_inventory_valuation_response(
+    return AssetBaselineResponse.model_validate(
+        build_inventory_baseline_response(
             reference=reference,
             steam_id=steam_id,
             asset=asset,
@@ -87,20 +87,20 @@ def value_inventory_item(
 
 @router.post(
     "/asset-valuations/inspect",
-    response_model=InventoryValuationResponse,
+    response_model=AssetBaselineResponse,
 )
-def value_inspect_link(
-    request: InspectValuationRequest,
-) -> InventoryValuationResponse:
-    """Value one exact asset from a modern CS2 inspect link."""
+def inspect_market_baseline(
+    request: InspectBaselineRequest,
+) -> AssetBaselineResponse:
+    """Return exact attributes plus a market-name baseline for one inspect link."""
     try:
         decoded = decode_modern_inspect_link(request.inspect_url)
     except InspectLinkUnsupportedError as exc:
-        return InventoryValuationResponse.model_validate(
+        return AssetBaselineResponse.model_validate(
             unreadable_response("legacy_inspect_link", str(exc))
         )
     except InspectLinkError as exc:
-        return InventoryValuationResponse.model_validate(
+        return AssetBaselineResponse.model_validate(
             unreadable_response("invalid_inspect_link", str(exc))
         )
 
@@ -124,8 +124,8 @@ def value_inspect_link(
                 session, market_hash_name
             )
 
-    return InventoryValuationResponse.model_validate(
-        build_inspect_valuation_response(
+    return AssetBaselineResponse.model_validate(
+        build_inspect_baseline_response(
             inspect_url=request.inspect_url,
             decoded=decoded,
             market_hash_name=market_hash_name,

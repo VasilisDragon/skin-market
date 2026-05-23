@@ -51,10 +51,11 @@ package = false
 testpaths = ["tests"]
 # Skip destructive tests by default — they wipe DB tables. Opt in with
 # `uv run pytest -m destructive`.
-addopts = "-ra -m 'not destructive'"
+addopts = "-ra -m 'not destructive and not network'"
 asyncio_mode = "auto"
 markers = [
     "destructive: tests that wipe DB data (e.g. migration roundtrip). Opt in via `pytest -m destructive`.",
+    "network: live external API cross-checks. Skipped by default; opt in via `pytest -m network`.",
 ]
 
 [tool.ruff]

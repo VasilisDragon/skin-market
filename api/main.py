@@ -30,7 +30,7 @@ Endpoints:
 - ``GET  /items/{slug}/chart``   — PNG chart, one source × N days
 - ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
-- ``POST /asset-valuations/inventory`` — public-inventory asset gauge
+- ``POST /asset-valuations/inventory`` — public-inventory market baseline
 """
 
 from __future__ import annotations

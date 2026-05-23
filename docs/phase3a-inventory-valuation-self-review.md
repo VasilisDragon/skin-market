@@ -1,15 +1,23 @@
-# Phase 3A inventory valuation self-review
+# Phase 3A inventory market-baseline self-review
 
 **Date:** 2026-05-23  
-**Gate:** GATE 1, after Phase A public-inventory valuation  
-**Decision:** Clean. Proceed to Phase B research.
+**Gate:** Superseded by corrective review on 2026-05-23
+**Decision:** Original "clean" decision was too strong. The fixture tests were
+later corrected to distinguish passthrough tests from live cross-checks.
+
+## Corrective note
+
+The original route tests built mocked Pricempire inventory rows from the same
+fixture fields they asserted on. That proved response shaping and baseline math,
+not live correctness. Corrective work renamed those tests as passthrough/shape
+tests and added optional live cross-checks under `pytest -m network`.
 
 ## Phase A commits reviewed
 
 - `5e9a60d feat(asset): value public inventory items`
 - `8b091b4 chore(gitignore): ignore env backup files`
-- `16b8cff docs(asset): align valuation fixture wording`
-- `ee1976d fix(bot): constrain inventory valuation rendering`
+- `16b8cff docs(asset): align baseline fixture wording`
+- `ee1976d fix(bot): constrain inventory baseline rendering`
 - `437f87c fix(bot): suppress inventory source dumps`
 
 ## Verified data path
@@ -24,12 +32,12 @@ ADR 028 records the live Pricempire inventory path:
 4. Find the matching `asset_id`.
 5. Extract exact per-asset attributes from Pricempire: market hash name,
    float, paint seed, paint id, ranks, stickers, and charms.
-6. Compute the value gauge from local latest USD market rows for that market
+6. Compute the market baseline from local latest USD market rows for that market
    hash name, excluding Steam Wallet credit.
 
 The deterministic boundary is preserved: the LLM only selects
-`value_inventory_item` and phrases the structured tool result. Link parsing,
-inventory fetching, asset matching, and value math live in Python.
+`market_baseline_inventory_item` and phrases the structured tool result. Link
+parsing, inventory fetching, asset matching, and baseline math live in Python.
 
 ## Private and unreadable behavior
 
@@ -111,7 +119,7 @@ Total final valid-sample cost: `$0.00049810`.
 Valid public CS2 inventory link:
 
 ```text
-Here's the valuation for your Souvenir MP9 | Hot Rod (Factory New):
+Here's the market baseline for your Souvenir MP9 | Hot Rod (Factory New):
 
 Asset Details
 - Float: 0.0357 (Factory New)
@@ -119,7 +127,7 @@ Asset Details
 - Stickers: 4x Gold Boston 2018 stickers (ELEAGUE, Cloud9, Skadoodle,
   Virtus.Pro)
 
-Value Gauge (USD)
+Market Baseline Range (USD)
 - Low: $150.13
 - Mid: $248.57
 - High: $419.89
@@ -127,8 +135,9 @@ Value Gauge (USD)
 ```
 
 The initial live sample over-rendered a per-source table. Two prompt fixes
-removed unrequested tables and source dumps. The final sample renders the gauge
-and source count only.
+removed unrequested tables and source dumps. The corrected sample renders the
+market baseline and source count only, and states that float/seed/sticker
+premiums are not included.
 
 Invalid Dota app link:
 
@@ -139,13 +148,13 @@ value CS2 inventory items.
 
 ## Gate result
 
-GATE 1 is clean:
+Corrective status:
 
-- Phase A has independently sourced known-answer fixtures.
+- Phase A has research-backed fixture rows plus optional live cross-checks.
 - Exact asset attributes are tested exactly.
-- Value output is bounded by documented tolerance.
+- Market baseline output is bounded by documented tolerance.
 - Private/unreadable behavior declines explicitly.
-- LLM routing still delegates all valuation work to deterministic Python.
+- LLM routing still delegates all baseline work to deterministic Python.
 - Prompt rendering regression found in live testing was fixed, tested,
   rebuilt, and pushed.
 

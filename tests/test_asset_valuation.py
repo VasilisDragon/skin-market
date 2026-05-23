@@ -1,8 +1,9 @@
-"""Phase A public-inventory asset valuation tests."""
+"""Public-inventory and inspect-link asset market-baseline tests."""
 
 from __future__ import annotations
 
 import json
+import os
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,13 +12,18 @@ from fastapi.testclient import TestClient
 
 from api.asset_valuation import (
     CSGOReferenceData,
+    CSGOReferenceUnavailableError,
     InspectLinkUnsupportedError,
     InventoryUnavailableError,
     PricePoint,
-    build_value_gauge,
+    build_market_baseline,
     decode_modern_inspect_link,
+    fetch_csgo_reference_data,
+    fetch_pricempire_inventory,
+    find_inventory_asset,
     parse_inventory_item_url,
     resolve_decoded_market_hash_name,
+    resolve_steam_id,
 )
 from api.main import app
 from db.connection import get_engine
@@ -34,6 +40,7 @@ _LEGACY_INSPECT_URL = (
     "+csgo_econ_action_preview%20"
     "S76561199272523861A36450856127D12136724830466029386"
 )
+_LIVE_CROSSCHECK_ENV = "RUN_LIVE_ASSET_CROSSCHECKS"
 
 
 def _known_answer_cases() -> list[dict]:
@@ -51,6 +58,11 @@ def _dmarket_object(case: dict) -> dict:
 
 
 def _reference_data_for_case(case: dict) -> CSGOReferenceData:
+    """Build a minimal fake schema for route passthrough tests.
+
+    This intentionally does not prove CSGO-API schema correctness. The
+    network-gated tests below perform that independent cross-check.
+    """
     sticker_rows = {
         "2535": {"name": "Sticker | ELEAGUE (Gold) | Boston 2018"},
         "2475": {"name": "Sticker | Cloud9 (Gold) | Boston 2018"},
@@ -78,6 +90,14 @@ def _reference_data_for_case(case: dict) -> CSGOReferenceData:
         stickers_by_id=sticker_rows,
         keychains_by_id={},
     )
+
+
+def _require_live_asset_crosscheck() -> None:
+    if os.environ.get(_LIVE_CROSSCHECK_ENV) != "1":
+        pytest.skip(
+            f"set {_LIVE_CROSSCHECK_ENV}=1 and opt into -m network to run "
+            "live asset cross-checks"
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -122,8 +142,8 @@ def test_rejects_non_cs2_inventory_fragment() -> None:
         )
 
 
-def test_build_value_gauge_uses_median_min_max() -> None:
-    gauge = build_value_gauge(
+def test_build_market_baseline_uses_median_min_max() -> None:
+    baseline = build_market_baseline(
         [
             PricePoint("skinport", "direct", Decimal("258.18"), 66, None),
             PricePoint("pricempire_buff163", "pricempire", Decimal("198.70"), 247, None),
@@ -137,11 +157,11 @@ def test_build_value_gauge_uses_median_min_max() -> None:
         ]
     )
 
-    assert gauge is not None
-    assert gauge["low"] == "150.13"
-    assert gauge["mid"] == "198.70"
-    assert gauge["high"] == "258.18"
-    assert gauge["confidence"] == "high"
+    assert baseline is not None
+    assert baseline["low"] == "150.13"
+    assert baseline["mid"] == "198.70"
+    assert baseline["high"] == "258.18"
+    assert baseline["confidence"] == "high"
 
 
 def test_inventory_route_returns_structured_decline(
@@ -230,9 +250,9 @@ def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
     assert body["asset"]["paint_seed"] == 169
     assert body["asset"]["paint_id"] == 33
     assert body["asset"]["stickers"][0]["sticker_id"] == 1234
-    assert body["value_gauge"]["low"] == "150.13"
-    assert body["value_gauge"]["mid"] == "174.42"
-    assert body["value_gauge"]["high"] == "198.70"
+    assert body["market_baseline"]["low"] == "150.13"
+    assert body["market_baseline"]["mid"] == "174.42"
+    assert body["market_baseline"]["high"] == "198.70"
 
 
 def test_legacy_inspect_link_is_scope_boundary() -> None:
@@ -253,7 +273,8 @@ def test_inspect_route_returns_structured_scope_decline(client) -> None:
 
 
 @pytest.mark.parametrize("case", _inspect_known_answer_cases())
-def test_known_answer_inspect_cases_are_backed_by_dmarket_fixture(case) -> None:
+def test_research_inspect_cases_match_local_dmarket_fixture(case) -> None:
+    """Transcription guard only; this is not a live correctness proof."""
     obj = _dmarket_object(case)
     extra = obj["extra"]
 
@@ -271,15 +292,16 @@ def test_known_answer_inspect_cases_are_backed_by_dmarket_fixture(case) -> None:
 
 
 @pytest.mark.parametrize("case", _inspect_known_answer_cases())
-def test_known_answer_inspect_links_decode_offline(case) -> None:
+def test_research_inspect_links_decode_offline_against_fixture_values(case) -> None:
+    """Offline decoder check against research fixture values.
+
+    Market-name and sticker-name schema resolution is covered by the
+    network-gated CSGO-API test below, not by the local fake schema.
+    """
     obj = _dmarket_object(case)
     extra = obj["extra"]
     decoded = decode_modern_inspect_link(extra["inspectInGame"])
-    reference_data = _reference_data_for_case(case)
 
-    assert resolve_decoded_market_hash_name(decoded, reference_data) == case[
-        "market_hash_name"
-    ]
     assert str(decoded.itemid) == case["expected_asset_id"]
     assert decoded.defindex == case["expected_defindex"]
     assert decoded.quality == case["expected_quality"]
@@ -289,9 +311,15 @@ def test_known_answer_inspect_links_decode_offline(case) -> None:
 
 
 @pytest.mark.parametrize("case", _inspect_known_answer_cases())
-def test_known_answer_inspect_fixture_reproduces_attributes_and_value(
+def test_inspect_route_passthrough_fixture_shapes_attributes_and_baseline(
     client, monkeypatch, case
 ) -> None:
+    """Route passthrough/shape test.
+
+    The mocked schema and price rows are derived from the fixture, so this
+    test verifies API shaping and baseline math only. It does not prove the
+    fixture's exact attributes are correct.
+    """
     obj = _dmarket_object(case)
     inspect_url = obj["extra"]["inspectInGame"]
 
@@ -337,15 +365,15 @@ def test_known_answer_inspect_fixture_reproduces_attributes_and_value(
     ]
 
     expected = Decimal(case["expected_value_usd"])
-    mid = Decimal(body["value_gauge"]["mid"])
+    mid = Decimal(body["market_baseline"]["mid"])
     tolerance_pct = Decimal(case["tolerance_pct"])
     pct_error = abs((mid - expected) / expected * 100)
     assert pct_error <= tolerance_pct
 
 
 @pytest.mark.parametrize("case", _known_answer_cases())
-def test_known_answer_cases_are_backed_by_dmarket_fixture(case) -> None:
-    """Guard that the known-answer cases come from independent fixture data."""
+def test_research_inventory_cases_match_local_dmarket_fixture(case) -> None:
+    """Transcription guard only; this is not a live correctness proof."""
     source = case["source"]
     assert source["kind"] == "dmarket_fixture"
     fixture = json.loads(Path(source["path"]).read_text())
@@ -366,10 +394,15 @@ def test_known_answer_cases_are_backed_by_dmarket_fixture(case) -> None:
 
 
 @pytest.mark.parametrize("case", _known_answer_cases())
-def test_known_answer_inventory_fixture_reproduces_attributes_and_value(
+def test_inventory_route_passthrough_fixture_shapes_attributes_and_baseline(
     client, monkeypatch, case
 ) -> None:
-    """Fixture gate: exact asset attributes and value tolerance."""
+    """Route passthrough/shape test.
+
+    The mocked Pricempire inventory row is built from fixture expectations, so
+    this test verifies response shaping and baseline math only. It does not
+    prove Pricempire returns those exact attributes.
+    """
     ref = parse_inventory_item_url(case["inventory_url"])
     inventory = {
         "items": [
@@ -433,7 +466,63 @@ def test_known_answer_inventory_fixture_reproduces_attributes_and_value(
     ]
 
     expected = Decimal(case["expected_value_usd"])
-    mid = Decimal(body["value_gauge"]["mid"])
+    mid = Decimal(body["market_baseline"]["mid"])
     tolerance_pct = Decimal(case["tolerance_pct"])
     pct_error = abs((mid - expected) / expected * 100)
     assert pct_error <= tolerance_pct
+
+
+@pytest.mark.network
+@pytest.mark.parametrize("case", _known_answer_cases())
+def test_live_pricempire_inventory_matches_research_fixture(case) -> None:
+    """Live Pricempire cross-check against independently recorded fixture values."""
+    _require_live_asset_crosscheck()
+    if not os.environ.get("PRICEMPIRE_API_KEY"):
+        pytest.skip("PRICEMPIRE_API_KEY is required for live inventory checks")
+
+    reference = parse_inventory_item_url(case["inventory_url"])
+    steam_id = resolve_steam_id(reference)
+    inventory = fetch_pricempire_inventory(steam_id)
+    asset = find_inventory_asset(inventory, reference.asset_id)
+    item = asset.get("item") or {}
+
+    assert item.get("market_hash_name") == case["market_hash_name"]
+    assert str(asset.get("float_value")) == case["expected_float"]
+    assert asset.get("paint_seed") == case["expected_paint_seed"]
+    assert item.get("paint_id") == case["expected_paint_id"]
+    sticker_names = [
+        str(row["name"]).removeprefix("Sticker | ")
+        for row in asset.get("stickers") or []
+    ]
+    assert sticker_names == case["expected_stickers"]
+
+
+@pytest.mark.network
+@pytest.mark.parametrize("case", _inspect_known_answer_cases())
+def test_live_csgo_schema_resolves_research_fixture_inspect_links(case) -> None:
+    """Live CSGO-API schema cross-check for decoded inspect-link attributes."""
+    _require_live_asset_crosscheck()
+    fetch_csgo_reference_data.cache_clear()
+    try:
+        reference_data = fetch_csgo_reference_data()
+    except CSGOReferenceUnavailableError as exc:
+        pytest.skip(str(exc))
+
+    obj = _dmarket_object(case)
+    decoded = decode_modern_inspect_link(obj["extra"]["inspectInGame"])
+    sticker_names = []
+    for sticker in decoded.stickers:
+        ref = reference_data.stickers_by_id.get(str(sticker.sticker_id)) or {}
+        raw_name = ref.get("market_hash_name") or ref.get("name")
+        sticker_names.append(str(raw_name).removeprefix("Sticker | "))
+
+    assert resolve_decoded_market_hash_name(decoded, reference_data) == case[
+        "market_hash_name"
+    ]
+    assert str(decoded.itemid) == case["expected_asset_id"]
+    assert decoded.defindex == case["expected_defindex"]
+    assert decoded.quality == case["expected_quality"]
+    assert str(decoded.paintwear) == case["expected_float"]
+    assert decoded.paintseed == case["expected_paint_seed"]
+    assert decoded.paintindex == case["expected_paint_id"]
+    assert sticker_names == case["expected_stickers"]

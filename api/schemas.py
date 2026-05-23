@@ -156,29 +156,30 @@ class PriceResponse(BaseModel):
     }
 
 
-class InventoryValuationRequest(BaseModel):
-    """Request body for public-inventory asset valuation."""
+class InventoryBaselineRequest(BaseModel):
+    """Request body for public-inventory asset baseline lookup."""
 
     inventory_url: str = Field(
         ..., description="Steam inventory item URL, including #730_2_<asset_id>."
     )
 
 
-class InspectValuationRequest(BaseModel):
-    """Request body for inspect-link asset valuation."""
+class InspectBaselineRequest(BaseModel):
+    """Request body for inspect-link asset baseline lookup."""
 
     inspect_url: str = Field(
         ..., description="CS2 inspect URL, such as steam://run/730//+..."
     )
 
 
-class InventoryValuationResponse(BaseModel):
-    """Structured per-asset valuation result.
+class AssetBaselineResponse(BaseModel):
+    """Structured exact-asset attribute result plus market baseline.
 
-    ``status="ok"`` means both asset attributes and a local USD baseline
-    gauge are present. ``status="no_value_data"`` means the exact asset
-    was found but local price rows are missing. ``status="unreadable"``
-    covers private profiles, invalid links, and asset-id mismatches.
+    ``status="ok"`` means both asset attributes and a local USD
+    market-name baseline are present. ``status="no_value_data"`` means
+    the exact asset was found but local price rows are missing.
+    ``status="unreadable"`` covers private profiles, invalid links, and
+    asset-id mismatches.
     """
 
     status: Literal["ok", "no_value_data", "unreadable"]
@@ -186,7 +187,7 @@ class InventoryValuationResponse(BaseModel):
     message: str
     reference: dict[str, Any] | None
     asset: dict[str, Any] | None
-    value_gauge: dict[str, Any] | None
+    market_baseline: dict[str, Any] | None
     price_points: list[dict[str, Any]]
 
 

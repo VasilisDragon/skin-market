@@ -1,9 +1,9 @@
-"""Deterministic helpers for public-inventory asset valuation.
+"""Deterministic helpers for public-inventory asset market baselines.
 
 Phase A deliberately keeps the LLM out of the data path. The API parses
 the Steam inventory URL, fetches the public inventory snapshot from
-Pricempire, locates the exact asset id, and computes a baseline USD range
-from local market data. The bot only renders the structured result.
+Pricempire, locates the exact asset id, and computes a market-name USD
+baseline from local market data. The bot only renders the structured result.
 """
 
 from __future__ import annotations
@@ -408,8 +408,8 @@ def load_latest_usd_price_points(
     ]
 
 
-def build_value_gauge(price_points: list[PricePoint]) -> dict[str, Any] | None:
-    """Compute a baseline USD range from available local price points."""
+def build_market_baseline(price_points: list[PricePoint]) -> dict[str, Any] | None:
+    """Compute a market-name USD baseline from available local price points."""
     if not price_points:
         return None
     prices = sorted(point.price for point in price_points)
@@ -439,7 +439,7 @@ def build_value_gauge(price_points: list[PricePoint]) -> dict[str, Any] | None:
     }
 
 
-def build_inventory_valuation_response(
+def build_inventory_baseline_response(
     *,
     reference: InventoryItemReference,
     steam_id: str,
@@ -448,8 +448,8 @@ def build_inventory_valuation_response(
 ) -> dict[str, Any]:
     item = asset.get("item") or {}
     market_hash_name = item.get("market_hash_name")
-    value_gauge = build_value_gauge(price_points)
-    status = "ok" if value_gauge is not None else "no_value_data"
+    market_baseline = build_market_baseline(price_points)
+    status = "ok" if market_baseline is not None else "no_value_data"
     explanation = _explanation(status=status, market_hash_name=market_hash_name)
     return {
         "status": status,
@@ -473,7 +473,7 @@ def build_inventory_valuation_response(
             "stickers": [_shape_sticker(row) for row in asset.get("stickers") or []],
             "charms": asset.get("charms") or [],
         },
-        "value_gauge": value_gauge,
+        "market_baseline": market_baseline,
         "price_points": [
             {
                 "source": point.source,
@@ -487,7 +487,7 @@ def build_inventory_valuation_response(
     }
 
 
-def build_inspect_valuation_response(
+def build_inspect_baseline_response(
     *,
     inspect_url: str,
     decoded: Any,
@@ -495,17 +495,17 @@ def build_inspect_valuation_response(
     reference_data: CSGOReferenceData | None,
     price_points: list[PricePoint],
 ) -> dict[str, Any]:
-    value_gauge = build_value_gauge(price_points)
+    market_baseline = build_market_baseline(price_points)
     if market_hash_name is None:
         status = "no_value_data"
         reason = "market_hash_name_unresolved"
         explanation = (
             "Exact asset attributes were decoded from the inspect link, "
             "but the market_hash_name could not be resolved from the CS2 "
-            "schema, so no value gauge is available."
+            "schema, so no market baseline is available."
         )
     else:
-        status = "ok" if value_gauge is not None else "no_value_data"
+        status = "ok" if market_baseline is not None else "no_value_data"
         reason = None if status == "ok" else "no_local_price_data"
         explanation = _inspect_explanation(
             status=status,
@@ -542,7 +542,7 @@ def build_inspect_valuation_response(
                 for row in decoded.keychains
             ],
         },
-        "value_gauge": value_gauge,
+        "market_baseline": market_baseline,
         "price_points": [
             {
                 "source": point.source,
@@ -563,7 +563,7 @@ def unreadable_response(reason: str, message: str) -> dict[str, Any]:
         "message": message,
         "reference": None,
         "asset": None,
-        "value_gauge": None,
+        "market_baseline": None,
         "price_points": [],
     }
 
@@ -675,13 +675,13 @@ def _explanation(*, status: str, market_hash_name: str | None) -> str:
     if status == "ok":
         return (
             f"Exact asset attributes were read from the public inventory. "
-            f"The value gauge for {market_hash_name} is a deterministic "
-            f"USD baseline from local market data; asset-specific premiums "
-            f"remain fixture-gated."
+            f"The market baseline for {market_hash_name} is a deterministic "
+            f"USD range from local market-name data. It does not include "
+            f"float, seed, sticker, or charm premiums."
         )
     return (
         f"Exact asset attributes were read for {market_hash_name}, but no "
-        f"local USD market rows are available for a value gauge."
+        f"local USD market rows are available for a market baseline."
     )
 
 
@@ -689,11 +689,11 @@ def _inspect_explanation(*, status: str, market_hash_name: str) -> str:
     if status == "ok":
         return (
             f"Exact asset attributes were decoded from the inspect link. "
-            f"The value gauge for {market_hash_name} is a deterministic "
-            f"USD baseline from local market data; asset-specific premiums "
-            f"remain fixture-gated."
+            f"The market baseline for {market_hash_name} is a deterministic "
+            f"USD range from local market-name data. It does not include "
+            f"float, seed, sticker, or charm premiums."
         )
     return (
         f"Exact asset attributes were decoded for {market_hash_name}, but no "
-        f"local USD market rows are available for a value gauge."
+        f"local USD market rows are available for a market baseline."
     )

@@ -785,8 +785,8 @@ def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
         return body
 
 
-def value_inventory_item(inventory_url: str) -> dict:
-    """Return a deterministic value gauge for one public inventory asset."""
+def market_baseline_inventory_item(inventory_url: str) -> dict:
+    """Return exact inventory attributes plus a market-name USD baseline."""
     payload = {"inventory_url": inventory_url}
     with _client(timeout_read=60.0) as c:
         try:
@@ -806,8 +806,8 @@ def value_inventory_item(inventory_url: str) -> dict:
         return resp.json()
 
 
-def value_inspect_link(inspect_url: str) -> dict:
-    """Return a deterministic value gauge for one modern CS2 inspect link."""
+def market_baseline_inspect_link(inspect_url: str) -> dict:
+    """Return decoded inspect attributes plus a market-name USD baseline."""
     payload = {"inspect_url": inspect_url}
     with _client(timeout_read=60.0) as c:
         try:
@@ -1194,12 +1194,14 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "value_inventory_item",
+            "name": "market_baseline_inventory_item",
             "description": (
                 "Call this when the user pastes a Steam public inventory "
-                "item link or asks to value an exact inventory asset. "
-                "Returns exact float/seed/stickers plus a deterministic "
-                "USD value gauge when local market data exists."
+                "item link or asks about float, seed, stickers, or a "
+                "market baseline for an exact inventory asset. Returns "
+                "exact float/seed/stickers plus a market-name USD baseline "
+                "when local market data exists. It does not price float, "
+                "seed, sticker, or charm premiums."
             ),
             "parameters": {
                 "type": "object",
@@ -1219,12 +1221,14 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "value_inspect_link",
+            "name": "market_baseline_inspect_link",
             "description": (
                 "Call this when the user pastes a CS2 inspect link, "
-                "steam://run link, or asks to value an exact inspect "
-                "asset. Returns decoded float/seed/stickers plus a "
-                "deterministic USD value gauge when local market data exists."
+                "steam://run link, or asks about float, seed, stickers, "
+                "or a market baseline for an exact inspect asset. Returns "
+                "decoded float/seed/stickers plus a market-name USD "
+                "baseline when local market data exists. It does not price "
+                "float, seed, sticker, or charm premiums."
             ),
             "parameters": {
                 "type": "object",
@@ -1296,8 +1300,8 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "query_price_history": query_price_history,
     "render_chart": render_chart,
     "evaluate_deal": evaluate_deal,
-    "value_inventory_item": value_inventory_item,
-    "value_inspect_link": value_inspect_link,
+    "market_baseline_inventory_item": market_baseline_inventory_item,
+    "market_baseline_inspect_link": market_baseline_inspect_link,
     "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,

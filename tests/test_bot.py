@@ -40,13 +40,13 @@ from bot.tools import (
     _refresh_items_cache,
     evaluate_deal,
     list_watchlist,
+    market_baseline_inspect_link,
+    market_baseline_inventory_item,
     narrative_today,
     query_current_price,
     query_drift,
     query_price_history,
     render_chart,
-    value_inspect_link,
-    value_inventory_item,
     whats_interesting,
 )
 
@@ -97,8 +97,8 @@ class TestToolsRegistry:
             "query_price_history",
             "render_chart",
             "evaluate_deal",
-            "value_inventory_item",
-            "value_inspect_link",
+            "market_baseline_inventory_item",
+            "market_baseline_inspect_link",
             "query_drift",
             "narrative_today",
             "whats_interesting",
@@ -157,14 +157,14 @@ class TestToolsAuthAndConnectivity:
             == f"Bearer {_TEST_TOKEN}"
         )
 
-    def test_value_inventory_item_wraps_api_route(self, httpx_mock) -> None:
+    def test_market_baseline_inventory_item_wraps_api_route(self, httpx_mock) -> None:
         payload = {
             "status": "ok",
             "reason": None,
-            "message": "valued",
+            "message": "baseline",
             "reference": {"asset_id": "51590003382"},
             "asset": {"float_value": "0.035739749670028687"},
-            "value_gauge": {
+            "market_baseline": {
                 "low": "150.13",
                 "mid": "174.42",
                 "high": "198.70",
@@ -177,7 +177,7 @@ class TestToolsAuthAndConnectivity:
             json=payload,
         )
 
-        result = value_inventory_item(
+        result = market_baseline_inventory_item(
             "https://steamcommunity.com/profiles/76561199276192848/"
             "inventory/#730_2_51590003382"
         )
@@ -192,14 +192,14 @@ class TestToolsAuthAndConnectivity:
             )
         }
 
-    def test_value_inspect_link_wraps_api_route(self, httpx_mock) -> None:
+    def test_market_baseline_inspect_link_wraps_api_route(self, httpx_mock) -> None:
         payload = {
             "status": "ok",
             "reason": None,
-            "message": "valued",
+            "message": "baseline",
             "reference": {"inspect_link_format": "modern_encoded"},
             "asset": {"float_value": "0.035739749670028687"},
-            "value_gauge": {
+            "market_baseline": {
                 "low": "150.13",
                 "mid": "174.42",
                 "high": "198.70",
@@ -212,7 +212,7 @@ class TestToolsAuthAndConnectivity:
             json=payload,
         )
 
-        result = value_inspect_link(
+        result = market_baseline_inspect_link(
             "steam://run/730//+csgo_econ_action_preview%20A0B016"
         )
 
@@ -1117,20 +1117,21 @@ class TestSystemPromptPhase2bStep9:
             "reference so render order is unambiguous"
         )
 
-    def test_prompt_limits_inventory_valuation_rendering(self) -> None:
+    def test_prompt_limits_asset_baseline_rendering(self) -> None:
         from bot.system_prompt import SYSTEM_PROMPT
 
-        assert "value_inventory_item" in SYSTEM_PROMPT
-        assert "value_inspect_link" in SYSTEM_PROMPT
+        assert "market_baseline_inventory_item" in SYSTEM_PROMPT
+        assert "market_baseline_inspect_link" in SYSTEM_PROMPT
         assert "Do not render a table" in SYSTEM_PROMPT
         assert "name individual sources" in SYSTEM_PROMPT
         assert "Do not add sale predictions" in SYSTEM_PROMPT
         assert "sticker/charm" in SYSTEM_PROMPT
         assert "names exactly" in SYSTEM_PROMPT
-        assert "Never say actual collector value could differ" in SYSTEM_PROMPT
-        assert "After rendering `value_gauge`, stop" in SYSTEM_PROMPT
-        assert "Render `value_gauge` as three bullets" in SYSTEM_PROMPT
-        assert "value gauge section must be the final section" in SYSTEM_PROMPT
+        assert "market-name baseline" in SYSTEM_PROMPT
+        assert "float, seed, sticker, or charm premiums" in SYSTEM_PROMPT
+        assert "After rendering `market_baseline`, stop" in SYSTEM_PROMPT
+        assert "Render `market_baseline` under the heading" in SYSTEM_PROMPT
+        assert "market baseline section must be the final section" in SYSTEM_PROMPT
         assert "Do not mention CSFloat/Skinport/DMarket" in SYSTEM_PROMPT
         assert "do not fall back to market_hash_name averages" in SYSTEM_PROMPT
 

@@ -1,6 +1,6 @@
-# ADR 028 — Public-inventory asset valuation
+# ADR 028 — Public-inventory asset market baseline
 
-**Status:** Accepted; Phase A fixture gate satisfied by independent fixtures  
+**Status:** Accepted; corrected to market-baseline wording and live cross-checks
 **Date:** 2026-05-23  
 **Related:** ADR 014 (read API), ADR 016 (bot runtime), ADR 024
 (tier architecture), ADR 026 (DeepSeek cutover), ADR 027 (cost control)
@@ -8,15 +8,15 @@
 ## Context
 
 Phase A adds a Discord flow where a user pastes a Steam public-inventory
-item link and gets a value gauge for that exact asset. The key distinction from
-the existing `/items/{slug}/price` flow is that the input identifies an asset
-id, not just a `market_hash_name`.
+item link and gets exact asset attributes plus a market-name USD baseline
+range. The key distinction from the existing `/items/{slug}/price` flow is that
+the input identifies an asset id, not just a `market_hash_name`.
 
 The deterministic-core rule still applies:
 
 - The LLM may choose the tool and render the response.
 - The LLM must not parse Steam links, fetch inventories, match asset ids, or
-  compute valuations.
+  compute baseline ranges.
 - Secrets remain environment variables and are never logged or stored.
 
 Pricempire's live public docs list:
@@ -55,7 +55,7 @@ The implemented flow is:
 3. Call Pricempire `/v4/paid/inventory?steam_id=<id>&app_id=730`.
 4. Find the asset whose `asset_id` matches the URL fragment.
 5. Read exact asset attributes from that asset row.
-6. Compute a baseline USD range from local latest USD market rows for the
+6. Compute a market-name USD baseline from local latest USD market rows for the
    asset's `market_hash_name`.
 
 A live dry run on 2026-05-23 used an existing DMarket fixture-style public
@@ -73,7 +73,7 @@ Pricempire returned a matching asset:
 - `paint_id`: `33`
 - `stickers`: 4
 
-The local baseline gauge used six USD Pricempire-backed rows and excluded Steam
+The local market baseline used six USD Pricempire-backed rows and excluded Steam
 Wallet credit.
 
 ## Decision
@@ -91,31 +91,38 @@ with body:
 ```
 
 The API, not the LLM, performs the deterministic work. The Discord bot gets a
-thin `value_inventory_item` wrapper that calls this local route, matching the
-existing bot-tool pattern.
+thin `market_baseline_inventory_item` wrapper that calls this local route,
+matching the existing bot-tool pattern.
 
 The API service now receives `PRICEMPIRE_API_KEY` through Docker Compose. Missing
 or rejected keys are operator/configuration errors. User-input failures return a
 structured `status="unreadable"` result so the bot can respond plainly.
 
-The first valuation method is intentionally conservative:
+The first baseline method is intentionally conservative:
 
 - Use latest local USD rows for the asset's `market_hash_name`.
 - Include direct USD rows and Pricempire USD sub-provider rows.
-- Exclude Steam Wallet credit from the USD gauge.
-- Report `low`, `mid` (median), `high`, source count, and confidence.
+- Exclude Steam Wallet credit from the USD baseline.
+- Report `market_baseline.low`, `mid` (median), `high`, source count, and
+  confidence.
 - Surface `float_value`, `paint_seed`, `paint_id`, ranks, stickers, and charms
   as exact attributes.
 - Do not apply sticker, charm, float, or pattern premiums until the
   independently researched known-answer fixture calibrates those cases.
 
-## Known-answer fixture
+## Research-backed fixture and live cross-check
 
-The Phase A fixture uses DMarket response fixtures as the independent evidence
-source. Those fixture rows include Steam inventory item URLs, DMarket listing
-prices, exact float values, paint seeds, paint indexes, and sticker names. The
-tests assert that `tests/fixtures/inventory_known_answers.json` still matches
-the referenced DMarket fixture rows before exercising the valuation route.
+The Phase A fixture uses DMarket response fixtures as the research-backed
+evidence source. Those fixture rows include Steam inventory item URLs, DMarket
+listing prices, exact float values, paint seeds, paint indexes, and sticker
+names.
+
+Corrective note, 2026-05-23: the original mocked route tests built mocked
+Pricempire rows from the same expected float, seed, sticker, and value fields
+they asserted on. Those tests now remain only as passthrough/shape tests. A
+network-gated pytest marker, skipped by default, performs the real non-circular
+cross-check by fetching live Pricempire inventory rows and comparing them with
+the research-backed expected attributes.
 
 Three cases are pinned:
 
@@ -125,10 +132,10 @@ Three cases are pinned:
 | `StatTrak™ M4A1-S \| Cyrex (Field-Tested)` | `tests/fixtures/dmarket/m4a1-s-cyrex-field-tested.json` object 0 | `$166.96` | 30% | StatTrak rifle with two foil stickers; live Pricempire lookup reproduced float `0.20269429683685303`, seed `712`, paint id `360`, and both sticker names. |
 | `Desert Eagle \| Oxide Blaze (Factory New)` | `tests/fixtures/dmarket/desert-eagle-blaze-factory-new.json` object 4 | `$1.58` | 30% | Low-value liquid skin canary; live Pricempire lookup reproduced float `0.06637155264616013`, seed `520`, paint id `645`, and zero stickers. |
 
-The 30% tolerance is deliberately broad because the current gauge is a
+The 30% tolerance is deliberately broad because the current output is a
 market-name baseline from local USD sources, not a listing-specific repricer.
-The exact-asset attributes are checked exactly; the value check prevents the
-baseline from drifting into the wrong order of magnitude while avoiding a false
+The exact-asset attributes are checked exactly; the baseline check prevents the
+range from drifting into the wrong order of magnitude while avoiding a false
 promise about sticker/pattern premiums.
 
 ## Private And Unresolvable Handling
@@ -164,8 +171,12 @@ inventory response and stop.
 
 ## Gate
 
-GATE A-FIXTURE is satisfied for Phase A by
-`tests/fixtures/inventory_known_answers.json` and
-`tests/test_asset_valuation.py`. The fixture verifies independently sourced
-attributes and values, then checks the API result's exact attributes and gauge
-tolerance.
+The always-on unit tests verify response shape and market-baseline math. The
+optional live check is:
+
+```text
+RUN_LIVE_ASSET_CROSSCHECKS=1 uv run pytest -m network tests/test_asset_valuation.py
+```
+
+It requires `PRICEMPIRE_API_KEY` and compares live Pricempire inventory
+attributes against `tests/fixtures/inventory_known_answers.json`.
