@@ -88,6 +88,10 @@ services:
       # Operator typically leaves this empty in single-consumer
       # deployments; populate during a graceful rotation cutover.
       SKIN_MARKET_API_TOKENS: ${SKIN_MARKET_API_TOKENS:-}
+      # Phase A per-asset valuation: the API performs the deterministic
+      # public-inventory lookup through Pricempire, then combines the
+      # exact asset attributes with local market rows.
+      PRICEMPIRE_API_KEY: ${PRICEMPIRE_API_KEY:-}
     # Host-local port mapping (NEVER 0.0.0.0) so Hermes — which runs
     # as a host process at ~/.hermes-discord/, not as a compose
     # service — can reach the api with the bearer token. Host port

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PlainSerializer
 
@@ -154,6 +154,32 @@ class PriceResponse(BaseModel):
             ]
         }
     }
+
+
+class InventoryValuationRequest(BaseModel):
+    """Request body for public-inventory asset valuation."""
+
+    inventory_url: str = Field(
+        ..., description="Steam inventory item URL, including #730_2_<asset_id>."
+    )
+
+
+class InventoryValuationResponse(BaseModel):
+    """Structured per-asset valuation result.
+
+    ``status="ok"`` means both asset attributes and a local USD baseline
+    gauge are present. ``status="no_value_data"`` means the exact asset
+    was found but local price rows are missing. ``status="unreadable"``
+    covers private profiles, invalid links, and asset-id mismatches.
+    """
+
+    status: Literal["ok", "no_value_data", "unreadable"]
+    reason: str | None
+    message: str
+    reference: dict[str, Any] | None
+    asset: dict[str, Any] | None
+    value_gauge: dict[str, Any] | None
+    price_points: list[dict[str, Any]]
 
 
 class HistoryObservation(BaseModel):

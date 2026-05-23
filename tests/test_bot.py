@@ -45,6 +45,7 @@ from bot.tools import (
     query_drift,
     query_price_history,
     render_chart,
+    value_inventory_item,
     whats_interesting,
 )
 
@@ -95,6 +96,7 @@ class TestToolsRegistry:
             "query_price_history",
             "render_chart",
             "evaluate_deal",
+            "value_inventory_item",
             "query_drift",
             "narrative_today",
             "whats_interesting",
@@ -152,6 +154,41 @@ class TestToolsAuthAndConnectivity:
             request.headers["Authorization"]
             == f"Bearer {_TEST_TOKEN}"
         )
+
+    def test_value_inventory_item_wraps_api_route(self, httpx_mock) -> None:
+        payload = {
+            "status": "ok",
+            "reason": None,
+            "message": "valued",
+            "reference": {"asset_id": "51590003382"},
+            "asset": {"float_value": "0.035739749670028687"},
+            "value_gauge": {
+                "low": "150.13",
+                "mid": "174.42",
+                "high": "198.70",
+            },
+            "price_points": [],
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/asset-valuations/inventory",
+            json=payload,
+        )
+
+        result = value_inventory_item(
+            "https://steamcommunity.com/profiles/76561199276192848/"
+            "inventory/#730_2_51590003382"
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "inventory_url": (
+                "https://steamcommunity.com/profiles/76561199276192848/"
+                "inventory/#730_2_51590003382"
+            )
+        }
 
 
 class TestQueryCurrentPriceComposer:
@@ -1046,6 +1083,14 @@ class TestSystemPromptPhase2bStep9:
             "drift framing reference must precede the anomaly_flag "
             "reference so render order is unambiguous"
         )
+
+    def test_prompt_limits_inventory_valuation_rendering(self) -> None:
+        from bot.system_prompt import SYSTEM_PROMPT
+
+        assert "value_inventory_item" in SYSTEM_PROMPT
+        assert "Do not render a table" in SYSTEM_PROMPT
+        assert "name individual sources" in SYSTEM_PROMPT
+        assert "do not fall back to market_hash_name averages" in SYSTEM_PROMPT
 
 
 # =====================================================================

@@ -1,0 +1,79 @@
+[
+  {
+    "source": {
+      "kind": "dmarket_fixture",
+      "path": "tests/fixtures/dmarket/mp9-hot-rod-factory-new.json",
+      "object_index": 0
+    },
+    "inventory_url": "https://steamcommunity.com/profiles/76561199276192848/inventory/#730_2_51590003382",
+    "market_hash_name": "Souvenir MP9 | Hot Rod (Factory New)",
+    "expected_float": "0.035739749670028687",
+    "expected_paint_seed": 169,
+    "expected_paint_id": 33,
+    "expected_stickers": [
+      "ELEAGUE (Gold) | Boston 2018",
+      "Cloud9 (Gold) | Boston 2018",
+      "Skadoodle (Gold) | Boston 2018",
+      "Virtus.Pro (Gold) | Boston 2018"
+    ],
+    "expected_value_usd": "228.27",
+    "tolerance_pct": "30",
+    "price_points": [
+      {"source": "pricempire_buff163", "source_family": "pricempire", "price": "204.52", "volume": 247},
+      {"source": "pricempire_buff163_buy", "source_family": "pricempire", "price": "150.13", "volume": 7},
+      {"source": "pricempire_csmoney", "source_family": "pricempire", "price": "247.63", "volume": 6},
+      {"source": "pricempire_dmarket", "source_family": "pricempire", "price": "249.19", "volume": 5},
+      {"source": "pricempire_skinport", "source_family": "pricempire", "price": "257.68", "volume": 23},
+      {"source": "pricempire_swap_gg", "source_family": "pricempire", "price": "419.89", "volume": 1}
+    ]
+  },
+  {
+    "source": {
+      "kind": "dmarket_fixture",
+      "path": "tests/fixtures/dmarket/m4a1-s-cyrex-field-tested.json",
+      "object_index": 0
+    },
+    "inventory_url": "https://steamcommunity.com/profiles/76561199296565156/inventory/#730_2_51313391045",
+    "market_hash_name": "StatTrak\u2122 M4A1-S | Cyrex (Field-Tested)",
+    "expected_float": "0.20269429683685303",
+    "expected_paint_seed": 712,
+    "expected_paint_id": 360,
+    "expected_stickers": [
+      "Gambit Gaming (Foil) | Stockholm 2021",
+      "olofmeister (Foil) | Katowice 2019"
+    ],
+    "expected_value_usd": "166.96",
+    "tolerance_pct": "30",
+    "price_points": [
+      {"source": "pricempire_buff163", "source_family": "pricempire", "price": "154.02", "volume": 46},
+      {"source": "pricempire_buff163_buy", "source_family": "pricempire", "price": "128.20", "volume": 4},
+      {"source": "pricempire_csmoney", "source_family": "pricempire", "price": "169.31", "volume": 47},
+      {"source": "pricempire_dmarket", "source_family": "pricempire", "price": "166.47", "volume": 10},
+      {"source": "pricempire_skinport", "source_family": "pricempire", "price": "174.95", "volume": 11},
+      {"source": "pricempire_swap_gg", "source_family": "pricempire", "price": "98.86", "volume": 2}
+    ]
+  },
+  {
+    "source": {
+      "kind": "dmarket_fixture",
+      "path": "tests/fixtures/dmarket/desert-eagle-blaze-factory-new.json",
+      "object_index": 4
+    },
+    "inventory_url": "https://steamcommunity.com/profiles/76561199308405498/inventory/#730_2_51214828499",
+    "market_hash_name": "Desert Eagle | Oxide Blaze (Factory New)",
+    "expected_float": "0.06637155264616013",
+    "expected_paint_seed": 520,
+    "expected_paint_id": 645,
+    "expected_stickers": [],
+    "expected_value_usd": "1.58",
+    "tolerance_pct": "30",
+    "price_points": [
+      {"source": "pricempire_buff163", "source_family": "pricempire", "price": "1.02", "volume": 964},
+      {"source": "pricempire_buff163_buy", "source_family": "pricempire", "price": "0.99", "volume": 299},
+      {"source": "pricempire_csmoney", "source_family": "pricempire", "price": "1.15", "volume": 363},
+      {"source": "pricempire_dmarket", "source_family": "pricempire", "price": "1.42", "volume": 89},
+      {"source": "pricempire_skinport", "source_family": "pricempire", "price": "1.44", "volume": 103},
+      {"source": "pricempire_swap_gg", "source_family": "pricempire", "price": "2.37", "volume": 4}
+    ]
+  }
+]

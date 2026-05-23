@@ -30,6 +30,7 @@ Endpoints:
 - ``GET  /items/{slug}/chart``   — PNG chart, one source × N days
 - ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
+- ``POST /asset-valuations/inventory`` — public-inventory asset gauge
 """
 
 from __future__ import annotations
@@ -39,7 +40,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from api.auth import require_token
-from api.routes import charts, deals, drift, history, insights, items
+from api.routes import (
+    asset_valuation,
+    charts,
+    deals,
+    drift,
+    history,
+    insights,
+    items,
+)
 from api.schemas import HealthResponse
 from db.connection import get_engine
 
@@ -66,6 +75,7 @@ app.include_router(insights.router, dependencies=_auth)
 app.include_router(charts.router, dependencies=_auth)
 app.include_router(deals.router, dependencies=_auth)
 app.include_router(drift.router, dependencies=_auth)
+app.include_router(asset_valuation.router, dependencies=_auth)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["meta"])

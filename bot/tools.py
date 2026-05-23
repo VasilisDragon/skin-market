@@ -785,6 +785,27 @@ def evaluate_deal(slug: str, amount: str, currency: str) -> dict:
         return body
 
 
+def value_inventory_item(inventory_url: str) -> dict:
+    """Return a deterministic value gauge for one public inventory asset."""
+    payload = {"inventory_url": inventory_url}
+    with _client(timeout_read=60.0) as c:
+        try:
+            resp = c.post("/asset-valuations/inventory", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /asset-valuations/inventory: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /asset-valuations/inventory: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def narrative_today() -> dict:
     """Latest daily narrative. The ``text`` field is bounded (one
     English paragraph) and passes through unchanged; the ``meta``
@@ -1152,6 +1173,31 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "value_inventory_item",
+            "description": (
+                "Call this when the user pastes a Steam public inventory "
+                "item link or asks to value an exact inventory asset. "
+                "Returns exact float/seed/stickers plus a deterministic "
+                "USD value gauge when local market data exists."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inventory_url": {
+                        "type": "string",
+                        "description": (
+                            "Full steamcommunity.com inventory item URL, "
+                            "including #730_2_<asset_id>."
+                        ),
+                    }
+                },
+                "required": ["inventory_url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "query_drift",
             "description": (
                 "Call this for drift, Pricempire consistency, or "
@@ -1204,6 +1250,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "query_price_history": query_price_history,
     "render_chart": render_chart,
     "evaluate_deal": evaluate_deal,
+    "value_inventory_item": value_inventory_item,
     "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,

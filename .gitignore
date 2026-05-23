@@ -49,3 +49,7 @@ data/exports/
 # PROJECT_OVERVIEW.md, TODO.md, README.md — those stay committed.
 # notes/ does not.
 notes/
+
+# never commit env backups or variants
+.env.*
+.env.bak

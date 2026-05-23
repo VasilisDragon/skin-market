@@ -1,0 +1,276 @@
+"""Phase A public-inventory asset valuation tests."""
+
+from __future__ import annotations
+
+import json
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from api.asset_valuation import (
+    InventoryUnavailableError,
+    PricePoint,
+    build_value_gauge,
+    parse_inventory_item_url,
+)
+from api.main import app
+
+_TEST_TOKEN = "test-token-deadbeefcafebabe1234567890"
+_INVENTORY_URL = (
+    "https://steamcommunity.com/profiles/76561199276192848/"
+    "inventory/#730_2_51590003382"
+)
+_KNOWN_ANSWERS_PATH = Path("tests/fixtures/inventory_known_answers.json")
+
+
+def _known_answer_cases() -> list[dict]:
+    return json.loads(_KNOWN_ANSWERS_PATH.read_text())
+
+
+@pytest.fixture(autouse=True)
+def _set_api_token(monkeypatch):
+    monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+
+
+@pytest.fixture
+def client() -> TestClient:
+    c = TestClient(app)
+    c.headers["Authorization"] = f"Bearer {_TEST_TOKEN}"
+    return c
+
+
+def test_parse_numeric_profile_inventory_link() -> None:
+    ref = parse_inventory_item_url(_INVENTORY_URL)
+    assert ref.steam_id == "76561199276192848"
+    assert ref.vanity_id is None
+    assert ref.app_id == "730"
+    assert ref.context_id == "2"
+    assert ref.asset_id == "51590003382"
+
+
+def test_parse_vanity_inventory_link_defers_resolution() -> None:
+    ref = parse_inventory_item_url(
+        "https://steamcommunity.com/id/some-trader/inventory/#730_2_123"
+    )
+    assert ref.steam_id is None
+    assert ref.vanity_id == "some-trader"
+    assert ref.asset_id == "123"
+
+
+def test_rejects_non_cs2_inventory_fragment() -> None:
+    with pytest.raises(ValueError, match="Only CS2"):
+        parse_inventory_item_url(
+            "https://steamcommunity.com/profiles/76561199276192848/"
+            "inventory/#570_2_51590003382"
+        )
+
+
+def test_build_value_gauge_uses_median_min_max() -> None:
+    gauge = build_value_gauge(
+        [
+            PricePoint("skinport", "direct", Decimal("258.18"), 66, None),
+            PricePoint("pricempire_buff163", "pricempire", Decimal("198.70"), 247, None),
+            PricePoint(
+                "pricempire_buff163_buy",
+                "pricempire",
+                Decimal("150.13"),
+                7,
+                None,
+            ),
+        ]
+    )
+
+    assert gauge is not None
+    assert gauge["low"] == "150.13"
+    assert gauge["mid"] == "198.70"
+    assert gauge["high"] == "258.18"
+    assert gauge["confidence"] == "high"
+
+
+def test_inventory_route_returns_structured_decline(
+    client, monkeypatch
+) -> None:
+    def _raise_unavailable(steam_id: str, *, force: bool = False):
+        raise InventoryUnavailableError("private inventory")
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.fetch_pricempire_inventory",
+        _raise_unavailable,
+    )
+
+    resp = client.post(
+        "/asset-valuations/inventory",
+        json={"inventory_url": _INVENTORY_URL},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "unreadable"
+    assert body["reason"] == "private_or_unavailable"
+    assert "private inventory" in body["message"]
+
+
+def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
+    inventory = {
+        "items": [
+            {
+                "asset_id": "51590003382",
+                "d": "proof",
+                "float_value": Decimal("0.035739749670028687"),
+                "paint_seed": 169,
+                "low_rank": None,
+                "high_rank": None,
+                "stickers": [
+                    {
+                        "name": "Natus Vincere | Stockholm 2021",
+                        "slot": 0,
+                        "wear": None,
+                        "stickerId": 1234,
+                    }
+                ],
+                "charms": None,
+                "item": {
+                    "market_hash_name": "Souvenir MP9 | Hot Rod (Factory New)",
+                    "paint_id": 33,
+                },
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.fetch_pricempire_inventory",
+        lambda steam_id, *, force=False: inventory,
+    )
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.load_latest_usd_price_points",
+        lambda session, name: [
+            PricePoint(
+                "pricempire_buff163",
+                "pricempire",
+                Decimal("198.70"),
+                247,
+                "2026-05-23T08:03:41+00:00",
+            ),
+            PricePoint(
+                "pricempire_buff163_buy",
+                "pricempire",
+                Decimal("150.13"),
+                7,
+                "2026-05-23T08:03:41+00:00",
+            ),
+        ],
+    )
+
+    resp = client.post(
+        "/asset-valuations/inventory",
+        json={"inventory_url": _INVENTORY_URL},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["asset"]["asset_id"] == "51590003382"
+    assert body["asset"]["float_value"] == "0.035739749670028687"
+    assert body["asset"]["paint_seed"] == 169
+    assert body["asset"]["paint_id"] == 33
+    assert body["asset"]["stickers"][0]["sticker_id"] == 1234
+    assert body["value_gauge"]["low"] == "150.13"
+    assert body["value_gauge"]["mid"] == "174.42"
+    assert body["value_gauge"]["high"] == "198.70"
+
+
+@pytest.mark.parametrize("case", _known_answer_cases())
+def test_known_answer_cases_are_backed_by_dmarket_fixture(case) -> None:
+    """Guard that the known-answer cases come from independent fixture data."""
+    source = case["source"]
+    assert source["kind"] == "dmarket_fixture"
+    fixture = json.loads(Path(source["path"]).read_text())
+    obj = fixture["objects"][source["object_index"]]
+    extra = obj["extra"]
+
+    assert extra["viewAtSteam"] == case["inventory_url"]
+    assert obj["title"] == case["market_hash_name"]
+    assert str(extra["floatValue"]) == case["expected_float"]
+    assert extra["paintSeed"] == case["expected_paint_seed"]
+    assert extra["paintIndex"] == case["expected_paint_id"]
+    assert [row["name"] for row in extra.get("stickers") or []] == case[
+        "expected_stickers"
+    ]
+    assert str(Decimal(obj["price"]["USD"]) / Decimal("100")) == case[
+        "expected_value_usd"
+    ]
+
+
+@pytest.mark.parametrize("case", _known_answer_cases())
+def test_known_answer_inventory_fixture_reproduces_attributes_and_value(
+    client, monkeypatch, case
+) -> None:
+    """Fixture gate: exact asset attributes and value tolerance."""
+    ref = parse_inventory_item_url(case["inventory_url"])
+    inventory = {
+        "items": [
+            {
+                "asset_id": ref.asset_id,
+                "d": "known-answer-proof",
+                "float_value": Decimal(case["expected_float"]),
+                "paint_seed": case["expected_paint_seed"],
+                "low_rank": None,
+                "high_rank": None,
+                "stickers": [
+                    {"name": name, "slot": slot, "wear": None, "stickerId": 10_000 + slot}
+                    for slot, name in enumerate(case["expected_stickers"])
+                ],
+                "charms": None,
+                "item": {
+                    "market_hash_name": case["market_hash_name"],
+                    "paint_id": case["expected_paint_id"],
+                },
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.fetch_pricempire_inventory",
+        lambda steam_id, *, force=False: inventory,
+    )
+
+    def _price_points(session, name):
+        assert name == case["market_hash_name"]
+        return [
+            PricePoint(
+                source=row["source"],
+                source_family=row["source_family"],
+                price=Decimal(row["price"]),
+                volume=row["volume"],
+                observed_at="2026-05-23T00:00:00+00:00",
+            )
+            for row in case["price_points"]
+        ]
+
+    monkeypatch.setattr(
+        "api.routes.asset_valuation.load_latest_usd_price_points",
+        _price_points,
+    )
+
+    resp = client.post(
+        "/asset-valuations/inventory",
+        json={"inventory_url": case["inventory_url"]},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["asset"]["market_hash_name"] == case["market_hash_name"]
+    assert body["asset"]["float_value"] == case["expected_float"]
+    assert body["asset"]["paint_seed"] == case["expected_paint_seed"]
+    assert body["asset"]["paint_id"] == case["expected_paint_id"]
+    assert [row["name"] for row in body["asset"]["stickers"]] == case[
+        "expected_stickers"
+    ]
+
+    expected = Decimal(case["expected_value_usd"])
+    mid = Decimal(body["value_gauge"]["mid"])
+    tolerance_pct = Decimal(case["tolerance_pct"])
+    pct_error = abs((mid - expected) / expected * 100)
+    assert pct_error <= tolerance_pct

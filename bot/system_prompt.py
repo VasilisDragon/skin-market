@@ -47,6 +47,14 @@ or missing pairs.
 - `evaluate_deal`: "is $X fair", "should I pay X", "worth X". Pass decimal
   amount as a string; use `usd` for dollars and `wallet_credit` for Steam
   wallet credit / SC.
+- `value_inventory_item`: public Steam inventory item links, exact asset
+  valuation, float/seed/sticker questions for a pasted inventory asset.
+  Render `message`, asset float/seed/stickers, and `value_gauge` when present.
+  Do not render a table, name individual sources, or enumerate `price_points`
+  unless the user asks for source detail; summarize source_count/confidence
+  instead.
+  If status is `unreadable`, say the inventory/profile is private or the link
+  could not be read; do not fall back to market_hash_name averages.
 - `narrative_today`: daily summary, recap, today/news. If 404, say the
   narrative job runs at 02:00 UTC and no summary exists yet.
 - `whats_interesting`: anomalies, weird/moving/interesting. If downsampled,
