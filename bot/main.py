@@ -48,6 +48,7 @@ from bot.discord_render import (
     is_allowed,
     strip_bot_mention,
 )
+from bot.portfolio_monitor_delivery import portfolio_monitor_delivery_loop
 from bot.price_alert_delivery import price_alert_delivery_loop
 from bot.signal_subscription_delivery import signal_subscription_delivery_loop
 
@@ -91,6 +92,7 @@ def build_client() -> discord.Client:
     client = discord.Client(intents=intents)
     allowlist = get_allowlist_from_env()
     price_alert_task: asyncio.Task | None = None
+    portfolio_monitor_task: asyncio.Task | None = None
     signal_subscription_task: asyncio.Task | None = None
     # In-memory note: users we've already told "not authorized" once
     # this process; we suppress further replies to them to avoid
@@ -99,7 +101,7 @@ def build_client() -> discord.Client:
 
     @client.event
     async def on_ready() -> None:  # type: ignore[misc]
-        nonlocal price_alert_task, signal_subscription_task
+        nonlocal price_alert_task, portfolio_monitor_task, signal_subscription_task
         logger.info(
             "Bot connected as %s (id=%s); allowlist size=%d",
             client.user,
@@ -113,6 +115,10 @@ def build_client() -> discord.Client:
             )
         if price_alert_task is None or price_alert_task.done():
             price_alert_task = asyncio.create_task(price_alert_delivery_loop(client))
+        if portfolio_monitor_task is None or portfolio_monitor_task.done():
+            portfolio_monitor_task = asyncio.create_task(
+                portfolio_monitor_delivery_loop(client)
+            )
         if signal_subscription_task is None or signal_subscription_task.done():
             signal_subscription_task = asyncio.create_task(
                 signal_subscription_delivery_loop(client)

@@ -32,6 +32,7 @@ Endpoints:
 - ``POST /deals/evaluate``       — verdict on a price offer
 - ``GET  /insights/signals/digest`` — ranked market signal digest
 - ``POST /signals/subscriptions`` — recurring Discord signal digests
+- ``POST /portfolio/monitors``  — recurring portfolio baseline change monitors
 - ``POST /alerts/price``         — create/list/evaluate price alerts
 - ``POST /portfolio/snapshots``  — persist Discord portfolio baselines
 - ``GET  /entitlements/discord/{id}`` — effective Discord quota policy
@@ -57,6 +58,7 @@ from api.routes import (
     insights,
     items,
     portfolio,
+    portfolio_monitors,
     signals,
 )
 from api.schemas import HealthResponse
@@ -86,6 +88,7 @@ app.include_router(charts.router, dependencies=_auth)
 app.include_router(deals.router, dependencies=_auth)
 app.include_router(alerts.router, dependencies=_auth)
 app.include_router(portfolio.router, dependencies=_auth)
+app.include_router(portfolio_monitors.router, dependencies=_auth)
 app.include_router(entitlements.router, dependencies=_auth)
 app.include_router(signals.router, dependencies=_auth)
 app.include_router(drift.router, dependencies=_auth)

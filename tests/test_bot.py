@@ -28,6 +28,7 @@ import httpx
 import pytest
 
 from bot import deepseek_client, discord_render
+from bot.portfolio_monitor_delivery import format_portfolio_monitor_message
 from bot.price_alert_delivery import format_price_alert_message
 from bot.signal_subscription_delivery import format_signal_digest_message
 from bot.tools import (
@@ -41,15 +42,19 @@ from bot.tools import (
     Attachment,
     ItemNotInWatchlistError,
     _refresh_items_cache,
+    cancel_portfolio_monitor,
     cancel_price_alert,
     cancel_signal_subscription,
+    create_portfolio_monitor,
     create_price_alert,
     create_signal_subscription,
     evaluate_deal,
+    list_portfolio_monitors,
     list_portfolio_snapshots,
     list_price_alerts,
     list_signal_subscriptions,
     list_watchlist,
+    mark_portfolio_monitor_delivery,
     mark_price_alert_delivery,
     mark_signal_subscription_delivery,
     market_baseline_inspect_link,
@@ -125,6 +130,9 @@ class TestToolsRegistry:
             "save_portfolio_snapshot",
             "list_portfolio_snapshots",
             "portfolio_snapshot_trend",
+            "create_portfolio_monitor",
+            "list_portfolio_monitors",
+            "cancel_portfolio_monitor",
             "query_drift",
             "narrative_today",
             "whats_interesting",
@@ -396,6 +404,59 @@ class TestToolsAuthAndConnectivity:
         assert listed == {"snapshots": [snapshot], "count": 1}
         assert moved == trend
 
+    def test_portfolio_monitor_wrappers(self, httpx_mock) -> None:
+        monitor_id = "44444444-4444-4444-4444-444444444444"
+        inventory_url = "https://steamcommunity.com/profiles/765/inventory/"
+        monitor = {
+            "id": monitor_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "inventory_url": inventory_url,
+            "interval_minutes": 1440,
+            "change_threshold_pct": "5.00",
+            "quiet_start_hour": None,
+            "quiet_end_hour": None,
+            "timezone_offset_minutes": 0,
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": None,
+            "last_sent_at": None,
+            "last_snapshot_id": None,
+            "last_delivery_attempt_at": None,
+            "delivery_attempts": 0,
+            "last_delivery_error": None,
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/monitors",
+            json=monitor,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url=(
+                f"{_BASE}/portfolio/monitors"
+                "?discord_user_id=1234&include_inactive=false"
+            ),
+            json=[monitor],
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/monitors/{monitor_id}/cancel",
+            json={**monitor, "status": "cancelled"},
+        )
+
+        created = create_portfolio_monitor(
+            inventory_url,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+        listed = list_portfolio_monitors(discord_user_id="1234")
+        cancelled = cancel_portfolio_monitor(monitor_id, discord_user_id="1234")
+
+        assert created == monitor
+        assert listed == {"monitors": [monitor], "count": 1}
+        assert cancelled["status"] == "cancelled"
+
     def test_create_price_alert_wraps_api_route(self, httpx_mock) -> None:
         payload = {
             "id": "11111111-1111-1111-1111-111111111111",
@@ -616,6 +677,51 @@ class TestToolsAuthAndConnectivity:
         assert json.loads(request.content) == {
             "delivered": True,
             "digest_fingerprint": "abc123",
+            "error": None,
+        }
+
+    def test_mark_portfolio_monitor_delivery_wraps_api_route(
+        self,
+        httpx_mock,
+    ) -> None:
+        monitor_id = "44444444-4444-4444-4444-444444444444"
+        payload = {
+            "id": monitor_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "inventory_url": "https://steamcommunity.com/profiles/765/inventory/",
+            "interval_minutes": 1440,
+            "change_threshold_pct": "5.00",
+            "quiet_start_hour": None,
+            "quiet_end_hour": None,
+            "timezone_offset_minutes": 0,
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": "2026-05-23T00:01:00Z",
+            "last_sent_at": "2026-05-23T00:02:00Z",
+            "last_snapshot_id": "22222222-2222-2222-2222-222222222222",
+            "last_delivery_attempt_at": "2026-05-23T00:02:00Z",
+            "delivery_attempts": 1,
+            "last_delivery_error": None,
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/monitors/{monitor_id}/delivery",
+            json=payload,
+        )
+
+        result = mark_portfolio_monitor_delivery(
+            monitor_id,
+            delivered=True,
+            snapshot_id="22222222-2222-2222-2222-222222222222",
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "delivered": True,
+            "snapshot_id": "22222222-2222-2222-2222-222222222222",
             "error": None,
         }
 
@@ -2605,6 +2711,66 @@ class TestDeepSeekClientSingleToolCall:
         assert json.loads(request.content)["discord_channel_id"] == "5678"
         assert reply.text == "Signal digest subscription created."
 
+    async def test_portfolio_monitor_tool_receives_hidden_discord_context(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/monitors",
+            json={
+                "id": "44444444-4444-4444-4444-444444444444",
+                "discord_user_id": "1234",
+                "discord_channel_id": "5678",
+                "inventory_url": "https://steamcommunity.com/profiles/765/inventory/",
+                "interval_minutes": 1440,
+                "change_threshold_pct": "5.00",
+                "quiet_start_hour": None,
+                "quiet_end_hour": None,
+                "timezone_offset_minutes": 0,
+                "status": "active",
+                "created_at": "2026-05-23T00:00:00Z",
+                "last_checked_at": None,
+                "last_sent_at": None,
+                "last_snapshot_id": None,
+                "last_delivery_attempt_at": None,
+                "delivery_attempts": 0,
+                "last_delivery_error": None,
+            },
+        )
+        client = _scripted_client(
+            [
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "create_portfolio_monitor",
+                            {
+                                "inventory_url": (
+                                    "https://steamcommunity.com/profiles/765/"
+                                    "inventory/"
+                                )
+                            },
+                        )
+                    ]
+                ),
+                _make_msg(content="Portfolio monitor created."),
+            ]
+        )
+
+        reply = await deepseek_client.handle_user_message(
+            "monitor my inventory and alert this channel on changes",
+            client=client,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content)["discord_user_id"] == "1234"
+        assert json.loads(request.content)["discord_channel_id"] == "5678"
+        assert reply.text == "Portfolio monitor created."
+
 
 class TestDeepSeekClientDefensive:
     """Open-source model failure modes that must NOT crash the bot."""
@@ -2883,6 +3049,35 @@ class TestSignalSubscriptionDelivery:
         assert "High | AK-47 | Redline (Field-Tested) (3.20 z)" in text
         assert "Spread between 1 and 27 is unusual." in text
         assert "not buy/sell instructions" in text
+
+
+class TestPortfolioMonitorDelivery:
+    def test_formats_portfolio_monitor_message(self) -> None:
+        text = format_portfolio_monitor_message(
+            {
+                "monitor": {"id": "44444444-4444-4444-4444-444444444444"},
+                "event_type": "threshold_crossed",
+                "snapshot_result": {
+                    "snapshot": {
+                        "portfolio_baseline": {
+                            "mid": "125.00",
+                            "priced_count": 2,
+                            "unpriced_count": 1,
+                        }
+                    },
+                    "delta_vs_previous": {
+                        "mid_change": "25.00",
+                        "mid_change_pct": "25.00",
+                    },
+                },
+            }
+        )
+
+        assert "Portfolio baseline monitor: threshold crossed" in text
+        assert "Mid baseline: 125.00 USD" in text
+        assert "Change: 25.00 USD (25.00%)" in text
+        assert "Monitor id: `44444444-4444-4444-4444-444444444444`" in text
+        assert "not realized P/L" in text
 
 
 class TestSystemPrompt:

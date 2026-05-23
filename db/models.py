@@ -549,3 +549,65 @@ class SignalSubscription(Base):
     )
     last_delivery_error: Mapped[str | None] = mapped_column(Text)
     last_digest_fingerprint: Mapped[str | None] = mapped_column(Text)
+
+
+class PortfolioMonitor(Base):
+    """Recurring Discord notification settings for portfolio baseline changes."""
+
+    __tablename__ = "portfolio_monitors"
+    __table_args__ = (
+        CheckConstraint(
+            "interval_minutes >= 60 AND interval_minutes <= 10080",
+            name="ck_portfolio_monitors_interval",
+        ),
+        CheckConstraint(
+            "change_threshold_pct >= 0",
+            name="ck_portfolio_monitors_threshold",
+        ),
+        CheckConstraint(
+            "quiet_start_hour IS NULL OR "
+            "(quiet_start_hour >= 0 AND quiet_start_hour <= 23)",
+            name="ck_portfolio_monitors_quiet_start",
+        ),
+        CheckConstraint(
+            "quiet_end_hour IS NULL OR "
+            "(quiet_end_hour >= 0 AND quiet_end_hour <= 23)",
+            name="ck_portfolio_monitors_quiet_end",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'cancelled')",
+            name="ck_portfolio_monitors_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    discord_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[str] = mapped_column(Text, nullable=False)
+    inventory_url: Mapped[str] = mapped_column(Text, nullable=False)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    change_threshold_pct: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    quiet_start_hour: Mapped[int | None] = mapped_column(Integer)
+    quiet_end_hour: Mapped[int | None] = mapped_column(Integer)
+    timezone_offset_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'active'")
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    last_delivery_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    delivery_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_delivery_error: Mapped[str | None] = mapped_column(Text)

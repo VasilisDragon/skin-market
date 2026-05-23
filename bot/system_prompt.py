@@ -94,6 +94,12 @@ or missing pairs.
   from saved snapshots. Render `delta_vs_previous` first, then
   `delta_since_oldest` when present. State that this is market-baseline movement,
   not realized P/L and not float/sticker-aware appraisal.
+- `create_portfolio_monitor`: recurring monitoring of a public inventory
+  baseline. Use when the user wants alerts/updates when their portfolio changes
+  over time. Explain interval, change threshold, and monitor id.
+- `list_portfolio_monitors`: list recurring portfolio monitors.
+- `cancel_portfolio_monitor`: cancel/remove/stop a portfolio monitor when the
+  user gives a monitor id.
 - `market_baseline_inspect_link`: raw CS2 inspect links
   (`steam://run/730...` or `steam://rungame/730...`), exact inspect-asset
   attributes, or market-baseline questions for a pasted inspect link. Render in

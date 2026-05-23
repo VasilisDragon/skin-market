@@ -76,6 +76,13 @@ References checked:
     `POST /signals/subscriptions/{id}/delivery`,
   - channel delivery loop with deterministic digest messages,
   - quiet-hour support and entitlement-backed subscription quotas.
+- Added recurring portfolio baseline monitors:
+  - `POST /portfolio/monitors`, `GET /portfolio/monitors`,
+    `POST /portfolio/monitors/{id}/cancel`,
+    `POST /portfolio/monitors/evaluate`, and
+    `POST /portfolio/monitors/{id}/delivery`,
+  - scheduled summary-level snapshot creation,
+  - thresholded Discord updates for market-baseline movement.
 
 ## Next features worth building
 
@@ -85,9 +92,9 @@ References checked:
    user-configurable quiet hours.
 
 2. Portfolio automation and item-level performance.
-   Snapshot creation is manual and summary-level. The paid product version
-   should add scheduled snapshots, retention controls, value-change alerts, and
-   eventually full item-level performance after privacy/quota policy is explicit.
+   Snapshot creation now supports scheduled baseline monitors. The paid product
+   version should add retention controls and eventually full item-level
+   performance after privacy/quota policy is explicit.
 
 3. Real asset-specific repricing.
    Float, pattern, sticker, and charm premiums are the differentiator for

@@ -21,6 +21,7 @@ router = APIRouter(tags=["entitlements"])
 
 DEFAULT_PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER = 10
 DEFAULT_SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER = 1
+DEFAULT_PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER = 1
 
 
 @router.get(
@@ -38,6 +39,7 @@ def get_discord_entitlement(discord_user_id: str) -> DiscordEntitlementResponse:
                 portfolio_snapshot_max_daily_per_user()
             ),
             default_signal_subscriptions=signal_subscription_max_active_per_user(),
+            default_portfolio_monitors=portfolio_monitor_max_active_per_user(),
         )
         row = session.execute(
             select(DiscordEntitlement).where(
@@ -96,6 +98,7 @@ def update_discord_entitlement(
                 portfolio_snapshot_max_daily_per_user()
             ),
             default_signal_subscriptions=signal_subscription_max_active_per_user(),
+            default_portfolio_monitors=portfolio_monitor_max_active_per_user(),
         )
         return DiscordEntitlementResponse(
             discord_user_id=discord_user_id,
@@ -126,5 +129,14 @@ def signal_subscription_max_active_per_user() -> int:
         os.environ.get(
             "SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER",
             DEFAULT_SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER,
+        )
+    )
+
+
+def portfolio_monitor_max_active_per_user() -> int:
+    return int(
+        os.environ.get(
+            "PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER",
+            DEFAULT_PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER,
         )
     )

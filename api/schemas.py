@@ -52,6 +52,7 @@ Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
 AlertStatus = Literal["active", "triggered", "cancelled"]
 SignalSubscriptionStatus = Literal["active", "cancelled"]
+PortfolioMonitorStatus = Literal["active", "cancelled"]
 DiscordEntitlementTier = Literal["free", "trader", "pro"]
 EffectiveEntitlementTier = Literal["default", "free", "trader", "pro"]
 DiscordEntitlementStatus = Literal["active", "disabled"]
@@ -416,6 +417,72 @@ class SignalSubscriptionDigest(BaseModel):
 class SignalSubscriptionEvaluateResponse(BaseModel):
     checked_count: int
     due: list[SignalSubscriptionDigest]
+
+
+class PortfolioMonitorCreateRequest(BaseModel):
+    """Create a recurring public-inventory portfolio change monitor."""
+
+    discord_user_id: str
+    discord_channel_id: str
+    inventory_url: str
+    interval_minutes: int = Field(default=1440, ge=60, le=10080)
+    change_threshold_pct: MoneyStr = Field(default=Decimal("5.00"), ge=0)
+    quiet_start_hour: int | None = Field(default=None, ge=0, le=23)
+    quiet_end_hour: int | None = Field(default=None, ge=0, le=23)
+    timezone_offset_minutes: int = Field(default=0, ge=-720, le=840)
+
+
+class PortfolioMonitorCancelRequest(BaseModel):
+    """Cancel a recurring portfolio monitor for one Discord user."""
+
+    discord_user_id: str
+
+
+class PortfolioMonitorEvaluateRequest(BaseModel):
+    """Evaluate due portfolio monitors and create fresh snapshots."""
+
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class PortfolioMonitorDeliveryRequest(BaseModel):
+    """Record Discord delivery state for one portfolio monitor."""
+
+    delivered: bool
+    snapshot_id: str | None = None
+    error: str | None = Field(default=None, max_length=500)
+
+
+class PortfolioMonitorResponse(BaseModel):
+    """Persisted portfolio monitor settings and delivery state."""
+
+    id: str
+    discord_user_id: str
+    discord_channel_id: str
+    inventory_url: str
+    interval_minutes: int
+    change_threshold_pct: MoneyStr
+    quiet_start_hour: int | None
+    quiet_end_hour: int | None
+    timezone_offset_minutes: int
+    status: PortfolioMonitorStatus
+    created_at: datetime
+    last_checked_at: datetime | None
+    last_sent_at: datetime | None
+    last_snapshot_id: str | None
+    last_delivery_attempt_at: datetime | None
+    delivery_attempts: int
+    last_delivery_error: str | None
+
+
+class PortfolioMonitorDue(BaseModel):
+    monitor: PortfolioMonitorResponse
+    snapshot_result: dict[str, Any]
+    event_type: Literal["initial_snapshot", "threshold_crossed"]
+
+
+class PortfolioMonitorEvaluateResponse(BaseModel):
+    checked_count: int
+    due: list[PortfolioMonitorDue]
 
 
 class HistoryObservation(BaseModel):

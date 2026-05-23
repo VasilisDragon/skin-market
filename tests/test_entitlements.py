@@ -71,6 +71,7 @@ def test_default_entitlement_uses_environment_fallbacks(
     monkeypatch.setenv("PRICE_ALERT_MAX_ACTIVE_PER_USER", "9")
     monkeypatch.setenv("PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER", "8")
     monkeypatch.setenv("SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER", "2")
+    monkeypatch.setenv("PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER", "4")
 
     response = client.get(f"/entitlements/discord/{_DISCORD_USER_ID}")
 
@@ -82,6 +83,7 @@ def test_default_entitlement_uses_environment_fallbacks(
         "active_price_alerts": 9,
         "portfolio_snapshots_per_day": 8,
         "signal_subscriptions": 2,
+        "portfolio_monitors": 4,
     }
 
 
@@ -100,6 +102,7 @@ def test_update_entitlement_returns_tier_quotas(client) -> None:
         "active_price_alerts": 25,
         "portfolio_snapshots_per_day": 20,
         "signal_subscriptions": 5,
+        "portfolio_monitors": 3,
     }
 
 
@@ -115,4 +118,5 @@ def test_disabled_entitlement_has_zero_quotas(client) -> None:
         "active_price_alerts": 0,
         "portfolio_snapshots_per_day": 0,
         "signal_subscriptions": 0,
+        "portfolio_monitors": 0,
     }

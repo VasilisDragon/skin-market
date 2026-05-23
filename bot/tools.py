@@ -908,6 +908,101 @@ def portfolio_snapshot_trend(
         return _get_json(c, "/portfolio/snapshots/trend", params=params)
 
 
+def create_portfolio_monitor(
+    inventory_url: str,
+    interval_minutes: int = 1440,
+    change_threshold_pct: str = "5.00",
+    quiet_start_hour: int | None = None,
+    quiet_end_hour: int | None = None,
+    timezone_offset_minutes: int = 0,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Create a recurring portfolio baseline change monitor."""
+    if discord_user_id is None or discord_channel_id is None:
+        raise ApiUnexpectedError("Missing Discord context for portfolio monitor.")
+    payload = {
+        "discord_user_id": discord_user_id,
+        "discord_channel_id": discord_channel_id,
+        "inventory_url": inventory_url,
+        "interval_minutes": interval_minutes,
+        "change_threshold_pct": change_threshold_pct,
+        "quiet_start_hour": quiet_start_hour,
+        "quiet_end_hour": quiet_end_hour,
+        "timezone_offset_minutes": timezone_offset_minutes,
+    }
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post("/portfolio/monitors", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/monitors: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 409:
+            raise ApiUnexpectedError(
+                f"Portfolio monitor quota reached: {resp.text[:200]}"
+            )
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /portfolio/monitors: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def list_portfolio_monitors(
+    include_inactive: bool = False,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """List portfolio monitors for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for portfolio monitors.")
+    with _client() as c:
+        raw = _get_json(
+            c,
+            "/portfolio/monitors",
+            params={
+                "discord_user_id": discord_user_id,
+                "include_inactive": include_inactive,
+            },
+        )
+    return {"monitors": raw, "count": len(raw)}
+
+
+def cancel_portfolio_monitor(
+    monitor_id: str,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Cancel one portfolio monitor owned by the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for portfolio monitors.")
+    payload = {"discord_user_id": discord_user_id}
+    with _client() as c:
+        try:
+            resp = c.post(f"/portfolio/monitors/{monitor_id}/cancel", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/monitors/{monitor_id}/cancel: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Portfolio monitor not found.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /portfolio/monitors/{monitor_id}/cancel: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def market_baseline_inspect_link(inspect_url: str) -> dict:
     """Return decoded inspect attributes plus a market-name USD baseline."""
     payload = {"inspect_url": inspect_url}
@@ -1257,6 +1352,56 @@ def mark_signal_subscription_delivery(
                 "Unexpected "
                 f"{resp.status_code} from /signals/subscriptions/"
                 f"{subscription_id}/delivery: {resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def evaluate_portfolio_monitors(limit: int = 25) -> dict:
+    """Evaluate due portfolio monitors and return delivery payloads."""
+    with _client(timeout_read=180.0) as c:
+        try:
+            resp = c.post("/portfolio/monitors/evaluate", json={"limit": limit})
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/monitors/evaluate: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /portfolio/monitors/evaluate: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def mark_portfolio_monitor_delivery(
+    monitor_id: str,
+    delivered: bool,
+    snapshot_id: str | None = None,
+    error: str | None = None,
+) -> dict:
+    """Record Discord delivery state for one portfolio monitor."""
+    payload = {"delivered": delivered, "snapshot_id": snapshot_id, "error": error}
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post(
+                f"/portfolio/monitors/{monitor_id}/delivery",
+                json=payload,
+            )
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/monitors/{monitor_id}/delivery: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Portfolio monitor not found.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /portfolio/monitors/{monitor_id}/delivery: "
+                f"{resp.text[:200]}"
             )
         return resp.json()
 
@@ -1804,6 +1949,88 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "create_portfolio_monitor",
+            "description": (
+                "Call this when the user asks to monitor, subscribe to, or "
+                "alert on changes in a public Steam inventory portfolio "
+                "baseline over time. Discord user/channel context is injected "
+                "by the bot; do not ask the user for IDs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inventory_url": {
+                        "type": "string",
+                        "description": "Public Steam inventory URL.",
+                    },
+                    "interval_minutes": {
+                        "type": "integer",
+                        "description": "Check interval in minutes. Default 1440.",
+                    },
+                    "change_threshold_pct": {
+                        "type": "string",
+                        "description": "Mid-baseline movement threshold. Default 5.00.",
+                    },
+                    "quiet_start_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet start hour, 0-23.",
+                    },
+                    "quiet_end_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet end hour, 0-23.",
+                    },
+                    "timezone_offset_minutes": {
+                        "type": "integer",
+                        "description": "User local offset from UTC in minutes.",
+                    },
+                },
+                "required": ["inventory_url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_portfolio_monitors",
+            "description": (
+                "Call this when the user asks to list portfolio monitors or "
+                "inventory change subscriptions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_inactive": {
+                        "type": "boolean",
+                        "description": "Include cancelled monitors when true.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_portfolio_monitor",
+            "description": (
+                "Call this when the user asks to cancel, remove, or stop a "
+                "portfolio monitor by monitor id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "monitor_id": {
+                        "type": "string",
+                        "description": "Monitor id from list_portfolio_monitors.",
+                    }
+                },
+                "required": ["monitor_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "market_baseline_inspect_link",
             "description": (
                 "Call this when the user pastes a CS2 inspect link, "
@@ -1999,6 +2226,9 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "save_portfolio_snapshot": save_portfolio_snapshot,
     "list_portfolio_snapshots": list_portfolio_snapshots,
     "portfolio_snapshot_trend": portfolio_snapshot_trend,
+    "create_portfolio_monitor": create_portfolio_monitor,
+    "list_portfolio_monitors": list_portfolio_monitors,
+    "cancel_portfolio_monitor": cancel_portfolio_monitor,
     "market_baseline_inspect_link": market_baseline_inspect_link,
     "create_price_alert": create_price_alert,
     "list_price_alerts": list_price_alerts,
