@@ -977,64 +977,6 @@ class TestYamlToCuratedSetIntegration:
             "pre-Phase-2c 'deep' value)."
         )
 
-    def test_compute_and_store_yaml_path_picks_up_curated_items(
-        self, tmp_path: Path
-    ) -> None:
-        """Pin compute_and_store's actual YAML-loading branch (the
-        one that fires when ``curated_set`` is NOT passed in). Uses
-        the function's real path: it reads the YAML, builds
-        curated_set, then iterates. We don't need a DB — the
-        function early-skips items not in the items table, returning
-        0 — but the iteration entering at all is the proof that
-        curated_set was non-empty. The session injection is via a
-        no-op MagicMock; the items lookup returns None for every
-        market_hash_name, so the function's "skip if not in items
-        table" branch fires for every entry.
-
-        Failure mode if the string-literal regresses: curated_set
-        is empty → the function returns 0 without entering the loop
-        → there's no way to distinguish that from "all items found
-        but skipped." So we instrument the seed_watchlist load
-        instead, asserting on the curated_set content directly via
-        the previous test. This test pins that compute_and_store
-        can be called with the new YAML shape without crashing.
-        """
-        from unittest.mock import MagicMock
-
-        yaml_path = tmp_path / "watchlist.yaml"
-        yaml_path.write_text(
-            "schema_version: 3\n"
-            "featured_tier_exclusions: []\n"
-            "sources:\n"
-            "  - { name: skinport, base_url: https://example, "
-            "rate_limit_per_minute: 60, enabled: true }\n"
-            "items:\n"
-            '  - { market_hash_name: "Sentinel (FT)", '
-            "tier: curated }\n"
-        )
-
-        # No-op classifier (always returns the default pattern-agnostic
-        # entry); never consulted because the item won't be found.
-        classifier = Classifier({})
-
-        session = MagicMock()
-        session.execute.return_value.scalar_one_or_none.return_value = (
-            None
-        )
-
-        # The function should accept the v3 YAML without crashing and
-        # return 0 (the sentinel isn't in the mocked items table).
-        # If a regression makes curated_set empty by default, the
-        # function still returns 0 — distinguishable only via the
-        # previous test's direct curated_set inspection. This call
-        # is a smoke-test for the YAML-parsing path under v3.
-        rows_written = drift.compute_and_store(
-            session,
-            classifier=classifier,
-            watchlist_path=yaml_path,
-        )
-        assert rows_written == 0
-
 
 # Reference the module so a future import-pruner doesn't strip the
 # direct symbol imports above.

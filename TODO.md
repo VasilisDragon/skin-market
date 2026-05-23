@@ -225,7 +225,10 @@ on-demand feature is out of scope.**
 ## Strengthen TestYamlToCuratedSetIntegration second test (or remove)
 
 **Filed:** 2026-05-18 (Phase 2c rename verification — flagged at
-sign-off). **Status:** non-blocking; pick up post-commit.
+sign-off). **Status:** closed by deletion (2026-05-23). The first
+test is the real regression pin; the second smoke test returned
+`0` in both the bug state and the no-match state, so it was removed
+rather than strengthened.
 
 `tests/test_drift.py::TestYamlToCuratedSetIntegration` has two
 methods:
@@ -242,20 +245,13 @@ methods:
    populated, items-table lookup returns None). Can't distinguish
    the bug class it's framed to catch.
 
-### Fix or remove
+### Resolution
 
-- **Strengthen:** session-inject a real items-table row matching
-  the YAML's sentinel so the function produces non-zero
-  `rows_written`, distinguishable from the empty-curated_set
-  state. Probably needs the `_db_required` fixture and the same
-  sentinel-item pattern other DB-backed drift tests use.
-- **Remove:** delete the second method; the first one carries the
-  regression-pin load. Less code; the docstring on method #1
-  already captures the bug-class narrative.
-
-Either is defensible. The smoke-test framing in method #2's
-docstring is honest about the limitation but the test still has
-ambiguous value-add. Decide which post-commit.
+Removed `test_compute_and_store_yaml_path_picks_up_curated_items`.
+The first method remains and carries the regression-pin load by
+asserting the exact YAML → `curated_set` construction. The deleted
+method was a smoke test with ambiguous value-add because it returned
+`0` under both success and regression conditions.
 
 ---
 
