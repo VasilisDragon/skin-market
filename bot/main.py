@@ -2,7 +2,7 @@
 
 Connects to Discord via discord.py, listens for messages addressed to
 the bot (@-mentions in guild channels, or DMs), routes each through
-``bot.ollama_client.handle_user_message``, and replies with the
+``bot.deepseek_client.handle_user_message``, and replies with the
 returned text (and optional chart attachment).
 
 ## Triggering
@@ -38,6 +38,7 @@ import sys
 
 import discord
 
+from bot.deepseek_client import DeepSeekError, handle_user_message, validate_config
 from bot.discord_render import (
     DENIED_MESSAGE,
     EMPTY_ALLOWLIST_MESSAGE,
@@ -46,7 +47,6 @@ from bot.discord_render import (
     is_allowed,
     strip_bot_mention,
 )
-from bot.ollama_client import handle_user_message
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def build_client() -> discord.Client:
     """Construct the discord.Client with the required intents.
 
     Factored out for testability — tests can call this with the
-    Ollama path mocked and inspect the client's event handlers."""
+    DeepSeek path mocked and inspect the client's event handlers."""
     intents = discord.Intents.default()
     # MESSAGE_CONTENT is a Privileged Gateway Intent — must be
     # enabled in BOTH the developer portal and here. README covers
@@ -151,7 +151,10 @@ def build_client() -> discord.Client:
         )
 
         async with message.channel.typing():
-            reply = await handle_user_message(query)
+            reply = await handle_user_message(
+                query,
+                discord_user_id=str(message.author.id),
+            )
 
         file = (
             attachment_to_file(reply.attachment)
@@ -171,6 +174,11 @@ def build_client() -> discord.Client:
 def main() -> int:
     _configure_logging()
     token = _discord_token()
+    try:
+        validate_config()
+    except DeepSeekError as exc:
+        logger.error("%s", exc)
+        return 1
     client = build_client()
     # ``client.run`` runs its own asyncio loop and blocks until the
     # connection is dropped or the process is killed.

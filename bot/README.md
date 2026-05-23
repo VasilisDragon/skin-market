@@ -1,17 +1,14 @@
 # Discord bot — operator install + workflow
 
-The Phase 7c bot. Runs as a docker-compose service (`bot`) using the same image as the rest of the stack, makes outbound calls to (a) Discord, (b) the local `api` container, (c) Ollama on the host. No inbound network exposure.
+The Phase 7c bot. Runs as a docker-compose service (`bot`) using the same image as the rest of the stack, makes outbound calls to (a) Discord, (b) the local `api` container, and (c) DeepSeek. It writes one `llm_usage_log` row per DeepSeek request. No inbound network exposure.
 
-The bot's design and the rationale for every choice are in `docs/adr/016-discord-bot-runtime.md`. This file is the operator-facing walkthrough.
+The bot's design is in `docs/adr/016-discord-bot-runtime.md`; the DeepSeek cutover and pricing are in `docs/adr/026-deepseek-inference-cutover.md`. This file is the operator-facing walkthrough.
 
 ## Prerequisites
 
 - Phase 6+ stack already running (`docker compose ps` should show `postgres`, `collector`, `analytics`, `api` all `Up (healthy)` or running).
 - The api container's `SKIN_MARKET_API_TOKEN` set and known (Phase 6.6 — see `.env`).
-- Ollama running on the host with `huihui_ai/Qwen3.6-abliterated:27b` pulled. Verify:
-  ```bash
-  curl http://localhost:11434/api/tags | jq '.models[].name' | grep Qwen3.6
-  ```
+- `DEEPSEEK_API_KEY` set in `.env`.
 
 ## Step 1 — Create the Discord application + bot
 
@@ -53,9 +50,10 @@ DISCORD_ALLOWED_USER_IDS=<id1>,<id2>,<id3>       # multiple users
 # Already set from Phase 6.6 — leave as is:
 SKIN_MARKET_API_TOKEN=<unchanged>
 
-# Already set from Phase 5 — leave as is:
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=huihui_ai/Qwen3.6-abliterated:27b
+# LLM backend:
+DEEPSEEK_API_KEY=<DeepSeek API key>
+DEEPSEEK_MODEL=deepseek-v4-flash
+LLM_USAGE_LOG_FULL_PROMPT=false
 ```
 
 Empty `DISCORD_ALLOWED_USER_IDS` is a valid config but the bot will refuse every message with "I'm not configured for any users yet" — that's the fail-closed default.
@@ -63,17 +61,17 @@ Empty `DISCORD_ALLOWED_USER_IDS` is a valid config but the bot will refuse every
 ## Step 5 — Verify reachability before launching
 
 ```bash
-# Verify Ollama is reachable from inside the bot container's network:
+# Verify DeepSeek config is present without printing the key:
 docker compose run --rm bot python -c \
-  "import httpx; print(httpx.get('http://host.docker.internal:11434/api/tags', timeout=3).status_code)"
-# Expect: 200
+  "from bot.deepseek_client import validate_config; validate_config(); print('ok')"
+# Expect: ok
 
 # Verify the api is reachable (it should already be running):
 docker compose ps api
 # Expect: Up (healthy)
 ```
 
-If Ollama fails, check that the daemon is running on the host (`ollama serve` or systemd unit) and that `huihui_ai/Qwen3.6-abliterated:27b` is pulled (`ollama list`).
+If this fails, set `DEEPSEEK_API_KEY` in `.env` and recreate the bot container.
 
 ## Step 6 — Launch the bot
 
@@ -101,10 +99,10 @@ In any channel the bot has access to (or in a DM to the bot):
 Expected behavior:
 
 1. The bot shows a "typing…" indicator.
-2. After 2–30 seconds (longer on the first call after Ollama starts, then ~1–3s under KEEP_ALIVE), the bot replies with the per-source price snapshot.
+2. The bot replies with the per-source price snapshot.
 3. The reply renders all three sources with denomination tags, the SC-credit footnote on first occurrence, and any anomaly flag if a divergence is active.
 
-If the reply is wrong or weird, check `docker compose logs -f bot` — the bot logs every Ollama interaction at INFO level.
+If the reply is wrong or weird, check `docker compose logs -f bot`.
 
 ## Troubleshooting
 
@@ -113,10 +111,9 @@ If the reply is wrong or weird, check `docker compose logs -f bot` — the bot l
 | Bot doesn't reply at all in a channel | MESSAGE_CONTENT intent not enabled in developer portal | Enable it (step 1.5) and restart bot. |
 | Bot replies "I'm not authorized to chat with you" | Your user ID isn't in `DISCORD_ALLOWED_USER_IDS` | Add it, `docker compose up -d bot`. |
 | Bot replies "I'm not configured for any users yet" | Empty `DISCORD_ALLOWED_USER_IDS` | Fill it in. |
-| Bot replies "I couldn't reach my local LLM router" | Ollama down on the host, or `host.docker.internal` not resolving | Check `ollama serve`; on Linux Docker, verify the compose service has `extra_hosts: ["host.docker.internal:host-gateway"]` (it should — already in the bot service definition). |
+| Bot replies "I couldn't reach my DeepSeek LLM router" | Missing key, network/API failure, or usage logging failure | Check `DEEPSEEK_API_KEY`, outbound network, and `llm_usage_log` migration state. |
 | Bot replies "Auth … API rejected the bearer token (401)" | `SKIN_MARKET_API_TOKEN` in the bot's env doesn't match the api's accepted set | Sync them; `docker compose up -d bot api`. |
-| Bot replies "I had trouble answering that — try rephrasing?" | The LLM hit the tool-call cap (5 rounds) without producing text | Open-source model misroute; ask a more specific question or restart Ollama. |
-| First reply takes 30+ seconds | Cold model load (Qwen 27b) | Normal. Subsequent calls under KEEP_ALIVE are fast. The Ollama timeout is 120s. |
+| Bot replies "I had trouble answering that — try rephrasing?" | The LLM hit the tool-call cap (5 rounds) without producing text | Ask a more specific question and inspect bot logs. |
 
 ## Operator commands (not bot commands)
 
@@ -141,9 +138,8 @@ Rotating the Discord bot token (e.g. after a leak):
 
 Changing the LLM model:
 ```bash
-# Edit OLLAMA_MODEL in .env.
-# 1. Pull the new model: ollama pull <name>
-# 2. docker compose up -d bot
+# Edit DEEPSEEK_MODEL in .env.
+# docker compose up -d bot analytics
 # (No rebuild needed — model name is just an env var.)
 ```
 
@@ -153,10 +149,11 @@ Changing the LLM model:
 - **Conversation memory** — each Discord message is independent context.
 - **Per-server config** — single-tenant; the bot serves any server it's been invited to with the same backend + allowlist.
 - **Adding items to the watchlist via the bot** — operator CLI only (`scripts/watchlist_edit.py`).
-- **Cloud LLM fallback** — if Ollama is down, the bot says so; no automatic failover.
+- **LLM fallback** — if DeepSeek is unavailable, the bot says so; no automatic failover.
 
 ## See also
 
 - `docs/adr/016-discord-bot-runtime.md` — full design rationale.
+- `docs/adr/026-deepseek-inference-cutover.md` — DeepSeek model, pricing, and usage accounting.
 - `docs/adr/015-bot-skill-design.md` — the Phase 7b Hermes design, which still governs the bot's rendering rules (denomination, three-state availability, error matrix).
 - `docs/archive/bot_skill_hermes_attempt/` — the original Hermes scaffolding, preserved for reference.

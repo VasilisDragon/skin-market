@@ -5,7 +5,7 @@ a real database with crafted ``prices`` rows. Each test sets up a
 "sentinel" item that no real CS2 watchlist contains and cleans it up
 after — keeping production data intact when the suite runs.
 
-The narrative job is tested with a mocked Ollama client; the SQL parts
+The narrative job is tested with a mocked DeepSeek client; the SQL parts
 that gather inputs are exercised against the real DB.
 """
 
@@ -29,7 +29,7 @@ from analytics import (
     moving_averages,
     narrative,
 )
-from analytics.ollama_client import OllamaError
+from analytics.deepseek_client import DeepSeekError
 from db.connection import get_engine
 from db.models import Item, Price, Source
 
@@ -324,7 +324,7 @@ class TestAnomalyDetection:
 
 class TestNarrative:
     """Mock-only — exercises the prompt-assembly + storage logic without
-    a real Ollama dependency."""
+    a real DeepSeek dependency."""
 
     @_db_required
     def test_no_newsworthy_data_skips_llm(self, sentinel_item):
@@ -392,7 +392,7 @@ class TestNarrative:
             session.commit()
 
     @_db_required
-    def test_ollama_error_silent_skip(self, sentinel_item):
+    def test_deepseek_error_silent_skip(self, sentinel_item):
         engine = get_engine()
         item_id = sentinel_item
         now = datetime(2099, 7, 7, tzinfo=UTC)
@@ -411,9 +411,8 @@ class TestNarrative:
 
             with patch(
                 "analytics.narrative.chat",
-                side_effect=OllamaError("simulated unreachable"),
+                side_effect=DeepSeekError("simulated unreachable"),
             ):
                 wrote = narrative.generate_and_store(session, now=now)
             assert wrote is False
-
 

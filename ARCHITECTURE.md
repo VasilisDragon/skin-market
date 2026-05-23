@@ -48,16 +48,10 @@ A locally-hosted, eventually-public CS2 skin market data aggregation service wit
 │ │                   │ (discord.py)  │                       │ │
 │ │                   └───┬───────┬───┘                       │ │
 │ └───────────────────────┼───────┼───────────────────────────┘ │
-│                         │       │ Ollama HTTP                 │
-│                         │       ▼                             │
-│                         │  ┌─────────────────────────────┐    │
-│                         │  │ Ollama (host process)       │    │
-│                         │  │ host.docker.internal:11434  │    │
-│                         │  │ huihui_ai/Qwen3.6-abliter.. │    │
-│                         │  └─────────────────────────────┘    │
-└─────────────────────────┼─────────────────────────────────────┘
-                          ▼
-                     Discord (outbound)
+└─────────────────────────┼───────┼─────────────────────────────┘
+                          ▼       ▼
+                     Discord   DeepSeek API
+                    (outbound) (LLM only)
 ```
 
 Layers and their responsibilities:
@@ -69,11 +63,11 @@ Layers and their responsibilities:
 - **Database (Postgres + TimescaleDB extension):** Source of truth. Hypertables for time-series price data, regular tables for items and metadata.
 - **Analytics jobs:** Cron-triggered Python that computes derived data — moving averages, volume anomalies, price velocity, news-correlated moves. Output to `insights` tables.
 - **FastAPI app:** Read-only API. The bot doesn't touch Postgres directly; it goes through this layer. This is also the future SaaS API surface.
-- **Bot:** A `discord.py` event loop running as a compose service (Phase 7c, ADR 016). Reads from the FastAPI app only — never touches Postgres directly, never scrapes upstreams. Tool functions (`list_watchlist`, `query_current_price`, `query_price_history`, `render_chart`, `evaluate_deal`, `narrative_today`, `whats_interesting`) are thin `httpx` wrappers over the read API; the LLM chooses which to call.
+- **Bot:** A `discord.py` event loop running as a compose service (Phase 7c, ADR 016; DeepSeek cutover in ADR 026). Reads market data from the FastAPI app only and never scrapes upstreams. The one Postgres exception is write-only LLM usage accounting into `llm_usage_log`. Tool functions (`list_watchlist`, `query_current_price`, `query_price_history`, `render_chart`, `evaluate_deal`, `narrative_today`, `whats_interesting`) are thin `httpx` wrappers over the read API; the LLM chooses which to call.
 
 The LLM only enters the picture in two places:
-1. The bot calls local Ollama via `ollama.AsyncClient.chat(model=…, tools=TOOL_DEFINITIONS)` — i.e. the standard chat-completion endpoint with `tools=[…]` in the request payload. This is the **Default** tool-calling path, NOT Ollama's **Native** variant; ADR 016 documents the choice as load-bearing for the `huihui_ai/Qwen3.6-abliterated:27b` model in use.
-2. The analytics narrative job uses the same Ollama instance nightly at 02:00 UTC to generate a one-paragraph market summary (enrichment path, async).
+1. The bot calls DeepSeek's OpenAI-format chat-completion endpoint with `tools=[…]` in the request payload. `deepseek-v4-flash` runs in non-thinking mode for token efficiency and tool-routing determinism; ADR 026 records the model/pricing decision.
+2. The analytics narrative job uses DeepSeek nightly at 02:00 UTC to generate a one-paragraph market summary (enrichment path, async).
 
 It does NOT do data fetching, scraping, parsing, or math. Those are deterministic Python.
 

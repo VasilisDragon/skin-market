@@ -1,8 +1,18 @@
 # ADR 011 — Narrative job: LLM choice, prompt structure, deployment
 
-**Status:** Accepted
+**Status:** Superseded for inference backend by ADR 026; accepted for
+narrative prompt shape, citation invariant, and failure semantics.
 **Date:** 2026-05-12
 **Related:** ADR 007 (text_value column), ADR 010 (analytics design)
+
+## 2026-05-23 Amendment — DeepSeek hard cutover
+
+ADR 026 replaces the local Ollama narrative call with DeepSeek's
+OpenAI-format chat API. The retained parts of this ADR are the
+one-paragraph recap scope, anti-hallucination prompt structure,
+`meta_info` citation/audit invariant, and "skip rather than stale row"
+failure behavior. The specific local model choices and `OLLAMA_*`
+configuration are historical.
 
 ## Context
 

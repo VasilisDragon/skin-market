@@ -6,9 +6,9 @@ Three test modules in one file:
    suite. The wrapper functions in ``bot.tools`` are the same code
    (re-pointed at ``http://api:8000`` for the in-compose path).
    pytest-httpx mocks all HTTP; no network.
-2. ``TestOllamaClient*`` — the tool-use loop in
-   ``bot.ollama_client``. Ollama's ``AsyncClient`` is mocked via a
-   small stub class so we don't need a running Ollama. Each test
+2. ``TestDeepSeekClient*`` — the tool-use loop in
+   ``bot.deepseek_client``. The chat client is mocked so we don't
+   need a live DeepSeek API call. Each test
    scripts the responses the model would produce, including the
    defensive cases (malformed args, unknown tool, runaway loop).
 3. ``TestDiscordRender`` — pure-Python helpers (allowlist parsing,
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from bot import discord_render, ollama_client
+from bot import deepseek_client, discord_render
 from bot.tools import (
     HISTORY_DOWNSAMPLE_THRESHOLD,
     TOOL_DEFINITIONS,
@@ -1059,7 +1059,7 @@ import json as _json  # noqa: E402 — placed near the size tests
 
 def _serialized_len(obj) -> int:
     """Helper: JSON-serialize a tool result and return byte count.
-    Approximates what the Ollama tool_result payload looks like."""
+    Approximates what the DeepSeek tool_result payload looks like."""
     return len(_json.dumps(obj, default=str).encode("utf-8"))
 
 
@@ -1356,7 +1356,7 @@ class TestEndToEndWhatDoYouTrackPayloadBounded:
             },
         ]
 
-        await ollama_client.handle_user_message(
+        await deepseek_client.handle_user_message(
             "what items do you track?", client=client
         )
 
@@ -1369,22 +1369,21 @@ class TestEndToEndWhatDoYouTrackPayloadBounded:
         )
         # The tool_result content (a JSON string of the summarized
         # watchlist) must be bounded — the pre-fix payload at this
-        # site was ~7KB and exceeded Ollama's rendering budget.
+        # site was ~7KB and exceeded DeepSeek's rendering budget.
         assert len(tool_message["content"]) < 2000, (
-            f"tool_result fed to Ollama is "
+            f"tool_result fed to DeepSeek is "
             f"{len(tool_message['content'])} bytes; size discipline "
             f"should bound it under 2KB."
         )
 
 
 # =====================================================================
-# Section 2: bot.ollama_client — tool-use loop
+# Section 2: bot.deepseek_client — tool-use loop
 # =====================================================================
 
 
 def _make_msg(content="", tool_calls=None):
-    """Mimic the dict shape an older Ollama version returns (the
-    ollama-python client also accepts dicts here)."""
+    """Mimic the OpenAI-format message dict DeepSeek returns."""
     msg: dict = {"role": "assistant", "content": content}
     if tool_calls is not None:
         msg["tool_calls"] = tool_calls
@@ -1410,6 +1409,66 @@ def _tool_messages_from_last_chat_call(client) -> list[dict]:
 
 def _tool_json(content: str) -> dict:
     return json.loads(content)
+
+
+class TestDeepSeekProviderClient:
+    async def test_posts_non_thinking_tool_request_and_logs_usage(
+        self, httpx_mock
+    ) -> None:
+        usage_rows: list[dict] = []
+        httpx_mock.add_response(
+            url="https://deepseek.test/chat/completions",
+            json={
+                "id": "chatcmpl-test",
+                "model": "deepseek-v4-flash",
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "list_watchlist",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 4,
+                    "total_tokens": 24,
+                    "prompt_cache_hit_tokens": 10,
+                    "prompt_cache_miss_tokens": 10,
+                },
+            },
+        )
+        client = deepseek_client.DeepSeekChatClient(
+            api_key="test-key",
+            base_url="https://deepseek.test",
+            discord_user_id="1234",
+            usage_logger=lambda **kwargs: usage_rows.append(kwargs),
+        )
+        response = await client.chat(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": "what do you track?"}],
+            tools=TOOL_DEFINITIONS,
+        )
+
+        request = httpx_mock.get_requests()[0]
+        body = json.loads(request.content)
+        assert request.headers["Authorization"] == "Bearer test-key"
+        assert body["thinking"] == {"type": "disabled"}
+        assert body["temperature"] == 0
+        assert body["tools"] == TOOL_DEFINITIONS
+        assert response["message"]["tool_calls"][0]["id"] == "call_1"
+        assert usage_rows[0]["model"] == "deepseek-v4-flash"
+        assert usage_rows[0]["discord_user_id"] == "1234"
 
 
 class TestToolCallingRegressionFixture:
@@ -1478,7 +1537,7 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "what's the AK Redline FT price?", client=client
         )
 
@@ -1525,8 +1584,8 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        await ollama_client.handle_user_message(
-            "is M4A4 Buzz Kill drifting from Pricempire?", client=client
+        await deepseek_client.handle_user_message(
+            "is M4A4 Buzz Kill FT drifting from Pricempire?", client=client
         )
 
         tool_result = _tool_json(_tool_messages_from_last_chat_call(client)[0]["content"])
@@ -1581,7 +1640,7 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        await ollama_client.handle_user_message(
+        await deepseek_client.handle_user_message(
             "how has AK Redline FT moved this week?", client=client
         )
 
@@ -1617,7 +1676,7 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        await ollama_client.handle_user_message(
+        await deepseek_client.handle_user_message(
             "what items do you track?", client=client
         )
 
@@ -1701,7 +1760,7 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        await ollama_client.handle_user_message(
+        await deepseek_client.handle_user_message(
             "what's the USP-S Neo-Noir price?", client=client
         )
 
@@ -1731,7 +1790,7 @@ class TestToolCallingRegressionFixture:
             ]
         )
 
-        await ollama_client.handle_user_message(
+        await deepseek_client.handle_user_message(
             "what's the Glock Fade FN price?", client=client
         )
 
@@ -1740,12 +1799,12 @@ class TestToolCallingRegressionFixture:
         assert slug in tool_message["content"]
 
 
-class TestOllamaClientTextOnly:
+class TestDeepSeekClientTextOnly:
     async def test_no_tool_calls_returns_text(self) -> None:
         client = _scripted_client(
             [_make_msg(content="Plain reply, no tools called.")]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "hi", client=client
         )
         assert reply.text == "Plain reply, no tools called."
@@ -1753,7 +1812,7 @@ class TestOllamaClientTextOnly:
         assert client.chat.call_count == 1
 
 
-class TestOllamaClientSingleToolCall:
+class TestDeepSeekClientSingleToolCall:
     async def test_round_trip_with_tool_then_text(
         self, monkeypatch, httpx_mock
     ) -> None:
@@ -1764,7 +1823,7 @@ class TestOllamaClientSingleToolCall:
             url=f"{_BASE}/items",
             json=[{"slug": "a", "market_hash_name": "A", "display_name": "A"}],
         )
-        # Two Ollama turns: one tool call, then a final text reply.
+        # Two DeepSeek turns: one tool call, then a final text reply.
         client = _scripted_client(
             [
                 _make_msg(
@@ -1780,7 +1839,7 @@ class TestOllamaClientSingleToolCall:
                 _make_msg(content="There is 1 item: A."),
             ]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "what do you track?", client=client
         )
         assert "1 item" in reply.text
@@ -1814,7 +1873,7 @@ class TestOllamaClientSingleToolCall:
                 _make_msg(content="Here's the 7-day Skinport chart for X."),
             ]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "chart of x", client=client
         )
         assert reply.attachment is not None
@@ -1822,7 +1881,7 @@ class TestOllamaClientSingleToolCall:
         assert "chart" in reply.text.lower()
 
 
-class TestOllamaClientDefensive:
+class TestDeepSeekClientDefensive:
     """Open-source model failure modes that must NOT crash the bot."""
 
     async def test_unknown_tool_name_handled(self) -> None:
@@ -1841,7 +1900,7 @@ class TestOllamaClientDefensive:
                 _make_msg(content="Sorry, can't help with that."),
             ]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "do something weird", client=client
         )
         # Bot didn't crash; the model got a tool_result explaining the
@@ -1851,7 +1910,7 @@ class TestOllamaClientDefensive:
     async def test_malformed_json_arguments_handled(
         self, monkeypatch, httpx_mock
     ) -> None:
-        """Older Ollama versions sometimes return arguments as a
+        """Older DeepSeek versions sometimes return arguments as a
         string. Even when it's NOT valid JSON, the bot must degrade
         gracefully — pass empty args and let the tool's TypeError
         surface as a user-friendly tool_result."""
@@ -1872,7 +1931,7 @@ class TestOllamaClientDefensive:
                 _make_msg(content="Couldn't parse the request."),
             ]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "price of something", client=client
         )
         # Crucially: no exception escaped out to discord.py.
@@ -1909,7 +1968,7 @@ class TestOllamaClientDefensive:
                 ),
             ]
         )
-        reply = await ollama_client.handle_user_message(
+        reply = await deepseek_client.handle_user_message(
             "price of bogus", client=client
         )
         assert "don't track" in reply.text.lower()
@@ -1947,7 +2006,7 @@ class TestOllamaClientDefensive:
 
         bot_tools.TOOL_FUNCTIONS["list_watchlist"] = stub_list
         try:
-            reply = await ollama_client.handle_user_message(
+            reply = await deepseek_client.handle_user_message(
                 "loop forever", client=client
             )
         finally:
@@ -1959,15 +2018,15 @@ class TestOllamaClientDefensive:
         assert "trouble" in reply.text.lower() or "rephrasing" in reply.text.lower()
 
 
-class TestOllamaClientUnreachable:
-    async def test_ollama_chat_raising_returns_graceful(self) -> None:
+class TestDeepSeekClientUnreachable:
+    async def test_deepseek_chat_raising_returns_graceful(self) -> None:
         client = AsyncMock()
-        client.chat.side_effect = ConnectionError("ollama down")
-        reply = await ollama_client.handle_user_message(
+        client.chat.side_effect = ConnectionError("deepseek down")
+        reply = await deepseek_client.handle_user_message(
             "anything", client=client
         )
         # No exception escaped; user-presentable text returned.
-        assert "couldn't reach" in reply.text.lower() or "ollama" in reply.text.lower()
+        assert "couldn't reach" in reply.text.lower() or "deepseek" in reply.text.lower()
 
 
 # =====================================================================

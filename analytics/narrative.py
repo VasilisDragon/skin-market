@@ -8,7 +8,7 @@ Runs nightly via the analytics scheduler. The job:
    - Items with a recent ``volume_anomaly`` insight
    - Items with a recent ``cross_source_divergence`` insight
 2. Builds a structured JSON payload of names + numbers + denominations.
-3. Prompts the LLM with explicit anti-hallucination guardrails:
+3. Prompts DeepSeek with explicit anti-hallucination guardrails:
    "use only the items in the data; do not invent items; denote each
    price with its denomination."
 4. Stores the response as one ``insights`` row:
@@ -18,7 +18,7 @@ Runs nightly via the analytics scheduler. The job:
      (citation / audit trail so a reviewer can fact-check the prose
      against the data the model saw)
 
-Failure mode: if Ollama returns an error or the prose is empty, the job
+Failure mode: if DeepSeek returns an error or the prose is empty, the job
 logs ERROR and inserts nothing. Tomorrow's run will try again. The bot
 gracefully handles "no narrative for today" by falling back to raw
 numbers.
@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from analytics.ollama_client import OllamaError, chat
+from analytics.deepseek_client import DeepSeekError, chat
 
 logger = logging.getLogger(__name__)
 
@@ -211,8 +211,8 @@ def generate_and_store(session: Session, now: datetime | None = None) -> bool:
 
     try:
         narrative = chat(_SYSTEM_PROMPT, user_prompt).strip()
-    except OllamaError as exc:
-        logger.error("Narrative job: Ollama call failed: %s", exc)
+    except DeepSeekError as exc:
+        logger.error("Narrative job: DeepSeek call failed: %s", exc)
         return False
 
     if not narrative:

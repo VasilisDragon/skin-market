@@ -29,10 +29,8 @@ dependencies = [
     # markers on every edit.
     "ruamel.yaml>=0.18,<1.0",
     # Phase 7c — the Discord bot. discord.py is the de-facto Python
-    # Discord client; ollama is the official Python client for the
-    # Ollama daemon the bot routes through (see ADR 016).
+    # Discord client; DeepSeek calls use the existing httpx dependency.
     "discord.py>=2.4,<3.0",
-    "ollama>=0.4,<1.0",
     "ijson>=3.5.0",
 ]
 

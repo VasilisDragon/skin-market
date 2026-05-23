@@ -115,8 +115,9 @@ services:
 
   bot:
     # Same image as collector / analytics / api — only the
-    # entrypoint differs. Phase 7c (ADR 016): Discord bot routed
-    # through local Ollama for tool calling.
+    # entrypoint differs. Phase 7c (ADR 016, superseded by the
+    # DeepSeek hard cutover): Discord bot routes tool-calling
+    # through DeepSeek and logs LLM usage to Postgres.
     build:
       context: .
       dockerfile: Dockerfile
@@ -128,25 +129,19 @@ services:
       # token must be in the api's accepted set (Phase 7b §10).
       SKIN_MARKET_API_BASE_URL: http://api:8000
       SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
-      # Ollama on the host — same pattern as the analytics narrative
-      # job (ADR 011). host.docker.internal resolves via extra_hosts
-      # below on Linux Docker.
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      # NOTE: OLLAMA_MODEL is read by BOTH the bot and the analytics
-      # narrative job. If .env sets it, both use that model.
-      # Discrete per-service models would be a small refactor in
-      # bot/ollama_client.py + analytics/ollama_client.py (split into
-      # BOT_OLLAMA_MODEL + ANALYTICS_OLLAMA_MODEL); deferred until
-      # operator workflow demands it.
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-huihui_ai/Qwen3.6-abliterated:27b}
+      # Usage accounting writes one llm_usage_log row per DeepSeek
+      # request. Market reads still go through the API.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      LLM_USAGE_LOG_FULL_PROMPT: ${LLM_USAGE_LOG_FULL_PROMPT:-false}
       # Discord credentials + access control.
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
       DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     # No ``ports:`` mapping — the bot makes outbound connections
-    # only (Discord + Ollama + api). Nothing reaches in.
+    # only (Discord + DeepSeek + api + postgres). Nothing reaches in.
     depends_on:
       postgres:
         condition: service_healthy
@@ -171,22 +166,19 @@ services:
       # enable; analytics/scheduler.py's run_drift_cycle no-ops when
       # this is empty or any non-truthy value.
       DRIFT_DETECTION_ENABLED: ${DRIFT_DETECTION_ENABLED:-}
-      # Narrative job calls a local Ollama instance. The Spark host runs
-      # Ollama at 127.0.0.1:11434; host.docker.internal maps to the host
-      # gateway via the extra_hosts entry below. See the bot service
-      # block above for the shared-env-var caveat on OLLAMA_MODEL.
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-gpt-oss:20b}
-    extra_hosts:
-      # Required on Linux Docker so the container can reach the host's
-      # Ollama; on Docker Desktop the same name already resolves.
-      - "host.docker.internal:host-gateway"
+      # Narrative job uses the same DeepSeek model as the bot by
+      # default and logs one llm_usage_log row per request.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      LLM_USAGE_LOG_FULL_PROMPT: ${LLM_USAGE_LOG_FULL_PROMPT:-false}
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
-    # Daily narrative LLM call can run multiple minutes on a 27b model.
+    # Daily narrative LLM call is outbound to DeepSeek and may still
+    # run long on large recap payloads.
     stop_grace_period: 5m
 
 volumes:

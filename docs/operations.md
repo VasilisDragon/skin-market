@@ -184,15 +184,9 @@ DMarket's `title=` query parameter does loose substring matching. For 8 watchlis
 
 The 8 items (commit `ec36cd9` for the full list): Desert Eagle | Blaze (FN), M4A1-S | Cyrex (FT), MP9 | Hot Rod (FN), SSG 08 | Death Strike (FN), and assorted Marble Fade and Doppler knife variants.
 
-### Ollama model unload after idle (slow first reply)
+### Bot reply timeout / DeepSeek failure
 
-After ~30 minutes idle, Ollama unloads the model from VRAM. The next bot query has to wait for the model to reload — adds 20–30 seconds to the first reply. Subsequent replies under `KEEP_ALIVE` are <2s.
-
-This is normal behavior. The 300s `OLLAMA_TIMEOUT_SECONDS` in `bot/ollama_client.py` absorbs the cold load. If a query takes >60s after the model is already loaded, that's a different problem (see next).
-
-### Bot reply timeout (size discipline regression)
-
-Symptom: bot replies with `"I couldn't reach my local LLM router right now"` or `"I had trouble answering that — could you try rephrasing?"` for queries the user knows should be answerable.
+Symptom: bot replies with `"I couldn't reach my DeepSeek LLM router right now"` or `"I had trouble answering that — could you try rephrasing?"` for queries the user knows should be answerable.
 
 Diagnostics:
 
@@ -200,17 +194,28 @@ Diagnostics:
 docker compose logs --since 5m bot | grep -E "ERROR|chat call failed|tool-call cap"
 ```
 
-Two paths:
+Three paths:
 
-1. **Ollama unreachable** — `bot/ollama_client.py`'s `client.chat` raised. Check that Ollama is actually running on the host:
+1. **DeepSeek unreachable or key missing** — `bot/deepseek_client.py` raised before a usable response. Check config without printing the key:
    ```bash
-   curl -sS http://localhost:11434/api/tags | jq '.models[].name'
-   # Should include huihui_ai/Qwen3.6-abliterated:27b
+   docker compose run --rm bot python -c \
+     "from bot.deepseek_client import validate_config; validate_config(); print('ok')"
    ```
 
-2. **Tool-call cap hit** — the LLM is looping. Usually means the model misrouted the query (open-source tool calling is less reliable than cloud — ADR 016 §6). Tell the user to rephrase more concretely (e.g. include the exact item name). If it persists across queries, investigate Ollama model load state.
+2. **Usage logging failed** — DeepSeek returned, but the bot could not insert into `llm_usage_log`. Confirm Alembic is at `0011` and the table exists:
+   ```bash
+   uv run alembic current
+   uv run python - <<'PY'
+   from sqlalchemy import text
+   from db.connection import get_engine
+   with get_engine().connect() as c:
+       print(c.execute(text("select count(*) from llm_usage_log")).scalar_one())
+   PY
+   ```
 
-Size discipline (ADR 016 §11) prevents the original Phase 7c failure mode where unbounded tool results (the 48-item watchlist) timed out Ollama. If you suspect a NEW tool is shipping unbounded data:
+3. **Tool-call cap hit** — the LLM is looping. Tell the user to rephrase more concretely (e.g. include the exact item name). If it persists across queries, inspect the recent `tool_calls` path in the bot logs.
+
+Size discipline (ADR 016 §11, ADR 026) prevents the original Phase 7c failure mode where unbounded tool results made the LLM spend too much time and too many tokens rendering bulk JSON. If you suspect a NEW tool is shipping unbounded data:
 
 ```bash
 # Find recent ReadTimeouts in bot logs:
@@ -309,4 +314,5 @@ Option 1 unless you actually wanted to start fresh.
   - 009 — Scheduler design (overlap policy, dedup, SIGTERM)
   - 013 — Rate-limit policy (DB-driven, Retry-After, declined/unavailable split, observation_log)
   - 014 — Read API design (money-as-string, denomination tagging, multi-token auth, `/health` bypass)
-  - 016 — Bot runtime (Ollama Default-not-Native, tool-use loop, size discipline)
+  - 016 — Bot runtime (tool-use loop, size discipline)
+  - 026 — DeepSeek inference hard cutover and usage accounting

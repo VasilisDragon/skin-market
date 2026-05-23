@@ -1,22 +1,24 @@
 # skin-market — Project Overview
 
-> Regenerated 2026-05-16 from a fresh codebase audit. Supersedes the prior file (which dated to ~2026-05-15 and never had a full re-audit during Phase 2a). Every claim below is grounded in a file actually read during this pass; no statements were carried forward unverified. Where the audit found something the older overview got wrong, the current text quietly corrects it — see the summary at the bottom of the file.
+> Regenerated 2026-05-16 from a fresh codebase audit; amended 2026-05-23
+> for the ADR 026 DeepSeek inference cutover. Every claim below is
+> grounded in a file actually read during the relevant pass.
 
 ---
 
 ## 1. Purpose
 
-skin-market is a locally-hosted CS2 skin price aggregation service with a Discord-native LLM frontend. It polls public marketplace APIs (Steam Community Market, Skinport, DMarket) on a curated 48-item watchlist, layers in Pricempire's whole-catalog bulk feed for breadth coverage across six third-party providers (buff163, buff163_buy, skinport, dmarket, csmoney, swap.gg), and exposes the resulting time-series via a read-only FastAPI surface that a local-Ollama-backed Discord bot queries through tool-calling. Long-term it's positioned to compete with Pricempire/CSFloat on Discord UX and AI-powered deal evaluation; today it runs in a five-container Docker Compose stack on the operator's DGX Spark host.
+skin-market is a locally-hosted CS2 skin price aggregation service with a Discord-native LLM frontend. It polls public marketplace APIs (Steam Community Market, Skinport, DMarket) on a curated 48-item watchlist, layers in Pricempire's whole-catalog bulk feed for breadth coverage across six third-party providers (buff163, buff163_buy, skinport, dmarket, csmoney, swap.gg), and exposes the resulting time-series via a read-only FastAPI surface that a DeepSeek-backed Discord bot queries through tool-calling. Long-term it's positioned to compete with Pricempire/CSFloat on Discord UX and AI-powered deal evaluation; today it runs in a five-container Docker Compose stack on the operator's DGX Spark host.
 
 ---
 
 ## 2. Stack & deployment
 
-**Host environment.** Ubuntu on the DGX Spark (aarch64). Ollama runs natively on the host at `127.0.0.1:11434`; the compose stack reaches it via `host.docker.internal:host-gateway` (`docker-compose.yml:146-147`, `:174-177`).
+**Host environment.** Ubuntu on the DGX Spark (aarch64). The compose stack runs locally; LLM inference is outbound HTTPS to DeepSeek (ADR 026).
 
 **Languages / runtime.** Python `>=3.11,<3.13`. Container base is `python:3.12-slim` (`Dockerfile:6`). Dependencies managed by `uv` (Astral) — `uv sync --frozen --no-dev` at image build (`Dockerfile:21-22`). One image, four entry-point variants — only the `command:` differs across the four Python services.
 
-**Key libraries.** `fastapi` + `uvicorn[standard]` (read API), `sqlalchemy` 2.x + `psycopg[binary]` v3 (ADR 004), `alembic` (migrations), `apscheduler` (cycle scheduling), `httpx` + `brotli` (Skinport requires `Accept-Encoding: br`), `ijson` (Pricempire streaming JSON parse), `pydantic` v2, `matplotlib` (charts), `pandas`, `discord.py`, `ollama` (local-model client), `ruamel.yaml` (comment-preserving watchlist edits).
+**Key libraries.** `fastapi` + `uvicorn[standard]` (read API), `sqlalchemy` 2.x + `psycopg[binary]` v3 (ADR 004), `alembic` (migrations), `apscheduler` (cycle scheduling), `httpx` + `brotli` (Skinport requires `Accept-Encoding: br`; DeepSeek calls also use `httpx`), `ijson` (Pricempire streaming JSON parse), `pydantic` v2, `matplotlib` (charts), `pandas`, `discord.py`, `ruamel.yaml` (comment-preserving watchlist edits).
 
 **Five containers** (`docker-compose.yml`):
 
@@ -26,7 +28,7 @@ skin-market is a locally-hosted CS2 skin price aggregation service with a Discor
 | `collector` | `skinmarket-collector` | `python -m collectors.scheduler` | `BlockingScheduler` running one APScheduler interval job per enabled source row. `stop_grace_period: 5m` so Steam's ~4-minute cycle drains on SIGTERM. |
 | `api` | `skinmarket-api` | `uvicorn api.main:app --host 0.0.0.0 --port 8000 --proxy-headers` | Read-only API. Host port mapping `127.0.0.1:8001->8000`. Liveness via `/health`. |
 | `bot` | `skinmarket-bot` | `python -m bot.main` | discord.py event loop. No exposed port (outbound only). Depends on `api` healthcheck. |
-| `analytics` | `skinmarket-analytics` | `python -m analytics.scheduler` | `BlockingScheduler` with hourly + 02:00-UTC-daily jobs. `stop_grace_period: 5m` for Ollama narrative tail. |
+| `analytics` | `skinmarket-analytics` | `python -m analytics.scheduler` | `BlockingScheduler` with hourly + 02:00-UTC-daily jobs. `stop_grace_period: 5m` for narrative tail. |
 
 Shared `x-logging` YAML anchor caps stdout to `50m × 5 files` per service (`docker-compose.yml:13-19`). Restart policy on every service is `unless-stopped`. The compose file's header (`:1-7`) carries an explicit footgun note: `POSTGRES_PASSWORD` is consumed only on the first volume init; later rotation requires `ALTER USER` inside the running container.
 
@@ -35,7 +37,7 @@ Shared `x-logging` YAML anchor caps stdout to `50m × 5 files` per service (`doc
 ```
 cp .env.example .env       # fill POSTGRES_PASSWORD, DISCORD_BOT_TOKEN,
                            # SKIN_MARKET_API_TOKEN, PRICEMPIRE_API_KEY,
-                           # DISCORD_ALLOWED_USER_IDS, OLLAMA_MODEL
+                           # DISCORD_ALLOWED_USER_IDS, DEEPSEEK_API_KEY
 docker compose up -d
 docker compose exec api alembic upgrade head     # only on first deploy
 docker compose exec api python -m scripts.seed_watchlist
@@ -212,13 +214,13 @@ The API does NOT currently touch `pricempire_observations` or `pricempire_item_m
 
 **Access control** (`bot/main.py:122-135`): every author is checked against `DISCORD_ALLOWED_USER_IDS`. Empty allowlist → fail-closed "config error" reply. Disallowed users get one "not authorized" reply per process lifetime, then suppressed.
 
-**Model.** `huihui_ai/Qwen3.6-abliterated:27b` running locally on Ollama at `host.docker.internal:11434` (default; overridable via `OLLAMA_MODEL`). The analytics narrative job shares the same env var by default.
+**Model.** `deepseek-v4-flash` via DeepSeek's OpenAI-format chat API, non-thinking mode. The analytics narrative job shares `DEEPSEEK_MODEL` by default. Every request writes a row to `llm_usage_log` with token counts and computed cost.
 
-**Tool-calling pattern** (`bot/ollama_client.py`). Uses `ollama.AsyncClient.chat(model=…, messages=…, tools=TOOL_DEFINITIONS)` — i.e. the standard chat-completion endpoint with `tools=[…]` in the request payload. This is "Default" mode in Open WebUI terms, NOT Ollama's "Native" tool-calling variant. The Native path was found unreliable for Qwen3-abliterated and is documented as **load-bearing** in ADR 016 and the project's persistent memory.
+**Tool-calling pattern** (`bot/deepseek_client.py`). Uses DeepSeek's OpenAI-format `/chat/completions` endpoint with `tools=[…]` in the request payload. Thinking mode is disabled for the bot path to reduce token use and avoid reasoning-content handling across tool turns.
 
 The tool-use loop is capped at `MAX_TOOL_CALLS = 5` sequential rounds to prevent runaway loops on malformed tool calls. Each tool body is synchronous (`bot/tools.py`); the bot wraps each call in `asyncio.to_thread` so blocking HTTP doesn't stall the discord.py heartbeat. Defensive handling covers: JSON-string `arguments` instead of dict, unknown tool names, missing/extra kwargs, tool exceptions — all converted into `tool_result` strings the model can render around, rather than crashes.
 
-Ollama timeout is 300s (`OLLAMA_TIMEOUT_SECONDS`). Comment at `bot/ollama_client.py:82-91` is explicit that this is a band-aid; the real fix is the size-discipline summarizers in `bot/tools.py`.
+Tool-result size discipline in `bot/tools.py` remains load-bearing: the LLM routes and phrases, but bounded tool functions summarize large lists before returning them to the model.
 
 **Tools** (declared in `TOOL_DEFINITIONS` and dispatched via `TOOL_FUNCTIONS`):
 
@@ -264,8 +266,9 @@ All under `docs/adr/`.
 | 012 | DMarket collector: second real-money source | The `title=` substring trap and the `suggestedPrice` vs `price.USD` trap. |
 | 013 | Rate-limit policy | The DB-driven `interval_minutes` / `per_item_delay_seconds` columns + the source-pause ladder. |
 | 014 | Read API design | `MoneyStr`, denomination pairing, single-bearer token, deals tolerance, single-source charts. |
-| 015 | Hermes bot skill design | Pre-Phase-7c plan; superseded by the in-process Ollama-tools approach in ADR 016. Carries the unavailability-streak rationale. |
-| 016 | Discord bot runtime (Phase 7c) | Default vs Native tool-calling on Ollama (load-bearing); tool-result size discipline; defensive handling of malformed tool calls. |
+| 015 | Hermes bot skill design | Pre-Phase-7c plan; superseded by the in-process bot approach in ADR 016. Carries the unavailability-streak rationale. |
+| 016 | Discord bot runtime (Phase 7c) | Tool loop; tool-result size discipline; defensive handling of malformed tool calls. Inference backend superseded by ADR 026. |
+| 026 | DeepSeek inference hard cutover | `deepseek-v4-flash`, non-thinking mode, per-request `llm_usage_log` cost accounting. |
 | 017 | Split `observed_at` into `last_polled_at` and `last_changed_at` | Phase 1 resolution of the dedup-vs-display freshness bug — drives the bot's 🟡 stale rendering off `observation_log`, not `prices`. |
 | 018 | Pricempire as breadth-coverage data source | Separate hypertable; six sub-providers + one pseudo-source; three timestamps on each observation; Phase 2a watchlist-only scope. |
 | 019 | Pricempire collector design | Why it doesn't extend `BaseCollector`; `ijson` streaming with `use_float=True`; defensive cents-parse; per-item commit. |
@@ -307,7 +310,7 @@ The load-bearing ones, in rough order of how often they will trip up a new contr
 | Phase 2a — Pricempire breadth ingest | **Done.** Migrations 0005-0007 deployed; collector writing `pricempire_observations` + `pricempire_item_metadata` every 15 min. Phase 2a ingest validation completed against a 13.5h window (`docs/phase2a-ingest-validation.md`). Pricempire data does NOT flow into any API endpoint, analytics job, or bot tool yet — by design (ADR 018 §"Consequences"). | Hand off ingest validation findings to Phase 2b. |
 | Phase 2b — Watchlist re-seed + drift detection | **Proposed.** `docs/phase2b-watchlist-proposal.md` is a draft: 41-item composition across Tier 1/2/3/5; Doppler items entirely excluded; DMarket title-mismatch fix scoped to an alias map. Open questions still in the doc; awaits human review. | Accept/edit/reject each tier; execute the re-seed; build drift detection against `pricempire_observations.last_checked_at`. |
 | Out of scope for v1 (unchanged) | CSFloat float-tier (v2), news/speculation layer (v3), multi-game (v4), web frontend (v5), accounts/auth (v5+), payments (v5+), real-time websockets (v6+). | — |
-| Operational gaps (unchanged) | No metrics endpoint / Prometheus / Grafana / alerting. No log shipping. No per-route latency or Ollama token-usage instrumentation. No retention policies. | All deferred. |
+| Operational gaps (unchanged) | No metrics endpoint / Prometheus / Grafana / alerting. No log shipping. No per-route latency instrumentation. No retention policies. | All deferred. |
 
 ---
 
@@ -317,7 +320,7 @@ The load-bearing ones, in rough order of how often they will trip up a new contr
 - **ADRs are first-class artifacts.** Any non-obvious architectural choice — library selection, schema shape, scheduling pattern, freshness contract — lands as `docs/adr/NNN-title.md`. Phase 2a alone produced ADRs 018, 019, 020. Pre-existing pattern: 17 ADRs as of the audit.
 - **Pushback on scope-additive requests is expected.** ARCHITECTURE.md and the Phase 2b proposal both call this out explicitly. The brief for the watchlist proposal asked for "settled vs open" framing — three of the four "Phase 2b directions" rows are explicitly settled, with only one open question per tier escalated for human review.
 - **The mantra.** *Before debugging a symptom, state in one sentence what the app is supposed to do in that state. If you can't, that's the first thing to figure out.* (ARCHITECTURE.md.) Phase 1's `observed_at` bug is the canonical lesson: the symptom was "Skinport items render 🟡 stale every cycle." The one-sentence statement of intent was "🟡 should mean we haven't polled in 4 hours." Once both were on the table, the bug was a query change, not a schedule change.
-- **Boring libraries.** No exotic frameworks. The full tech surface a future operator needs to debug at 2am is httpx / sqlalchemy / fastapi / apscheduler / matplotlib / pandas / discord.py / ollama-python, plus ijson for the one bulk-streaming case.
+- **Boring libraries.** No exotic frameworks. The full tech surface a future operator needs to debug at 2am is httpx / sqlalchemy / fastapi / apscheduler / matplotlib / pandas / discord.py, plus ijson for the one bulk-streaming case.
 - **No money floats.** `NUMERIC(12,2)` in Postgres, `Decimal` in Python, string-typed `MoneyStr` on the API wire. The whole stack enforces this; any `float(price)` is a bug.
 - **Tests for non-trivial logic.** Pure data-shuffling untested; pricing math, dedup, schema migrations, the title-mismatch guard, the Doppler drift, the `use_float=True` regression all carry tests in `tests/`.
 

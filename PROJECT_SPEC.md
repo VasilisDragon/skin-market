@@ -175,8 +175,7 @@ uv run python -m collectors.skinport
 **Narrative insights (LLM-generated, runs in background).** One analytics
 job runs nightly via cron, queries the day's most notable market moves
 (top N price changes, top N volume anomalies, items crossing 7-day or
-30-day MA boundaries), and uses Ollama (the existing local model on the
-Spark — qwen3-coder or gpt-oss:20b, whichever is loaded) to generate a
+30-day MA boundaries), and uses DeepSeek to generate a
 one-paragraph English summary of the day. The summary is stored as an
 `insights` row with `insight_type = 'daily_narrative'`, the paragraph in
 the new `text_value` column (see ADR 007), and `meta_info` JSONB holding
@@ -190,8 +189,8 @@ insight_type = 'daily_narrative' ORDER BY computed_at DESC LIMIT 1`
 returns a row whose `text_value` is a coherent English paragraph and
 whose `meta_info` documents which items + price moves it cited.
 
-Implementation note: the LLM call uses the local Ollama endpoint via the
-same OpenAI-compatible interface the bot uses. The narrative job is the
+Implementation note: the LLM call uses DeepSeek's OpenAI-compatible
+chat interface, matching the bot. The narrative job is the
 only LLM-touching analytics task in v1 — everything else (MAs, anomaly
 detection, etc.) stays pure SQL/Python.
 

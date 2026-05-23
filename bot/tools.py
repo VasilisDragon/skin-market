@@ -3,7 +3,7 @@
 Seven Python functions that wrap HTTP calls against the local read
 API (``http://api:8000`` from inside compose, ``http://localhost:8001``
 from the host). The Discord bot's LLM router decides which to call;
-``bot.ollama_client`` executes the call and feeds the result back.
+``bot.deepseek_client`` executes the call and feeds the result back.
 
 The function bodies + typed exception hierarchy + three-state composer
 for ``query_current_price`` are carried forward from the Phase 7b
@@ -11,8 +11,8 @@ Hermes attempt (now archived at
 ``docs/archive/bot_skill_hermes_attempt/``). What changed in 7c:
 
 - The ``@tool`` decorator and ``TOOLS`` list are gone. Tools are
-  declared as JSON-schema dicts in ``TOOL_DEFINITIONS`` (Ollama's
-  request format) and a parallel ``TOOL_FUNCTIONS`` dict maps
+  declared as OpenAI-compatible JSON-schema dicts in
+  ``TOOL_DEFINITIONS`` and a parallel ``TOOL_FUNCTIONS`` dict maps
   ``name → callable`` for the executor to dispatch by name.
 - Tool function bodies stay synchronous; the bot wraps each call in
   ``asyncio.to_thread`` so a slow API call doesn't block the
@@ -59,7 +59,7 @@ ANOMALY_FRESHNESS_HOURS: int = 2
 
 # Phase 7c-fix — tool-result size discipline. Open-source LLMs spend
 # real wall-clock time rendering structured data; a 48-item list
-# took the bot past its 120s Ollama timeout in live testing. Cap
+# took the bot past its old local-model timeout in live testing. Cap
 # what the LLM sees per tool. ADR 016 §"Tool result size discipline"
 # documents the constraint as load-bearing.
 #
@@ -185,7 +185,7 @@ class Attachment:
 
 # ---------------------------------------------------------------------
 # Typed exceptions — the bot catches these in the tool-execution loop
-# and feeds str(exc) back to Ollama as the tool_result so the model
+# and feeds str(exc) back to the LLM as the tool_result so the model
 # can render a graceful user-facing reply.
 # ---------------------------------------------------------------------
 
@@ -1000,11 +1000,11 @@ def _trim_narrative_meta(raw: dict) -> dict:
 
 
 # ---------------------------------------------------------------------
-# Ollama tool declarations + dispatch table
+# Tool declarations + dispatch table
 # ---------------------------------------------------------------------
 
 
-# Ollama's chat API expects tools in OpenAI-compatible JSON-schema
+# DeepSeek's chat API expects tools in OpenAI-compatible JSON-schema
 # shape. The description fields here are read by the LLM at every
 # turn to decide which tool to call; they need concrete trigger
 # examples because open-source models are less reliable at intent
@@ -1015,12 +1015,14 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "list_watchlist",
             "description": (
-                "Return every item the system tracks. Each entry has "
-                "{slug, market_hash_name, display_name}. Call this "
-                "when the user asks 'what do you track?' / 'list "
-                "items' / 'what items are available?'. Also useful "
-                "when you need to find the exact slug for an item "
-                "the user named informally."
+                "Return a summarized watchlist. Call this when the "
+                "user asks 'what do you track?' / 'list items' / "
+                "'what items are available?', or before an item query "
+                "ONLY when the user omitted wear and the active wear "
+                "is ambiguous. Do NOT call this for named price, "
+                "history, deal, chart, or drift questions that include "
+                "FN/MW/FT/WW/BS; derive the slug and call the target "
+                "item tool."
             ),
             "parameters": {
                 "type": "object",

@@ -1,8 +1,24 @@
 # ADR 016 — Discord bot runtime (Phase 7c)
 
-**Status:** Accepted
+**Status:** Superseded for inference backend by ADR 026; accepted for
+tool-loop, rendering, allowlist, and size-discipline design.
 **Date:** 2026-05-13
 **Related:** ADR 011 (narrative LLM job, local Ollama), ADR 014 §10 (api auth), ADR 015 (Phase 7b Hermes attempt; superseded by this ADR for the runtime layer; the design rules in ADR 015 — denomination, three-state, rendering matrix — are still authoritative for the bot's behavior)
+
+## 2026-05-23 Amendment — DeepSeek hard cutover
+
+ADR 026 replaces the local Ollama inference backend with DeepSeek's
+OpenAI-format chat API. The retained parts of this ADR are the Discord
+bot shape, the bounded tool-use loop, tool-result size discipline,
+defensive malformed-tool handling, allowlist, trigger policy, and chart
+attachment flow. The load-bearing Ollama-specific choice ("Default" vs
+"Native", Qwen3.6-abliterated, `OLLAMA_*` env vars, and local timeout
+tuning) is historical only.
+
+The current backend file is `bot/deepseek_client.py`; it preserves the
+same tool loop and returns one `BotReply`, but sends requests to
+DeepSeek, disables thinking mode for token efficiency, and logs every
+DeepSeek request to `llm_usage_log`.
 
 ## Context
 

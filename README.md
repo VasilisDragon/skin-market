@@ -1,15 +1,15 @@
 # skin-market
 
-A locally-hosted CS2 skin market data aggregation service with a Discord-native LLM frontend. v1 tracks **48 hand-curated CS2 items** across **Steam Market**, **Skinport**, and **DMarket** every 15–60 minutes, computes cross-source analytics (moving averages, divergence z-scores, volume anomalies, nightly LLM narrative summaries), exposes the data through a **FastAPI read API**, and answers questions in Discord via a **bot routed through local Ollama** for tool calling. Built for an active skin trader who wants reliable, denomination-aware price intelligence without sending data to a third party.
+A locally-hosted CS2 skin market data aggregation service with a Discord-native LLM frontend. v1 tracks **48 hand-curated CS2 items** across **Steam Market**, **Skinport**, and **DMarket** every 15–60 minutes, computes cross-source analytics (moving averages, divergence z-scores, volume anomalies, nightly LLM narrative summaries), exposes the data through a **FastAPI read API**, and answers questions in Discord via a **bot routed through DeepSeek** for tool calling. Built for an active skin trader who wants reliable, denomination-aware price intelligence.
 
 ## Architecture
 
 ```
-HOST (Spark — Ubuntu, Docker, Ollama at :11434)
+HOST (Spark — Ubuntu, Docker)
 │
-├── ollama
-│   ├── huihui_ai/Qwen3.6-abliterated:27b  ── bot tool-call routing
-│   └── analytics narrative model          ── nightly English summaries
+├── DeepSeek API (outbound HTTPS)
+│   ├── bot tool-call routing
+│   └── analytics narrative model
 │
 └── docker compose stack:
 
@@ -29,17 +29,17 @@ HOST (Spark — Ubuntu, Docker, Ollama at :11434)
     │   /chart (PNG), /deals/evaluate
     │
     └── bot ──── http://api:8000 ──┐
-        discord.py + ollama         │
+        discord.py + DeepSeek       │
         │                           │
         │ on @-mention or DM:       │
-        │  1. parse via Ollama      │
+        │  1. parse via DeepSeek    │
         │  2. tool-call (up to 5)   │
         │  3. render reply  ────────┘
         ▼
         Discord (DM + @-mention only)
 ```
 
-Outbound traffic only from the compose stack: collectors hit Steam/Skinport/DMarket; analytics + bot hit the host's Ollama. The bot also reaches Discord. Nothing reaches in except the bot's own gateway connection.
+Outbound traffic only from the compose stack: collectors hit Steam/Skinport/DMarket/Pricempire; analytics + bot hit DeepSeek; the bot also reaches Discord. Nothing reaches in except the bot's own gateway connection. DeepSeek request usage is written to `llm_usage_log`.
 
 The architectural invariant: **prices from different sources are denominated differently and are never collapsed.** Steam Market quotes in Wallet Credit (~30–50% structural premium over USD because it can't be withdrawn). Skinport and DMarket quote in real-money USD. Every API response carries the `denomination` tag; the bot renders `$X.XX USD` for USD and `X.XX SC` for wallet credit. See `docs/sources-and-semantics.md`.
 
@@ -48,11 +48,7 @@ The architectural invariant: **prices from different sources are denominated dif
 ### Prerequisites
 
 - Docker + Docker Compose (recent enough for compose v2 syntax)
-- Ollama daemon on the host with the bot's model pulled:
-  ```bash
-  ollama pull huihui_ai/Qwen3.6-abliterated:27b
-  ollama serve  # or systemd unit
-  ```
+- DeepSeek API key in `.env` as `DEEPSEEK_API_KEY`.
 - A Discord application + bot token from <https://discord.com/developers/applications> with the **MESSAGE CONTENT** intent enabled (see `bot/README.md` for the walkthrough).
 - A `.env` file copied from `.env.example` with real values filled in.
 
@@ -67,6 +63,7 @@ cp .env.example .env
 #   SKIN_MARKET_API_TOKEN   (run: openssl rand -hex 32)
 #   DISCORD_BOT_TOKEN       (from the Discord dev portal)
 #   DISCORD_ALLOWED_USER_IDS (your Discord user ID; empty = reject all)
+#   DEEPSEEK_API_KEY        (from DeepSeek)
 
 docker compose up -d
 docker compose ps
@@ -87,7 +84,7 @@ In Discord, @-mention the bot in a server the bot has been invited to:
 @skin-market what's the AK Redline FT price?
 ```
 
-If the bot is healthy you'll see a "typing…" indicator and a per-source price snapshot in 5–60 seconds (first call after Ollama idle is slower; subsequent calls are fast). If you get "I'm not authorized to chat with you", your Discord user ID isn't in `DISCORD_ALLOWED_USER_IDS` — add it and `docker compose up -d bot`.
+If the bot is healthy you'll see a "typing…" indicator and a per-source price snapshot. If you get "I'm not authorized to chat with you", your Discord user ID isn't in `DISCORD_ALLOWED_USER_IDS` — add it and `docker compose up -d bot`.
 
 ### Stopping
 
@@ -106,7 +103,7 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
 | `collectors/` | One module per upstream (Steam, Skinport, DMarket) + `scheduler.py` (APScheduler-driven, DB-aware enabled flag, retry-after honoring). Each collector returns `PriceObservation`, `DECLINED`, or `None`; the scheduler counts outcomes per cycle. |
 | `analytics/` | Hourly compute jobs (moving averages, cross-source views + spreads, divergence/volume anomalies, item unavailability streaks) + nightly narrative LLM job. |
 | `api/` | FastAPI read-only service. `auth.py` (bearer middleware), `schemas.py` (Pydantic v2 with `MoneyStr`), `routes/` (items, history, insights, charts, deals). |
-| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `ollama_client.py` (tool-use loop), `tools.py` (7 HTTP wrappers + size-discipline summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
+| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `deepseek_client.py` (tool-use loop), `tools.py` (7 HTTP wrappers + size-discipline summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
 | `db/` | SQLAlchemy models + Alembic migrations + connection plumbing. |
 | `scripts/` | One-off operator tools — `seed_watchlist.py`, `watchlist_edit.py`. |
 | `data/` | `watchlist.yaml` — the canonical 48-item list, plus source definitions. Edited via `scripts/watchlist_edit.py` so comments + ordering are preserved. |
@@ -125,7 +122,8 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
    - 013 — Rate-limit policy (DB-driven scheduler, Retry-After honoring, declined vs unavailable split, observation_log for streaks)
    - 014 — Read API design (money-as-string, denomination tagging, auth multi-token, `/health` bypass)
    - 015 — Bot skill design (rules; the Hermes runtime was retired by ADR 016 but the rendering rules carried forward)
-   - 016 — Bot runtime (Ollama Default-not-Native, tool-use loop, size discipline, defensive failure modes)
+   - 016 — Bot runtime (tool-use loop, size discipline, defensive failure modes)
+   - 026 — DeepSeek inference hard cutover and usage accounting
 2. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.
 3. **`docs/sources-and-semantics.md`** — why averaging is a category error in this domain.
 

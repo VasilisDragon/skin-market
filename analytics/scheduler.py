@@ -8,7 +8,7 @@ Two scheduled jobs:
   divergence). All four go through their own module under
   ``analytics/``; this scheduler is just orchestration.
 - **daily narrative** — at 02:00 UTC. Pulls the day's notable moves,
-  calls Ollama for a one-paragraph English summary, writes a
+  calls DeepSeek for a one-paragraph English summary, writes a
   ``daily_narrative`` insights row.
 
 Design choices documented in ADR 010 (analytics architecture) and ADR
@@ -43,6 +43,7 @@ from analytics import (
     moving_averages,
     narrative,
 )
+from analytics.deepseek_client import DeepSeekError, validate_config
 from db.connection import get_engine
 
 logger = logging.getLogger(__name__)
@@ -161,8 +162,8 @@ def _drift_detection_enabled() -> bool:
 
 
 def run_daily_narrative() -> None:
-    """Nightly narrative job. Calls Ollama; stores one ``daily_narrative``
-    insights row. Failure (Ollama down, empty response) logs ERROR and
+    """Nightly narrative job. Calls DeepSeek; stores one ``daily_narrative``
+    insights row. Failure (DeepSeek down, empty response) logs ERROR and
     inserts nothing; the bot's reply path falls back gracefully."""
     logger.info("Daily narrative job starting")
     engine = get_engine()
@@ -215,7 +216,7 @@ def build_scheduler() -> BlockingScheduler:
         # the LLM call is slow; let it wait for its proper slot.
         trigger=CronTrigger(hour=2, minute=0, timezone="UTC"),
         id="daily_narrative",
-        name="Daily narrative (Ollama-driven)",
+        name="Daily narrative (DeepSeek-driven)",
     )
     return scheduler
 
@@ -228,6 +229,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
             '"name":"%(name)s","msg":%(message)r}'
         ),
     )
+    try:
+        validate_config()
+    except DeepSeekError as exc:
+        logger.error("%s", exc)
+        return 1
 
     scheduler = build_scheduler()
 
