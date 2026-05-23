@@ -1,6 +1,6 @@
 """Item-name utilities: NFC normalization and slug generation.
 
-The slug algorithm is versioned: this is **v1**. If you change behavior in a
+The slug algorithm is versioned: this is **v2**. If you change behavior in a
 way that produces different output for inputs that previously had slugs in
 the DB, bump the version and ship a one-shot regeneration migration. Existing
 ``items.slug`` rows are never recomputed implicitly.
@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+
+from unidecode import unidecode
+
+SLUG_ALGORITHM_VERSION = 2
 
 # CS2-specific glyphs that appear in Steam market_hash_names. The trademark
 # and registered marks drop entirely (the adjacent word — "StatTrak",
@@ -22,10 +26,31 @@ _GLYPH_REPLACEMENTS: dict[str, str] = {
     "★": " star ",  # ★ BLACK STAR
 }
 
-_PUNCT_TO_SPACE = re.compile(r"[|()/,.:;!?\[\]{}']")
+_PUNCT_TO_SPACE = re.compile(r"[|(),.:;!?\[\]{}']")
 _NON_SLUG_CHAR = re.compile(r"[^a-z0-9\-\s]")
 _WHITESPACE = re.compile(r"\s+")
 _HYPHEN_RUN = re.compile(r"-+")
+
+
+def _transliterate_non_ascii(s: str) -> str:
+    """Return an ASCII source string for slug normalization.
+
+    Known CS2 glyph replacements run before this helper, so common
+    ASCII-safe names retain their v1 output. Other non-ASCII characters are
+    transliterated with Unidecode for readability; codepoint tokens are the
+    fallback when a character has no useful transliteration.
+    """
+    parts: list[str] = []
+    for char in s:
+        if char.isascii():
+            parts.append(char)
+            continue
+        transliterated = unidecode(char)
+        if any(c.isascii() and c.isalnum() for c in transliterated):
+            parts.append(transliterated)
+        else:
+            parts.append(f" u{ord(char):x} ")
+    return "".join(parts)
 
 
 def normalize_name(name: str) -> str:
@@ -57,6 +82,8 @@ def slugify(name: str) -> str:
     s = normalize_name(name)
     for glyph, replacement in _GLYPH_REPLACEMENTS.items():
         s = s.replace(glyph, replacement)
+    s = s.replace("/", " slash ")
+    s = _transliterate_non_ascii(s)
     s = s.lower()
     s = _PUNCT_TO_SPACE.sub(" ", s)
     s = _NON_SLUG_CHAR.sub("", s)

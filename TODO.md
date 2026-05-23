@@ -74,14 +74,14 @@ When the window closes:
 
 ---
 
-## Slug algorithm v2 (ADR 005 v2 follow-up)
+## Slug algorithm v2 (ADR 005 v2 follow-up) — completed 2026-05-23
 
 **Filed:** 2026-05-18 (Phase 2c bootstrap surfaced the first slug-v1
-collision). **Status:** session prompt drafted at
-`notes/slug-v2-session-prompt.md` (gitignored — see ADR 024 repo-
-hygiene rule); fresh session pending. **The session prompt is a
-convenience; this TODO entry is authoritative — if `notes/` is
-ever lost, recreate the prompt from this entry.**
+collision). **Status:** completed in local Phase 2 cleanup. ADR 005 now
+documents slug v2, `db.naming.SLUG_ALGORITHM_VERSION = 2`, migration
+0012 regenerated stored slugs, `scripts/verify_slug_uniqueness.py`
+checks the current DB plus top-5,000 Pricempire catalog surface, and
+the Sunset Storm exclusions were removed from `data/watchlist.yaml`.
 
 ### Problem
 
@@ -95,41 +95,41 @@ table's `slug` UNIQUE constraint correctly rejected the second
 INSERT with `psycopg.errors.UniqueViolation`. ADR 005 §"Consequences"
 explicitly anticipated this collision class.
 
-**Interim fix in production:** both colliding items added to
-`featured_tier_exclusions:` in `data/watchlist.yaml`.
+**Interim fix was removed:** `featured_tier_exclusions:` is empty after
+slug v2. The catalog seed inserted 7 currently top-5,000 Sunset Storm
+variants, and the featured-tier seeder restored the two Factory New
+variants at ranks 379 and 405.
 
 ### Scope of slug v2 work (reconstructible from this entry)
 
-- **Three design decisions to pick (advisor pause-point 1):**
-  - Transliteration approach: `unidecode` library (recommended;
-    standard for non-ASCII transliteration; covers Cyrillic, Greek,
-    Arabic, etc.), curated codepoint map (brittle), or codepoint-
-    suffix fallback (ugly slugs but zero collision risk).
-  - Pre-COMMIT uniqueness check: algorithmic (compute v2 slug for
-    every items + metas row, assert no duplicates), schema-level
-    (rely on UNIQUE constraint at migration apply), or both.
-  - Regeneration migration shape: inline slug-v2 algorithm in the
-    Alembic migration file (recommended; self-contained; doesn't
-    break when slug v3 ships), vs. import-from-current-`db.naming`.
-- **Implementation steps (after design sign-off):**
+- **Design choices landed:**
+  - Transliteration approach: `Unidecode`, after preserving the
+    existing CS2-specific glyph handling for `★`, `™`, `®`, and `©`.
+  - Slash handling: `/` becomes `slash`, so `Holo/Foil` and
+    `Holo-Foil` do not collapse.
+  - Pre-commit uniqueness check: `scripts/verify_slug_uniqueness.py`
+    plus the DB `items.slug` UNIQUE constraint.
+  - Regeneration migration shape: migration 0012 carries a v2 copy and
+    tests assert parity with runtime `slugify`.
+- **Implementation completed:**
   - ADR 005 v2 amendment.
   - `db/naming.py:slugify` v2 + `SLUG_ALGORITHM_VERSION = 2`.
-  - Pre-commit uniqueness check (script or test).
+  - Pre-commit uniqueness check.
   - Alembic migration regenerating every `items.slug`.
-  - Remove Sunset Storm entries from `featured_tier_exclusions:`.
-  - Regression tests pinning v2 behavior on Sunset Storm pair +
-    confirming ASCII items produce identical output to v1.
+  - Removed Sunset Storm entries from `featured_tier_exclusions:`.
+  - Regression tests pin v2 behavior on Sunset Storm pair, slash-vs-
+    hyphen distinction, and ASCII v1 examples.
 - **Constraints:**
   - Slugs stay RFC-3986 unreserved-only `[a-z0-9-]`.
-  - Identical output to v1 for ASCII-only names; only non-ASCII
-    items produce different v2 slugs.
+  - Identical output to v1 for ASCII-safe skin names; non-ASCII and
+    slash-bearing collision-prone names produce different v2 slugs.
   - `bot/tools.py:_find_active_wear` uses slug-based sibling match;
     verify post-migration.
-  - The two Sunset Storm items are currently NOT in `items` (the
-    Path A bulk-seed in commit 2 will attempt them; slug v1 fails
-    before slug v2 lands, so the exclusion stays through commit 2).
-- **Pause-points (4):** design decisions; implementation plan;
-  post-migration with uniqueness check passing; pre-push final review.
+  - The eligible Sunset Storm rows are now in `items`; Factory New 壱/弐
+    are featured, and the lower-ranked inserted wears are substrate.
+- **Verification captured:** migration head `0012`, 5,007 DB items,
+  0 collisions for current DB plus live top-5,000 Pricempire catalog
+  names.
 - **Workflow:** standard ARCHITECTURE.md rules — no magic libraries,
   tests for non-trivial logic, advisor coordinates before design
   decisions, operator commits per phase and pushes manually.

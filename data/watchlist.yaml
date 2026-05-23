@@ -69,22 +69,10 @@ schema_version: 3
 # Hand-maintained. seed_featured_tier.py reads this list and NEVER
 # writes to it.
 #
-# Slug-v1 collision family (ADR 005's anticipated "future collision"
-# surfaced at the Phase 2c bootstrap and Path A catalog dry-run). The
-# 壱/弐 variants collapse to the same slug per wear, so items.slug UNIQUE
-# rejects the second insert. Excluded from featured/catalog seeding until
-# slug v2 ships with a disambiguation rule for non-ASCII chars.
-featured_tier_exclusions:
-  - "Desert Eagle | Sunset Storm 壱 (Factory New)"
-  - "Desert Eagle | Sunset Storm 壱 (Minimal Wear)"
-  - "Desert Eagle | Sunset Storm 壱 (Field-Tested)"
-  - "Desert Eagle | Sunset Storm 壱 (Well-Worn)"
-  - "Desert Eagle | Sunset Storm 壱 (Battle-Scarred)"
-  - "Desert Eagle | Sunset Storm 弐 (Factory New)"
-  - "Desert Eagle | Sunset Storm 弐 (Minimal Wear)"
-  - "Desert Eagle | Sunset Storm 弐 (Field-Tested)"
-  - "Desert Eagle | Sunset Storm 弐 (Well-Worn)"
-  - "Desert Eagle | Sunset Storm 弐 (Battle-Scarred)"
+# Empty after slug v2 (ADR 005 v2): the Sunset Storm 壱/弐 family now
+# receives distinct transliterated slugs and can flow through the normal
+# rank-driven featured/catalog seeders.
+featured_tier_exclusions: []
 
 sources:
   - name: steam_market
@@ -701,5 +689,5 @@ items:
   - {market_hash_name: Glock-18 | Bullet Queen (Well-Worn), tier: featured}
   - {market_hash_name: AK-47 | Wild Lotus (Well-Worn), tier: featured}
   - {market_hash_name: AWP | Corticera (Minimal Wear), tier: featured}
-  - {market_hash_name: AUG | Syd Mead (Field-Tested), tier: featured}
-  - {market_hash_name: Desert Eagle | Ocean Drive (Minimal Wear), tier: featured}
+  - {market_hash_name: Desert Eagle | Sunset Storm 壱 (Factory New), tier: featured}
+  - {market_hash_name: Desert Eagle | Sunset Storm 弐 (Factory New), tier: featured}

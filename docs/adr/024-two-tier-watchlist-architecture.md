@@ -70,23 +70,22 @@ Two things changed between proposal and implementation:
    chicken-and-egg gap (§3 below). Step 7.1 shipped with the
    infrastructure live and the featured-tier population empty.
 
-What's on disk after Path A landed (2026-05-23):
+What's on disk after slug v2 and Path A follow-up seeding (2026-05-23):
 
 ```
 data/watchlist.yaml:
     schema_version: 3
-    featured_tier_exclusions: 10 entries  # Sunset Storm 壱/弐 all wears;
-                                          # slug-v1 collision family;
-                                          # see §3.1
+    featured_tier_exclusions: []  # Sunset Storm exclusions removed by ADR 005 v2
     items:
       - {…, tier: curated}   × 42 entries
       - {…, tier: featured}  × 500 entries
 
 DB items table:
-    5,000 rows = 42 curated + 500 featured + 4,458 substrate
-    (4,455 rows inserted by scripts/seed_catalog.py from the
-    top-5,000 ranked Pricempire /metas set; the prior 3
-    substrate rows remain from pre-Path-A editorial drops.)
+    5,007 rows = 42 curated + 500 featured + 4,465 substrate
+    (Path A inserted the top-5,000 ranked Pricempire /metas set
+    after exclusions; slug v2 then allowed 7 current top-5,000
+    Sunset Storm variants to be inserted without deleting the
+    former cutoff-fill substrate rows.)
 
 analytics/pattern_classifier.py:
     build_classifier(...) raises ValueError on any classifier
@@ -312,6 +311,7 @@ Items table state across this transition:
 | Post-Path-B-v1 bootstrap (May 18 ~00:40) | 42 | 500 | 3 | 545 |
 | Post-commit-1 (rename only) | 42 | 500 | 3 | 545 |
 | Post-commit-2 / Path A landed (May 23) | 42 | 500 | 4,458 | 5,000 |
+| Post-slug-v2 seed (May 23) | 42 | 500 | 4,465 | 5,007 |
 
 Numbers in the substrate column are the inverse of the YAML's
 tracked-list against the items table; the row count grows with
@@ -352,16 +352,22 @@ table state was unchanged after the failed run.
 **Resolution (interim):** All ten `Desert Eagle | Sunset Storm 壱/弐`
 wear variants were added to `featured_tier_exclusions:` in
 `data/watchlist.yaml` with a comment pointing at slug v2. The
-featured-tier seeder fills freed slots from the next ranks; the
-catalog seeder fills the top-5,000 substrate from the next ranked
-metas. Current state: 500 featured-tier items total, 5,000 items table
-rows total, no slug collisions.
+featured-tier seeder filled freed slots from the next ranks; the
+catalog seeder filled the top-5,000 substrate from the next ranked
+metas.
 
-**Resolution (strategic):** ADR 005 v2 — disambiguation rule for
-non-ASCII characters in slugs. Open follow-up. The exclusion-list
-entries are the natural exit hatch: when slug v2 lands, the
-exclusions get removed, the seeder picks both Sunset Storm wears
-back up at the next run, the items table accepts both inserts.
+**Resolution (strategic):** ADR 005 v2 landed on 2026-05-23 with
+Unidecode-backed transliteration plus Alembic migration 0012
+regenerating every existing `items.slug`. The exclusion list is now
+empty. A post-migration catalog seed inserted 7 Sunset Storm variants
+that are currently in the top-5,000 catalog floor; a Pricempire
+snapshot wrote metadata for those rows; and the featured-tier seeder
+re-added the two Factory New variants at ranks 379 and 405 while
+dropping the prior cutoff replacements (`AUG | Syd Mead (Field-Tested)`,
+`Desert Eagle | Ocean Drive (Minimal Wear)`). Current state: 500
+featured-tier items total, 5,007 items table rows total, no slug
+collisions in the current DB plus top-5,000 ranked Pricempire catalog
+surface.
 
 Only the Sunset Storm family surfaced in the top-5,000 Path A set.
 The collision surface scales with catalog size; at 5,000 items it is
@@ -748,18 +754,12 @@ construction.
   prior approach and is preserved as audit history in §3 Addendum's
   "Path B variants are rejected" framing. Path B v2 remains an
   unexercised future-revisit option; not pre-committed.
-- **Slug algorithm v2 (ADR 005 v2 follow-up).** The Phase 2c
-  bootstrap surfaced exactly the collision class ADR 005's
-  Consequences section anticipated: two distinct
-  market_hash_names (`Sunset Storm 壱` / `Sunset Storm 弐` Factory
-  New) collapsing to one slug because `slugify` strips non-ASCII;
-  Path A found the same family in more wears. Interim fix is ten
-  entries in `featured_tier_exclusions:`. The
-  strategic fix is a v2 algorithm that disambiguates non-ASCII
-  characters (Japanese ranks, future Cyrillic / Arabic /
-  emoji item names from third-party content). ADR 005 specifies
-  the workflow: version bump + regeneration migration touching
-  every items row, then re-evaluate the exclusion entries.
+- **~~Slug algorithm v2 (ADR 005 v2 follow-up).~~** ✓ Landed
+  2026-05-23. Slug v2 transliterates non-ASCII characters, separates
+  slash from hyphen, regenerated existing DB slugs via migration 0012,
+  removed the Sunset Storm exclusions, inserted the eligible Sunset
+  catalog rows, and re-added the two Factory New variants to the
+  featured tier.
 - **Tier 4 (Steam-only canaries).** Proposal §"Selection criteria"
   deferred this pending characterization of the Steam collector's
   behavior on non-skin item types (stickers, music kits, patches).

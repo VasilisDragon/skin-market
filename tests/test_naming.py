@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from db.naming import normalize_name, slugify
+from db.naming import SLUG_ALGORITHM_VERSION, normalize_name, slugify
 
 
 class TestSlugify:
@@ -40,6 +40,20 @@ class TestSlugify:
             ("AWP | Man-o'-war (Field-Tested)", "awp-man-o-war-field-tested"),
             # Leading/trailing whitespace
             ("  AK-47 | Redline  ", "ak-47-redline"),
+            # Slug v2 transliterates non-ASCII characters instead of
+            # stripping them.
+            (
+                "Desert Eagle | Sunset Storm 壱 (Factory New)",
+                "desert-eagle-sunset-storm-yi-factory-new",
+            ),
+            (
+                "Desert Eagle | Sunset Storm 弐 (Factory New)",
+                "desert-eagle-sunset-storm-er-factory-new",
+            ),
+            (
+                "Atlanta 2017 Legends (Holo/Foil)",
+                "atlanta-2017-legends-holo-slash-foil",
+            ),
         ],
     )
     def test_known_inputs(self, name: str, expected: str) -> None:
@@ -65,6 +79,57 @@ class TestSlugify:
     def test_deterministic(self) -> None:
         name = "★ StatTrak™ Karambit | Doppler (Factory New)"
         assert slugify(name) == slugify(name)
+
+    def test_slug_algorithm_version(self) -> None:
+        assert SLUG_ALGORITHM_VERSION == 2
+
+    def test_ascii_outputs_match_v1_examples(self) -> None:
+        """Slug v2 is additive for ASCII-safe names."""
+        assert slugify("AK-47 | Redline (Field-Tested)") == (
+            "ak-47-redline-field-tested"
+        )
+        assert slugify("★ Karambit | Doppler (Factory New)") == (
+            "star-karambit-doppler-factory-new"
+        )
+        assert slugify("StatTrak™ AK-47 | Redline (Field-Tested)") == (
+            "stattrak-ak-47-redline-field-tested"
+        )
+
+    def test_sunset_storm_variants_do_not_collide(self) -> None:
+        slugs = {
+            slugify("Desert Eagle | Sunset Storm 壱 (Factory New)"),
+            slugify("Desert Eagle | Sunset Storm 弐 (Factory New)"),
+        }
+        assert slugs == {
+            "desert-eagle-sunset-storm-yi-factory-new",
+            "desert-eagle-sunset-storm-er-factory-new",
+        }
+
+    def test_slash_and_hyphen_variants_do_not_collide(self) -> None:
+        slugs = {
+            slugify("Atlanta 2017 Legends (Holo/Foil)"),
+            slugify("Atlanta 2017 Legends (Holo-Foil)"),
+        }
+        assert slugs == {
+            "atlanta-2017-legends-holo-slash-foil",
+            "atlanta-2017-legends-holo-foil",
+        }
+
+    def test_migration_slug_v2_matches_runtime(self) -> None:
+        import importlib
+
+        migration = importlib.import_module(
+            "db.migrations.versions.0012_slug_algorithm_v2"
+        )
+        names = [
+            "AK-47 | Redline (Field-Tested)",
+            "★ Karambit | Doppler (Factory New)",
+            "StatTrak™ AK-47 | Redline (Field-Tested)",
+            "Desert Eagle | Sunset Storm 壱 (Factory New)",
+            "Atlanta 2017 Legends (Holo/Foil)",
+        ]
+        for name in names:
+            assert migration._slugify_v2(name) == slugify(name)
 
 
 class TestNormalizeName:
