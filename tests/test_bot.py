@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import httpx
@@ -1943,6 +1944,24 @@ class TestDeepSeekClientTextOnly:
         assert reply.text == "Plain reply, no tools called."
         assert reply.attachment is None
         assert client.chat.call_count == 1
+
+    async def test_daily_budget_limit_stops_before_chat(self, monkeypatch) -> None:
+        monkeypatch.setenv("DEEPSEEK_DAILY_COST_LIMIT_USD", "1.00")
+        monkeypatch.setattr(
+            deepseek_client,
+            "sum_llm_usage_cost_since",
+            lambda **kwargs: Decimal("1.00"),
+        )
+        client = _scripted_client([_make_msg(content="Should not be called.")])
+
+        reply = await deepseek_client.handle_user_message(
+            "hi",
+            client=client,
+            discord_user_id="1234",
+        )
+
+        assert "budget is exhausted" in reply.text
+        assert client.chat.call_count == 0
 
 
 class TestDeepSeekClientSingleToolCall:

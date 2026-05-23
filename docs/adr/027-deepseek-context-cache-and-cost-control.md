@@ -36,6 +36,16 @@ that cache status is reported through `prompt_cache_hit_tokens` and
 Continue recording these fields in `llm_usage_log`; that table is the source of
 truth for cost analysis.
 
+The 2026-05-23 paid-bot follow-up adds optional rolling budget guards backed by
+that same table:
+
+- `DEEPSEEK_DAILY_COST_LIMIT_USD`: global 24-hour spend ceiling.
+- `DEEPSEEK_DAILY_USER_COST_LIMIT_USD`: per-Discord-user 24-hour spend ceiling.
+
+When either configured limit has already been reached, the bot returns a
+deterministic budget-exhausted reply before making another DeepSeek request.
+Unset or non-positive limits disable the guard.
+
 Trim the stable prefix instead of adding new runtime machinery:
 
 - Rewrite `SYSTEM_PROMPT` into shorter, directive-style routing and rendering

@@ -54,6 +54,8 @@ SKIN_MARKET_API_TOKEN=<unchanged>
 DEEPSEEK_API_KEY=<DeepSeek API key>
 DEEPSEEK_MODEL=deepseek-v4-flash
 LLM_USAGE_LOG_FULL_PROMPT=false
+DEEPSEEK_DAILY_COST_LIMIT_USD=0       # optional global 24h cap; 0 disables
+DEEPSEEK_DAILY_USER_COST_LIMIT_USD=0  # optional per-user 24h cap; 0 disables
 ```
 
 Empty `DISCORD_ALLOWED_USER_IDS` is a valid config but the bot will refuse every message with "I'm not configured for any users yet" — that's the fail-closed default.

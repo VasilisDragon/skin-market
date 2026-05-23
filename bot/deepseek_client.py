@@ -7,6 +7,8 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -18,7 +20,11 @@ from bot.tools import (
     Attachment,
     SkinMarketBotError,
 )
-from db.llm_usage import DEEPSEEK_V4_FLASH_MODEL, log_llm_usage
+from db.llm_usage import (
+    DEEPSEEK_V4_FLASH_MODEL,
+    log_llm_usage,
+    sum_llm_usage_cost_since,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,10 @@ MAX_TOOL_CALLS: int = 5
 
 
 class DeepSeekError(RuntimeError):
+    pass
+
+
+class DeepSeekBudgetExceeded(RuntimeError):
     pass
 
 
@@ -141,6 +151,48 @@ def _deepseek_timeout() -> float:
     )
 
 
+def _decimal_env_limit(name: str) -> Decimal | None:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        raise DeepSeekError(f"{name} must be a decimal USD amount") from exc
+    if value <= 0:
+        return None
+    return value
+
+
+def _check_deepseek_budget(discord_user_id: str | None) -> None:
+    """Fail fast when configured daily DeepSeek spend limits are reached."""
+    global_limit = _decimal_env_limit("DEEPSEEK_DAILY_COST_LIMIT_USD")
+    user_limit = _decimal_env_limit("DEEPSEEK_DAILY_USER_COST_LIMIT_USD")
+    if global_limit is None and user_limit is None:
+        return
+
+    since = datetime.now(UTC) - timedelta(hours=24)
+    if global_limit is not None:
+        global_spend = sum_llm_usage_cost_since(since=since)
+        if global_spend >= global_limit:
+            raise DeepSeekBudgetExceeded(
+                "The bot's 24-hour DeepSeek budget is exhausted. "
+                "The operator can raise DEEPSEEK_DAILY_COST_LIMIT_USD "
+                "or wait for spend to fall out of the rolling window."
+            )
+
+    if user_limit is not None and discord_user_id is not None:
+        user_spend = sum_llm_usage_cost_since(
+            since=since,
+            discord_user_id=discord_user_id,
+        )
+        if user_spend >= user_limit:
+            raise DeepSeekBudgetExceeded(
+                "Your 24-hour DeepSeek budget is exhausted. Try again later "
+                "or ask the operator to raise DEEPSEEK_DAILY_USER_COST_LIMIT_USD."
+            )
+
+
 def _normalize_arguments(raw) -> dict:
     if raw is None:
         return {}
@@ -245,11 +297,15 @@ async def handle_user_message(
 
     for round_idx in range(MAX_TOOL_CALLS + 1):
         try:
+            _check_deepseek_budget(discord_user_id)
             response = await client.chat(
                 model=_deepseek_model(),
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
             )
+        except DeepSeekBudgetExceeded as exc:
+            logger.warning("%s", exc)
+            return BotReply(text=str(exc), attachment=attachment)
         except Exception as exc:
             logger.exception("DeepSeek chat call failed")
             return BotReply(

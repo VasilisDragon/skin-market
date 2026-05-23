@@ -7,10 +7,11 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, func, insert, select
 from sqlalchemy.orm import Session
 
 from db.connection import get_engine
@@ -146,3 +147,24 @@ def log_llm_usage(
         session.execute(insert(LLMUsageLog), [row])
         session.commit()
     return row["request_id"]
+
+
+def sum_llm_usage_cost_since(
+    *,
+    since: datetime,
+    discord_user_id: str | None = None,
+    engine: Engine | None = None,
+) -> Decimal:
+    """Return total logged DeepSeek cost since ``since``.
+
+    When ``discord_user_id`` is provided, the sum is scoped to that user.
+    """
+    use_engine = engine or get_engine()
+    stmt = select(func.coalesce(func.sum(LLMUsageLog.cost_usd), Decimal("0")))
+    stmt = stmt.where(LLMUsageLog.created_at >= since)
+    if discord_user_id is not None:
+        stmt = stmt.where(LLMUsageLog.discord_user_id == discord_user_id)
+
+    with Session(use_engine) as session:
+        value = session.execute(stmt).scalar_one()
+    return Decimal(value)
