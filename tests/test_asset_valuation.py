@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.asset_valuation import (
+    BASELINE_MIN_RELIABLE_SOURCE_COUNT,
+    BASELINE_WIDE_SPREAD_RATIO,
     PREMIUM_SIGNAL_AVAILABILITY,
     CSGOReferenceData,
     CSGOReferenceUnavailableError,
@@ -206,6 +208,48 @@ def test_build_market_baseline_uses_median_min_max() -> None:
     assert baseline["mid"] == "198.70"
     assert baseline["high"] == "258.18"
     assert baseline["confidence"] == "high"
+    assert baseline["baseline_reliability"] == "reliable"
+    assert baseline["reliability"]["min_reliable_source_count"] == (
+        BASELINE_MIN_RELIABLE_SOURCE_COUNT
+    )
+    assert baseline["reliability"]["wide_spread_ratio_threshold"] == str(
+        BASELINE_WIDE_SPREAD_RATIO
+    )
+
+
+def test_build_market_baseline_suppresses_mid_for_wide_spread() -> None:
+    baseline = build_market_baseline(
+        [
+            PricePoint("pricempire_buff163_buy", "pricempire", Decimal("1030.32"), 150, None),
+            PricePoint("pricempire_buff163", "pricempire", Decimal("515158.23"), 6, None),
+        ]
+    )
+
+    assert baseline is not None
+    assert baseline["low"] == "1030.32"
+    assert baseline["high"] == "515158.23"
+    assert baseline["baseline_reliability"] == "wide_spread"
+    assert baseline["confidence"] == "low"
+    assert "mid" not in baseline
+    assert baseline["reliability"]["mid_suppressed"] is True
+    assert "spread is too wide" in baseline["reliability"]["message"]
+
+
+def test_build_market_baseline_suppresses_mid_for_thin_sources() -> None:
+    baseline = build_market_baseline(
+        [
+            PricePoint("pricempire_buff163_buy", "pricempire", Decimal("100.00"), 10, None),
+            PricePoint("pricempire_buff163", "pricempire", Decimal("110.00"), 5, None),
+        ]
+    )
+
+    assert baseline is not None
+    assert baseline["low"] == "100.00"
+    assert baseline["high"] == "110.00"
+    assert baseline["baseline_reliability"] == "thin_sources"
+    assert "mid" not in baseline
+    assert baseline["reliability"]["min_reliable_source_count"] == 3
+    assert "too thin" in baseline["reliability"]["message"]
 
 
 def test_asset_evidence_flags_low_float_and_doppler_phase() -> None:
@@ -363,6 +407,13 @@ def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
                 7,
                 "2026-05-23T08:03:41+00:00",
             ),
+            PricePoint(
+                "skinport",
+                "direct",
+                Decimal("174.42"),
+                3,
+                "2026-05-23T08:03:41+00:00",
+            ),
         ],
     )
 
@@ -382,6 +433,7 @@ def test_inventory_route_returns_asset_and_gauge(client, monkeypatch) -> None:
     assert body["market_baseline"]["low"] == "150.13"
     assert body["market_baseline"]["mid"] == "174.42"
     assert body["market_baseline"]["high"] == "198.70"
+    assert body["market_baseline"]["baseline_reliability"] == "reliable"
     assert body["evidence"]["attributes"]["wear_band"]["name"] == "Factory New"
     assert body["evidence"]["driver_flags"][1]["code"] == "applied_stickers"
     assert body["evidence"]["driver_flags"][1]["present"] is True
@@ -433,10 +485,12 @@ def test_inventory_summary_route_returns_portfolio_baseline(client, monkeypatch)
         rows = {
             "Souvenir MP9 | Hot Rod (Factory New)": [
                 PricePoint("pricempire_a", "pricempire", Decimal("100.00"), 1, None),
+                PricePoint("skinport", "direct", Decimal("120.00"), 1, None),
                 PricePoint("pricempire_b", "pricempire", Decimal("140.00"), 1, None),
             ],
             "StatTrak™ M4A1-S | Cyrex (Field-Tested)": [
                 PricePoint("pricempire_a", "pricempire", Decimal("50.00"), 1, None),
+                PricePoint("skinport", "direct", Decimal("60.00"), 1, None),
                 PricePoint("pricempire_b", "pricempire", Decimal("70.00"), 1, None),
             ],
         }
@@ -458,6 +512,7 @@ def test_inventory_summary_route_returns_portfolio_baseline(client, monkeypatch)
     assert body["portfolio_baseline"]["low"] == "150.00"
     assert body["portfolio_baseline"]["mid"] == "180.00"
     assert body["portfolio_baseline"]["high"] == "210.00"
+    assert body["portfolio_baseline"]["baseline_reliability"] == "reliable"
     assert body["portfolio_baseline"]["priced_count"] == 2
     assert body["portfolio_baseline"]["unpriced_count"] == 1
     assert body["portfolio_baseline"]["stickered_count"] == 1

@@ -102,11 +102,16 @@ def portfolio_item(monkeypatch):
             select(Item.id).where(Item.market_hash_name == _SENTINEL_NAME)
         ).scalar_one()
         _cleanup(session, item_id)
-        source_id = _ensure_source(session, "skinport", "usd")
-        _insert_price(session, item_id, source_id, now, "100.00")
+        source_ids = [
+            _ensure_source(session, "skinport", "usd"),
+            _ensure_source(session, "dmarket", "usd"),
+            _ensure_source(session, "pricempire_skinport", "usd"),
+        ]
+        for source_id in source_ids:
+            _insert_price(session, item_id, source_id, now, "100.00")
         session.commit()
 
-        yield item_id, source_id
+        yield item_id, source_ids
 
         _cleanup(session, item_id)
         session.execute(text("DELETE FROM items WHERE id = :i"), {"i": item_id})
@@ -234,7 +239,7 @@ def test_portfolio_snapshot_trend_reports_delta(
     client,
     portfolio_item,
 ) -> None:
-    item_id, source_id = portfolio_item
+    item_id, source_ids = portfolio_item
     first = client.post(
         "/portfolio/snapshots",
         json={
@@ -245,13 +250,14 @@ def test_portfolio_snapshot_trend_reports_delta(
 
     engine = get_engine()
     with Session(engine) as session:
-        _insert_price(
-            session,
-            item_id,
-            source_id,
-            datetime.now(UTC) + timedelta(seconds=1),
-            "125.00",
-        )
+        for source_id in source_ids:
+            _insert_price(
+                session,
+                item_id,
+                source_id,
+                datetime.now(UTC) + timedelta(seconds=1),
+                "125.00",
+            )
         session.commit()
 
     second = client.post(

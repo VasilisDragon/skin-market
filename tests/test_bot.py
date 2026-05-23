@@ -1720,6 +1720,10 @@ class TestSystemPromptPhase2bStep9:
         assert "names exactly" in SYSTEM_PROMPT
         assert "market-name baseline" in SYSTEM_PROMPT
         assert "float, seed, sticker, or charm premiums" in SYSTEM_PROMPT
+        assert "baseline_reliability" in SYSTEM_PROMPT
+        assert "wide_spread" in SYSTEM_PROMPT
+        assert "thin_sources" in SYSTEM_PROMPT
+        assert "do not state a single midpoint value" in SYSTEM_PROMPT
         assert "Premium Evidence (Not Priced)" in SYSTEM_PROMPT
         assert "premium dollar amounts" in SYSTEM_PROMPT
         assert "After rendering `evidence`, stop" in SYSTEM_PROMPT

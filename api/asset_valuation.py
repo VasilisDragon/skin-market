@@ -37,6 +37,8 @@ CS2_CONTEXT_ID = "2"
 _STEAM_ID64_RE = re.compile(r"^7656\d{13}$")
 _INVENTORY_FRAGMENT_RE = re.compile(r"^(?P<app_id>\d+)_(?P<context_id>\d+)_(?P<asset_id>\d+)$")
 _CENTS = Decimal("0.01")
+BASELINE_WIDE_SPREAD_RATIO = Decimal("5.0")
+BASELINE_MIN_RELIABLE_SOURCE_COUNT = 3
 _WEAR_BANDS: tuple[tuple[str, str, Decimal, Decimal], ...] = (
     ("factory_new", "Factory New", Decimal("0"), Decimal("0.07")),
     ("minimal_wear", "Minimal Wear", Decimal("0.07"), Decimal("0.15")),
@@ -539,14 +541,31 @@ def build_market_baseline(price_points: list[PricePoint]) -> dict[str, Any] | No
     high = prices[-1]
     mid = _median(prices)
     source_count = len(price_points)
-    confidence = "high" if source_count >= 3 else "medium" if source_count == 2 else "low"
-    return {
+    reliability = _baseline_reliability(
+        low=low,
+        high=high,
+        source_count=source_count,
+    )
+    confidence = (
+        "high"
+        if reliability == "reliable" and source_count >= 3
+        else "low"
+        if reliability != "reliable"
+        else "medium"
+    )
+    baseline = {
         "currency": "usd",
         "low": _money(low),
-        "mid": _money(mid),
         "high": _money(high),
         "source_count": source_count,
         "confidence": confidence,
+        "baseline_reliability": reliability,
+        "reliability": _baseline_reliability_details(
+            low=low,
+            high=high,
+            source_count=source_count,
+            reliability=reliability,
+        ),
         "method": (
             "Median/min/max of latest local USD price points for the "
             "asset's market_hash_name. Steam Wallet credit is excluded."
@@ -559,6 +578,9 @@ def build_market_baseline(price_points: list[PricePoint]) -> dict[str, Any] | No
             "value from these attributes."
         ),
     }
+    if reliability == "reliable":
+        baseline["mid"] = _money(mid)
+    return baseline
 
 
 def build_asset_evidence(asset: dict[str, Any]) -> dict[str, Any]:
@@ -799,6 +821,7 @@ def build_inventory_summary_response(
     total_low = Decimal("0")
     total_mid = Decimal("0")
     total_high = Decimal("0")
+    reliable_mid_count = 0
     priced_items: list[dict[str, Any]] = []
     unpriced_items: list[dict[str, Any]] = []
     stickered_count = 0
@@ -840,28 +863,39 @@ def build_inventory_summary_response(
             unpriced_items.append(shaped)
             continue
         total_low += Decimal(baseline["low"])
-        total_mid += Decimal(baseline["mid"])
         total_high += Decimal(baseline["high"])
-        shaped["baseline_spread_pct"] = _pct(
-            (Decimal(baseline["high"]) - Decimal(baseline["low"]))
-            / Decimal(baseline["mid"])
-            * 100
-        )
+        if baseline.get("mid") is not None:
+            total_mid += Decimal(baseline["mid"])
+            reliable_mid_count += 1
+            shaped["baseline_spread_pct"] = _pct(
+                (Decimal(baseline["high"]) - Decimal(baseline["low"]))
+                / Decimal(baseline["mid"])
+                * 100
+            )
+        else:
+            shaped["baseline_spread_pct"] = None
         priced_items.append(shaped)
 
     priced_items.sort(
-        key=lambda row: Decimal(row["market_baseline"]["mid"]),
+        key=lambda row: _baseline_sort_value(row["market_baseline"]),
         reverse=True,
     )
     largest_spread_items = sorted(
         priced_items,
-        key=lambda row: Decimal(row["baseline_spread_pct"]),
+        key=lambda row: _baseline_spread_sort_value(row["market_baseline"]),
         reverse=True,
     )
     status = "ok" if priced_items else "no_value_data"
     priced_count = len(priced_items)
     unpriced_count = len(unpriced_items)
     total_count = priced_count + unpriced_count
+    portfolio_reliability = _portfolio_baseline_reliability(
+        item_baselines=[row["market_baseline"] for row in priced_items],
+        low=total_low,
+        high=total_high,
+        priced_count=priced_count,
+        reliable_mid_count=reliable_mid_count,
+    )
     message = (
         f"Found market baselines for {priced_count} of {total_count} CS2 "
         "inventory assets. Totals are market-name baselines and do not include "
@@ -877,6 +911,48 @@ def build_inventory_summary_response(
         priced_count=priced_count,
         unpriced_count=unpriced_count,
     )
+    portfolio_baseline = None
+    if priced_items:
+        portfolio_baseline = {
+            "currency": "usd",
+            "low": _money(total_low),
+            "high": _money(total_high),
+            "priced_count": priced_count,
+            "unpriced_count": unpriced_count,
+            "stickered_count": stickered_count,
+            "top_item_share_pct": (
+                _pct(
+                    Decimal(priced_items[0]["market_baseline"]["mid"])
+                    / total_mid
+                    * 100
+                )
+                if portfolio_reliability == "reliable"
+                and total_mid > 0
+                and priced_items[0]["market_baseline"].get("mid") is not None
+                else None
+            ),
+            "baseline_reliability": portfolio_reliability,
+            "reliability": _portfolio_reliability_details(
+                item_baselines=[row["market_baseline"] for row in priced_items],
+                low=total_low,
+                high=total_high,
+                priced_count=priced_count,
+                reliable_mid_count=reliable_mid_count,
+                reliability=portfolio_reliability,
+            ),
+            "method": (
+                "Sum of each priced asset's market-name low/high baseline "
+                "from latest local USD rows. Mid is shown only when every "
+                "included item baseline is reliable. Steam Wallet credit is "
+                "excluded."
+            ),
+            "limitations": (
+                "This is a portfolio market baseline. It does not reprice "
+                "float, seed, sticker, charm, or pattern premiums."
+            ),
+        }
+        if portfolio_reliability == "reliable":
+            portfolio_baseline["mid"] = _money(total_mid)
 
     return {
         "status": status,
@@ -888,34 +964,7 @@ def build_inventory_summary_response(
             "context_id": reference.context_id,
         },
         "evidence": evidence,
-        "portfolio_baseline": {
-            "currency": "usd",
-            "low": _money(total_low),
-            "mid": _money(total_mid),
-            "high": _money(total_high),
-            "priced_count": priced_count,
-            "unpriced_count": unpriced_count,
-            "stickered_count": stickered_count,
-            "top_item_share_pct": (
-                _pct(
-                    Decimal(priced_items[0]["market_baseline"]["mid"])
-                    / total_mid
-                    * 100
-                )
-                if total_mid > 0
-                else None
-            ),
-            "method": (
-                "Sum of each priced asset's market-name low/mid/high baseline "
-                "from latest local USD rows. Steam Wallet credit is excluded."
-            ),
-            "limitations": (
-                "This is a portfolio market baseline. It does not reprice "
-                "float, seed, sticker, charm, or pattern premiums."
-            ),
-        }
-        if priced_items
-        else None,
+        "portfolio_baseline": portfolio_baseline,
         "top_items": priced_items[:10],
         "largest_spread_items": largest_spread_items[:10],
         "unpriced_sample": unpriced_items[:10],
@@ -956,6 +1005,61 @@ def _median(values: list[Decimal]) -> Decimal:
     return ((values[midpoint - 1] + values[midpoint]) / 2).quantize(
         _CENTS, rounding=ROUND_HALF_UP
     )
+
+
+def _baseline_reliability(
+    *,
+    low: Decimal,
+    high: Decimal,
+    source_count: int,
+) -> str:
+    if _high_low_ratio(low=low, high=high) >= BASELINE_WIDE_SPREAD_RATIO:
+        return "wide_spread"
+    if source_count < BASELINE_MIN_RELIABLE_SOURCE_COUNT:
+        return "thin_sources"
+    return "reliable"
+
+
+def _baseline_reliability_details(
+    *,
+    low: Decimal,
+    high: Decimal,
+    source_count: int,
+    reliability: str,
+) -> dict[str, Any]:
+    ratio = _high_low_ratio(low=low, high=high)
+    if reliability == "wide_spread":
+        message = (
+            f"Sources range {_money(low)}-{_money(high)} USD; high/low spread "
+            "is too wide for a usable midpoint."
+        )
+    elif reliability == "thin_sources":
+        message = (
+            f"Only {source_count} USD source(s) are available; this is too thin "
+            "for a usable midpoint."
+        )
+    else:
+        message = "Source count and spread are sufficient to show a midpoint."
+    return {
+        "status": reliability,
+        "wide_spread_ratio_threshold": str(BASELINE_WIDE_SPREAD_RATIO),
+        "min_reliable_source_count": BASELINE_MIN_RELIABLE_SOURCE_COUNT,
+        "high_low_ratio": _ratio_text(ratio),
+        "mid_suppressed": reliability != "reliable",
+        "message": message,
+    }
+
+
+def _high_low_ratio(*, low: Decimal, high: Decimal) -> Decimal:
+    if low <= 0:
+        return Decimal("Infinity") if high > 0 else Decimal("1")
+    return high / low
+
+
+def _ratio_text(value: Decimal) -> str:
+    if value.is_infinite():
+        return "Infinity"
+    return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _money(value: Decimal) -> str:
@@ -1145,6 +1249,84 @@ def _portfolio_evidence_summary(
         f"returned assets: {drivers}. The system cannot currently price those "
         "drivers without an approved data source and confirmed-sales corpus."
     )
+
+
+def _baseline_sort_value(baseline: dict[str, Any]) -> Decimal:
+    value = baseline.get("mid") or baseline.get("high") or baseline.get("low") or "0"
+    return Decimal(str(value))
+
+
+def _baseline_spread_sort_value(baseline: dict[str, Any]) -> Decimal:
+    low = Decimal(str(baseline.get("low") or "0"))
+    high = Decimal(str(baseline.get("high") or "0"))
+    return _high_low_ratio(low=low, high=high)
+
+
+def _portfolio_baseline_reliability(
+    *,
+    item_baselines: list[dict[str, Any]],
+    low: Decimal,
+    high: Decimal,
+    priced_count: int,
+    reliable_mid_count: int,
+) -> str:
+    if not item_baselines:
+        return "thin_sources"
+    if any(row.get("baseline_reliability") == "wide_spread" for row in item_baselines):
+        return "wide_spread"
+    if _high_low_ratio(low=low, high=high) >= BASELINE_WIDE_SPREAD_RATIO:
+        return "wide_spread"
+    if reliable_mid_count < priced_count:
+        return "thin_sources"
+    return "reliable"
+
+
+def _portfolio_reliability_details(
+    *,
+    item_baselines: list[dict[str, Any]],
+    low: Decimal,
+    high: Decimal,
+    priced_count: int,
+    reliable_mid_count: int,
+    reliability: str,
+) -> dict[str, Any]:
+    ratio = _high_low_ratio(low=low, high=high)
+    if reliability == "wide_spread":
+        message = (
+            f"Portfolio sources sum to {_money(low)}-{_money(high)} USD; "
+            "spread is too wide for a usable total midpoint."
+        )
+    elif reliability == "thin_sources":
+        message = (
+            f"{reliable_mid_count} of {priced_count} priced item baseline(s) "
+            "have enough source support for a midpoint, so no portfolio "
+            "midpoint is shown."
+        )
+    else:
+        message = "All priced item baselines are reliable enough to sum a midpoint."
+    return {
+        "status": reliability,
+        "wide_spread_ratio_threshold": str(BASELINE_WIDE_SPREAD_RATIO),
+        "min_reliable_source_count": BASELINE_MIN_RELIABLE_SOURCE_COUNT,
+        "high_low_ratio": _ratio_text(ratio),
+        "mid_suppressed": reliability != "reliable",
+        "item_reliability_counts": {
+            "reliable": sum(
+                1 for row in item_baselines if row.get("baseline_reliability") == "reliable"
+            ),
+            "wide_spread": sum(
+                1
+                for row in item_baselines
+                if row.get("baseline_reliability") == "wide_spread"
+            ),
+            "thin_sources": sum(
+                1
+                for row in item_baselines
+                if row.get("baseline_reliability") == "thin_sources"
+            ),
+        },
+        "message": message,
+    }
 
 
 def _shape_sticker(row: dict[str, Any]) -> dict[str, Any]:

@@ -64,8 +64,11 @@ or missing pairs.
   asset attributes, or market-baseline questions for a pasted inventory asset.
   Render in this order: `message`, asset float/seed/stickers, then
   `market_baseline`, then `evidence`. Render `market_baseline` under the heading
-  `Market Baseline Range (USD)` as three bullets: Low, Mid, High, followed by
-  a confidence/source-count bullet. Render `evidence` under the heading
+  `Market Baseline Range (USD)`. Always show Low and High. Show Mid only when
+  `market_baseline.baseline_reliability` is `reliable` and `market_baseline.mid`
+  exists. When reliability is `wide_spread` or `thin_sources`, do not state a
+  single midpoint value as the answer; render `market_baseline.reliability.message`
+  instead. Include confidence/source-count. Render `evidence` under the heading
   `Premium Evidence (Not Priced)` after the market baseline: include
   `evidence.summary`, present driver flags, and signal availability statuses.
   Do not render a table, name individual sources, or enumerate `price_points`
@@ -83,7 +86,11 @@ or missing pairs.
 - `market_baseline_inventory_summary`: public Steam inventory links when the
   user asks for total inventory value, portfolio value, inventory summary, or
   top inventory items. Render `message`, then `portfolio_baseline` as Low/Mid/
-  High plus priced/unpriced counts, stickered count, and top-item share, then
+  High plus priced/unpriced counts, stickered count, and top-item share when
+  `portfolio_baseline.baseline_reliability` is `reliable` and
+  `portfolio_baseline.mid` exists. When reliability is `wide_spread` or
+  `thin_sources`, show Low/High and `portfolio_baseline.reliability.message`,
+  but do not state a single Mid. Then render
   `evidence.summary`, then up to five `top_items`, then up to three
   `largest_spread_items` when present.
   Say plainly that totals are market-name baselines and do not include float,
@@ -118,7 +125,11 @@ or missing pairs.
   this order: `message`, asset float/seed/stickers, then `market_baseline`,
   then `evidence`.
   Render `market_baseline` under the heading `Market Baseline Range (USD)` as
-  three bullets: Low, Mid, High, followed by a confidence/source-count bullet.
+  Low and High, and Mid only when `market_baseline.baseline_reliability` is
+  `reliable` and `market_baseline.mid` exists. When reliability is
+  `wide_spread` or `thin_sources`, do not state a single midpoint value as the
+  answer; render `market_baseline.reliability.message` instead. Include a
+  confidence/source-count bullet.
   Render `evidence` under `Premium Evidence (Not Priced)` after the market
   baseline: include `evidence.summary`, present driver flags, and signal
   availability statuses. Do not render a table, name individual sources, or

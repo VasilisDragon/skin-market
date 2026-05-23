@@ -103,8 +103,13 @@ def portfolio_monitor_item(monkeypatch):
             select(Item.id).where(Item.market_hash_name == _SENTINEL_NAME)
         ).scalar_one()
         _cleanup(session, item_id)
-        source_id = _ensure_source(session, "skinport", "usd")
-        _insert_price(session, item_id, source_id, now, "100.00")
+        source_ids = [
+            _ensure_source(session, "skinport", "usd"),
+            _ensure_source(session, "dmarket", "usd"),
+            _ensure_source(session, "pricempire_skinport", "usd"),
+        ]
+        for source_id in source_ids:
+            _insert_price(session, item_id, source_id, now, "100.00")
         session.commit()
 
         yield item_id
