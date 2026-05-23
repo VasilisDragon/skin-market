@@ -69,14 +69,22 @@ schema_version: 3
 # Hand-maintained. seed_featured_tier.py reads this list and NEVER
 # writes to it.
 #
-# Slug-v1 collision pair (ADR 005's anticipated "future collision"
-# surfaced at the Phase 2c bootstrap). Both names slugify to
-# 'desert-eagle-sunset-storm-factory-new'; the items.slug UNIQUE
-# constraint rejects the second insert. Excluded from featured until
+# Slug-v1 collision family (ADR 005's anticipated "future collision"
+# surfaced at the Phase 2c bootstrap and Path A catalog dry-run). The
+# 壱/弐 variants collapse to the same slug per wear, so items.slug UNIQUE
+# rejects the second insert. Excluded from featured/catalog seeding until
 # slug v2 ships with a disambiguation rule for non-ASCII chars.
 featured_tier_exclusions:
   - "Desert Eagle | Sunset Storm 壱 (Factory New)"
+  - "Desert Eagle | Sunset Storm 壱 (Minimal Wear)"
+  - "Desert Eagle | Sunset Storm 壱 (Field-Tested)"
+  - "Desert Eagle | Sunset Storm 壱 (Well-Worn)"
+  - "Desert Eagle | Sunset Storm 壱 (Battle-Scarred)"
   - "Desert Eagle | Sunset Storm 弐 (Factory New)"
+  - "Desert Eagle | Sunset Storm 弐 (Minimal Wear)"
+  - "Desert Eagle | Sunset Storm 弐 (Field-Tested)"
+  - "Desert Eagle | Sunset Storm 弐 (Well-Worn)"
+  - "Desert Eagle | Sunset Storm 弐 (Battle-Scarred)"
 
 sources:
   - name: steam_market

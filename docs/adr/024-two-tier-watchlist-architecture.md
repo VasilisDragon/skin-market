@@ -1,12 +1,12 @@
 # ADR 024 — Three-tier watchlist architecture
 
 **Status:** Accepted (Phase 2c update: tier vocabulary renamed
-deep/broad/orphan → curated/featured/substrate, schema_version 2→3.
-The §3 Addendum recording the Path B v1 implementation is
-pre-Phase-2c-Commit-2 state and will be rewritten in the next commit
-to record Path A selection — leave the prior text in place as the
-audit trail of the path-selection deferral.)
-**Date:** 2026-05-17 (original); 2026-05-18 (Phase 2c rename pass)
+deep/broad/orphan → curated/featured/substrate, schema_version 2→3;
+Path A bulk catalog seed landed with a 5,000-row items substrate on
+2026-05-23. The Path B v1 bootstrap text is retained below as audit
+history of the path-selection deferral.)
+**Date:** 2026-05-17 (original); 2026-05-18 (Phase 2c rename pass);
+2026-05-23 (Path A bulk seed)
 **Related:** ADR 005 (slug algorithm, v1 collision class), ADR 009
 (scheduler design, dedup-on-write), ADR 014 (read API design), ADR
 016 (Discord bot runtime), ADR 018 (Pricempire as breadth-coverage
@@ -70,23 +70,23 @@ Two things changed between proposal and implementation:
    chicken-and-egg gap (§3 below). Step 7.1 shipped with the
    infrastructure live and the featured-tier population empty.
 
-What's on disk after Phase 2c bootstrap (2026-05-18):
+What's on disk after Path A landed (2026-05-23):
 
 ```
 data/watchlist.yaml:
-    schema_version: 2
-    broad_tier_exclusions: 2 entries     # slug-v1 collision pair
-                                         # (Sunset Storm 壱/弐 FN);
-                                         # see §3.1
+    schema_version: 3
+    featured_tier_exclusions: 10 entries  # Sunset Storm 壱/弐 all wears;
+                                          # slug-v1 collision family;
+                                          # see §3.1
     items:
-      - {…, tier: curated}   × 42  entries
-      - {…, tier: featured}  × 500 entries  # Phase 2c, Path B v1
+      - {…, tier: curated}   × 42 entries
+      - {…, tier: featured}  × 500 entries
 
 DB items table:
-    545 rows = 42 deep + 500 broad + 3 orphans
-    (orphan count dropped 28 → 3 at Phase 2c — 25 previously-deep
-    items re_added to broad per §4.D5; 3 ranked outside top-500
-    and remain orphan.)
+    5,000 rows = 42 curated + 500 featured + 4,458 substrate
+    (4,455 rows inserted by scripts/seed_catalog.py from the
+    top-5,000 ranked Pricempire /metas set; the prior 3
+    substrate rows remain from pre-Path-A editorial drops.)
 
 analytics/pattern_classifier.py:
     build_classifier(...) raises ValueError on any classifier
@@ -136,7 +136,7 @@ Orphans = items in DB but not in the new YAML = 28. Broad = 0.
 
 ## §3. The featured-tier bootstrap chicken-and-egg
 
-`scripts/seed_broad_tier.py` reads `pricempire_item_metadata` to pick
+`scripts/seed_featured_tier.py` reads `pricempire_item_metadata` to pick
 the top-N items by Pricempire rank, joining `items` to translate
 `item_id` → `market_hash_name`:
 
@@ -166,7 +166,7 @@ Three escape paths exist, each with non-trivial side effects:
 | Path | What it changes | Cost |
 |---|---|---|
 | **A. Bulk-seed `items`** from a Pricempire `/v4/paid/items/metas` snapshot — write all ~39,400 catalog rows into the items table once, then let the seeder pick top-N from a full population. | Items table grows from 70 to ~40,000 rows; every existence query against the items table (bot, API, analytics) sweeps a much larger table; orphan/broad/deep semantics for the bulk-seeded items become ambiguous (none would be in the YAML; all would be "orphan" by current rules). | High blast radius — touches the bot's "I don't track that item" message, the API's 404 handling, and the orphan envelope copy. |
-| **B. Change `seed_broad_tier` to read raw Pricempire snapshots** (e.g. a fresh HTTP call to `/v4/paid/items/metas`, or a snapshot table backed by a special bootstrap collector run that bypasses the items-table filter). | seeder becomes network-dependent or schema-dependent on a bootstrap table that doesn't exist; the rank source diverges from the production `pricempire_item_metadata` table. | Medium — adds a third moving part to a script the operator is supposed to run quarterly. |
+| **B. Change `seed_featured_tier` to read raw Pricempire snapshots** (e.g. a fresh HTTP call to `/v4/paid/items/metas`, or a snapshot table backed by a special bootstrap collector run that bypasses the items-table filter). | seeder becomes network-dependent or schema-dependent on a bootstrap table that doesn't exist; the rank source diverges from the production `pricempire_item_metadata` table. | Medium — adds a third moving part to a script the operator is supposed to run quarterly. |
 | **C. Defer broad tier until a follow-up phase explicitly designs the bootstrap path.** | Zero new code, zero new data, zero new tables. The featured-tier slot stays empty in production; all surrounding infrastructure (loaders, API responses, bot tier_note copy, exclusion list, scheduler filtering) exercises only by tests with synthetic broad items. | Low — the cost is "we ship two-tier without using both tiers today." |
 
 **Resolution: path C, with the gap documented here.** The bootstrap
@@ -202,7 +202,7 @@ What this ADR resolves about the deferral:
 The gap is shaped so a future phase pays the cost once when it has
 a use case in hand, not now when the use case is hypothetical.
 
-### §3 Addendum (Phase 2c, 2026-05-18) — deferral closed; Path A selected; commit 1 landed rename, commit 2 lands the bulk-seed
+### §3 Addendum (Phase 2c, 2026-05-23) — deferral closed; Path A landed
 
 Phase 2c selected **Path A**: bulk-seed the items table with the
 top ~5,000 Pricempire catalog rows (by rank) so the items table
@@ -243,33 +243,65 @@ Path B variants are rejected in favor of Path A:
   cache pays no operational dividend at this cadence; not
   pre-committed.
 
-Phase 2c implementation lands across two commits:
+Phase 2c implementation landed across two commits:
 
-- **Commit 1 (this commit).** Tier vocabulary renamed
-  `deep / broad / orphan` → `curated / featured / substrate`
-  (schema_version 2→3); `item_unavailability_streak` analytics
-  removed entirely (TODO.md "item_unavailability_streak removal");
-  retrospective addenda on validation + proposal docs; doc
-  sanitize audit; `notes/` gitignored; session-handoff prompts
-  drafted at `notes/slug-v2-session-prompt.md` and
-  `notes/path-a-bulk-seed-session-prompt.md`. Items table is
-  unchanged at 545 rows (42 curated + 500 featured + 3 substrate)
-  from yesterday's Path B v1 bootstrap output; canaries from
-  `docs/phase2b-validation.md §4 / §4.5` continue to hold
-  post-rename.
-- **Commit 2 (pending).** Path A bulk-seed via new
-  `scripts/seed_catalog.py`: single transaction, fail-fast in
-  dry-run on slug collisions, top-5000-by-rank ingestion. Items
-  table grows 545 → ~5,000. Canary re-verification + this §3
-  Addendum gets a final Path-A-implementation update. Full scope
-  + pause-points at `notes/path-a-bulk-seed-session-prompt.md`.
+- **Commit 1.** Tier vocabulary renamed `deep / broad / orphan`
+  → `curated / featured / substrate` (schema_version 2→3);
+  `item_unavailability_streak` analytics removed entirely
+  (TODO.md "item_unavailability_streak removal"); retrospective
+  addenda on validation + proposal docs; doc sanitize audit;
+  `notes/` gitignored. Items table stayed at 545 rows
+  (42 curated + 500 featured + 3 substrate) from the prior Path B v1
+  bootstrap output.
+- **Commit 2.** Path A bulk-seed landed via
+  `scripts/seed_catalog.py`: Pricempire `/v4/paid/items/metas`,
+  top-5,000-by-rank selection after `featured_tier_exclusions`,
+  fail-fast dry-run slug-collision report, and a single DB
+  transaction for inserts. Dry-run parsed 26,150 ranked metas,
+  selected 5,000 candidates, found 545 already present, and planned
+  4,455 inserts. The real run inserted those 4,455 rows, taking
+  `items` 545 → 5,000.
+
+Post-seed verification on 2026-05-23:
+
+- `scripts.seed_catalog --dry-run` became idempotent: 5,000 selected,
+  5,000 already present, 0 inserts planned, 0 slug collisions.
+- `scripts.seed_featured_tier` re-read the DB-source path and
+  produced zero featured-tier composition diff: 500 kept, 0 added,
+  0 re-added, 0 dropped.
+- Service restart picked up the new tier universe. Collector startup
+  logs showed Steam and DMarket at 42 curated items, Skinport at
+  542 curated+featured items, and Pricempire on the DB-backed
+  5,000-row universe. Completion logs: Steam 42 attempted, DMarket
+  42 attempted, Skinport 542 attempted.
+- First post-seed Pricempire cycle: 39,477 items seen, 34,477 skipped
+  (not in `items`), 26,016 `pricempire_observations` rows written
+  across six providers, 3,984 unchanged, 0 unknown providers;
+  metadata wrote 4,455 rows and skipped 545 unchanged rows.
+- Drift stayed curated-only: latest cycle wrote 84 rows over
+  42 distinct curated items; non-curated `drift_verdict` rows since
+  the seed checkpoint were 0.
+- Direct collectors did not advance substrate `observation_log` rows:
+  Steam/Skinport/DMarket substrate advancements since the checkpoint
+  were 0.
+- Cross-source substrate volume since the checkpoint was 0. Moving
+  averages wrote 12 substrate rows over 3 pre-existing substrate
+  items with historical direct prices; no Path-A-created substrate
+  item had direct-price-derived analytics.
+- `item_unavailability_streak` has no table/job in Phase 2c, so the
+  former unbounded-growth canary is retired rather than expected to
+  produce zero rows.
+- Storage remains bounded by existing Timescale compression policy:
+  `pricempire_observations`, `pricempire_item_metadata`, and `prices`
+  all have `compress_after = 30 days`; post-seed detailed size was
+  123 MB for 214,617 Pricempire observation rows and 12 MB for
+  48,732 metadata rows.
 
 The 500-item featured tier in `data/watchlist.yaml` survives both
 commits unchanged — it's the rank-driven popularity layer over
-whichever items table state exists. The "via Path B v1" framing in
-its bootstrap is replaced by "via Path A's pre-seeded catalog
-floor + seed_featured_tier.py's DB-source path" once commit 2
-lands.
+the Path A pre-seeded catalog floor. Its ongoing maintenance remains
+`seed_featured_tier.py`'s DB-source path; Path B v1 is audit history
+only.
 
 Items table state across this transition:
 
@@ -278,8 +310,8 @@ Items table state across this transition:
 | Pre-Phase-2b (May 16) | 48 | 0 | 0 | 48 |
 | Post-Step-7.1 (May 17) | 42 | 0 | 28 | 70 |
 | Post-Path-B-v1 bootstrap (May 18 ~00:40) | 42 | 500 | 3 | 545 |
-| Post-commit-1 (this commit; rename only) | 42 | 500 | 3 | 545 |
-| Post-commit-2 (Path A bulk-seed) | 42 | 500 | ~4,458 | ~5,000 |
+| Post-commit-1 (rename only) | 42 | 500 | 3 | 545 |
+| Post-commit-2 / Path A landed (May 23) | 42 | 500 | 4,458 | 5,000 |
 
 Numbers in the substrate column are the inverse of the YAML's
 tracked-list against the items table; the row count grows with
@@ -295,9 +327,18 @@ ADR 005 §"Consequences" anticipated this exactly:
 > watchlist size we have zero collisions; the constraint will
 > surface any future collision loudly as an insert error.
 
-The bootstrap surfaced one collision pair:
+The first featured-tier bootstrap surfaced one collision pair:
 - `Desert Eagle | Sunset Storm 壱 (Factory New)` (rank 379, "Sunset Storm I")
 - `Desert Eagle | Sunset Storm 弐 (Factory New)` (rank 405, "Sunset Storm II")
+
+The later Path A catalog dry-run surfaced the same slug-v1 failure
+mode in additional wears inside the top-5,000 candidate set:
+- `Desert Eagle | Sunset Storm 壱/弐 (Minimal Wear)`
+- `Desert Eagle | Sunset Storm 壱/弐 (Field-Tested)`
+
+The Battle-Scarred / Well-Worn variants were not all in the current
+top-5,000 together, but they share the same collapse pattern and are
+part of the same slug family.
 
 The slug-v1 algorithm strips non-ASCII characters at step 5
 (`_NON_SLUG_CHAR.sub("", s)`), so 壱 and 弐 both vanish, leaving
@@ -308,12 +349,13 @@ INSERT happened in `scripts/seed_watchlist.py`'s single
 transaction, so the partial-write rolled back cleanly — items
 table state was unchanged after the failed run.
 
-**Resolution (interim):** Both colliding items added to
-`broad_tier_exclusions:` in `data/watchlist.yaml` with a comment
-pointing at slug v2. The seeder filled the freed slots from rank
-537-538 (AUG Syd Mead FT, Desert Eagle Ocean Drive MW). 500
-featured-tier items total, no collisions, items table populated
-cleanly.
+**Resolution (interim):** All ten `Desert Eagle | Sunset Storm 壱/弐`
+wear variants were added to `featured_tier_exclusions:` in
+`data/watchlist.yaml` with a comment pointing at slug v2. The
+featured-tier seeder fills freed slots from the next ranks; the
+catalog seeder fills the top-5,000 substrate from the next ranked
+metas. Current state: 500 featured-tier items total, 5,000 items table
+rows total, no slug collisions.
 
 **Resolution (strategic):** ADR 005 v2 — disambiguation rule for
 non-ASCII characters in slugs. Open follow-up. The exclusion-list
@@ -321,12 +363,10 @@ entries are the natural exit hatch: when slug v2 lands, the
 exclusions get removed, the seeder picks both Sunset Storm wears
 back up at the next run, the items table accepts both inserts.
 
-Only one collision pair surfaced in the 500-item broad set;
-checked exhaustively via Python against the post-bootstrap YAML.
-No other Japanese-character or non-Latin-script items appeared in
-the top-500-by-rank pool. The collision surface scales with
-featured-tier size; at ~500 items it's manageable as an exclusion-list
-operator workflow, but slug v2 closes the door.
+Only the Sunset Storm family surfaced in the top-5,000 Path A set.
+The collision surface scales with catalog size; at 5,000 items it is
+still manageable as an exclusion-list operator workflow, but slug v2
+closes the door.
 
 ## §4. Five decisions
 
@@ -338,7 +378,7 @@ statement of what it is supposed to accomplish, then resolved.
 **What this decision is supposed to accomplish:** establish a single
 source of truth for tier membership so that the loader, the
 scheduler, the analytics pipelines, the API, and the bot all read
-the same view of "which items are deep, broad, or orphan."
+the same view of "which items are curated, featured, or substrate."
 
 **Choice: YAML-only.** Tier membership lives in
 `data/watchlist.yaml`'s per-item `tier:` field. The `items` table
@@ -360,7 +400,7 @@ documenting that the change is YAML-side only.
   collector / API / analytics startup. A future "reduce startup
   cost" optimization can move this without a schema break, but the
   benefit-to-risk ratio today says no.
-- **Separate `broad_tier` table.** Splits broad and deep across two
+- **Separate `featured_tier` table.** Splits featured and curated across two
   storage layers, makes promotion/demotion (§4.D5) require two
   writes, and forces every tier-aware query to UNION.
 
@@ -381,19 +421,19 @@ documenting that the change is YAML-side only.
 
 **What this decision is supposed to accomplish:** define whether
 pattern-sensitivity classification (ADR 021) applies to featured-tier
-items, so that a future operator adding broad items knows what
+items, so that a future operator adding featured items knows what
 classifications mean across tiers.
 
 **Choice: classifier fail-fasts on featured-tier entries.** The
 pattern-sensitivity classifier is meaningful only for items eligible
-for drift detection; drift detection is deep-only (§4.D3); therefore
+for drift detection; drift detection is curated-only (§4.D3); therefore
 a classifier entry on a featured-tier item is dead config and the
 loader rejects it at startup.
 
 **Implementation:**
 `analytics/pattern_classifier.py:build_classifier` (§"Layer 2") raises
 `ValueError` with "tier: featured in data/watchlist.yaml — drift
-detection is deep-only" when a classifier entry's
+detection is curated-only" when a classifier entry's
 market_hash_name appears in `items_set` but not in `curated_set`. This
 is one of three named fail-fast modes (the other two being UNKNOWN
 ITEM and MISSING TIER FIELD).
@@ -407,105 +447,94 @@ intent mismatch immediately; a per-cycle warn would either spam logs
 or get suppressed and miss.
 
 **Rejected alternative: classifier entries silently ignored for
-broad.** Would create a class of dead config that looks alive in
+featured.** Would create a class of dead config that looks alive in
 the YAML, with no feedback loop telling the operator their
 intentions weren't honored.
 
 **Note: `pattern_agnostic` is the implicit default for items not in
 `pattern_sensitivity.yaml`.** A featured-tier item with no classifier
 entry is `pattern_agnostic` by default (multiplier 1.0). This is
-harmless because drift detection never runs against broad items
+harmless because drift detection never runs against featured items
 regardless of classification. The fail-fast applies only to *explicit*
 classifier entries on featured-tier items.
 
 ### §4.D3 Per-insight tier-awareness policy
 
 **What this decision is supposed to accomplish:** define for each
-existing analytics insight type whether it computes against deep
-only, broad-inclusive, or tier-agnostic — so consumers (bot, API)
+existing analytics insight type whether it computes against curated
+only, featured-inclusive, or tier-agnostic — so consumers (bot, API)
 know which insight kinds exist for which tier classes.
 
 **Choice: per-insight rule, applied per tier.** The original
 single-column "tier scope" framing collapsed two distinct
 behaviors — *can the analytics job operate on data that exists at
-all* (the broad question) vs. *does the analytics job stop
-operating on an item once it's dropped from the YAML* (the orphan
+all* (the featured question) vs. *does the analytics job stop
+operating on an item once it's dropped from the YAML* (the substrate
 question). They have different answers per insight type because
-broad has no curated history (computation impossible) while orphan
+featured has no curated history (computation impossible) while substrate
 typically has curated history from its pre-drop curated-tier days
 (computation possible, and currently *happening* per
 `docs/phase2b-validation.md §4.5`).
 
-Three columns, grounded in §4.5's measured 21h-window orphan
+Three columns, grounded in §4.5's measured 21h-window substrate
 volumes:
 
-| Insight type | Deep | Broad | Orphan | §4.5 orphan rows (21h) |
+| Insight type | Curated | Featured | Substrate | §4.5 substrate rows (21h) |
 |---|---|---|---|---|
 | `drift_verdict` | ✓ | ✗ (no curated side) | ✗ filtered by `curated_set` YAML read in `analytics/drift.py:398-414` | 0 (canary, §4.b) |
-| `cross_source_spread` | ✓ | ✗ (curated × curated, both deep-only sources) | **Writes orphan rows** — computes over historical `prices` rows; pre-Step-7.1 deep history is still present. Filter decision deferred (§4.D3-TODO). | **143** |
-| `cross_source_view` | ✓ | Partial (one-row-per-source over whatever sources priced the item) | **Writes orphan rows** — same historical-compute reason as `cross_source_spread` | **160** |
-| `cross_source_divergence` | ✓ | ✗ (built from `cross_source_spread`, inherits curated-only) | **Inherits cross_source_spread's orphan behavior** — derived from spread rows, so will write divergence rows for orphans that produced spreads in the window. Not separately tabulated in §4.5; same filter decision as spread. | (derived) |
-| `moving_avg_7d` / `moving_avg_30d` | ✓ | Tier-agnostic when broad has Pricempire price rows | **Writes orphan rows** — pure historical compute over `prices`. Bounded by window size (no unbounded-growth risk; rolls forward, doesn't accumulate). | **1,288** each |
-| `item_unavailability_streak` | ✓ | Behavior on broad untested (no broad items in production) | **Writes orphan rows AND grows unbounded** — increments every cycle for every (orphan × source) pair where the source hasn't produced an observation recently. Orphans never produce another observation, so the streak counters grow forever. Per-job tier filter needed (§4.D3-TODO). | **6,328** (~2.6M/year projected) |
-| `volume_anomaly` | ✓ | Tier-agnostic when broad has price rows | Same historical-compute story; not separately tabulated in §4.5 | (not measured) |
+| `cross_source_spread` | ✓ | ✗ (curated × curated, both curated-only sources) | **Writes substrate rows** — computes over historical `prices` rows; pre-Step-7.1 curated history is still present. Filter decision deferred (§4.D3-TODO). | **143** |
+| `cross_source_view` | ✓ | Partial (one-row-per-source over whatever sources priced the item) | **Writes substrate rows** — same historical-compute reason as `cross_source_spread` | **160** |
+| `cross_source_divergence` | ✓ | ✗ (built from `cross_source_spread`, inherits curated-only) | **Inherits cross_source_spread's substrate behavior** — derived from spread rows, so will write divergence rows for substrate items that produced spreads in the window. Not separately tabulated in §4.5; same filter decision as spread. | (derived) |
+| `moving_avg_7d` / `moving_avg_30d` | ✓ | Tier-agnostic when featured has Pricempire price rows | **Writes substrate rows** — pure historical compute over `prices`. Bounded by window size (no unbounded-growth risk; rolls forward, doesn't accumulate). | **1,288** each |
+| `item_unavailability_streak` | Removed | Removed | **Removed in Phase 2c** — the prior unbounded substrate-growth risk no longer exists because the analytics job and table are gone. Historical §4.5 measurements remain as rationale for removal. | retired |
+| `volume_anomaly` | ✓ | Tier-agnostic when featured has price rows | Same historical-compute story; not separately tabulated in §4.5 | (not measured) |
 | `news_correlated_move` (future) | ✓ | ✗ (requires curated multi-source view) | TBD when implemented | n/a |
-| Narrative job | Tier-agnostic input, deep-focused output | Reads all `insights` but the daily paragraph naturally surfaces deep because that's where divergence/drift signals live | Reads orphan insight rows transparently; rendering inherits whatever upstream jobs produced | n/a |
+| Narrative job | Tier-agnostic input, curated-focused output | Reads all `insights` but the daily paragraph naturally surfaces curated because that's where divergence/drift signals live | Reads substrate insight rows transparently; rendering inherits whatever upstream jobs produced | n/a |
 
-**§4.D3-TODO — analytics-side orphan filter scope.** Two of the
-five orphan-writing insight types are bounded (the moving-average
-pair rolls forward over a fixed window; the cross-source views
-compute over the same historical window the spreads use). One is
-*unbounded*: `item_unavailability_streak` accumulates one row per
-(orphan × source) per cycle forever. Per §4.5's measurement: 6,328
-rows in 21h ≈ 28 orphans × ~22 cycles × ~10 source-flavors,
-steady-state, not warmup. Projected at ~2.6M rows/year just for
-orphan unavailability streaks today, and that ratio scales linearly
-with orphan count — see §4.D5 and Consequences for the
-broad-population interaction.
-
-A per-job tier filter pass is the right shape of fix (each job
-reads the YAML deep-set at cycle start and skips orphans). The
-work is scoped out of this ADR — three of the five jobs need only
-historical-compute filter decisions (cheap), one needs a
-streak-reset semantic (does dropping an item to orphan reset the
-streak to zero, freeze it at its last value, or stop incrementing?
-each has different downstream consequences). A follow-up TODO
-entry tracks the scoping.
+**§4.D3-TODO status — retired by Phase 2c.** The original load-bearing
+gap was `item_unavailability_streak`: it accumulated one row per
+(orphan × source) per cycle forever. Phase 2c removed that analytics
+job entirely before Path A landed, so the unbounded row-rate no longer
+exists. The remaining substrate-writing insight types are bounded
+historical computes. Path A canary: since the 2026-05-23 seed
+checkpoint, cross-source substrate volume was 0; moving averages wrote
+12 rows over 3 pre-existing substrate items with historical direct
+prices, and no Path-A-created substrate item gained direct-price
+analytics.
 
 **Implementation today:**
 - `analytics/drift.py:compute_and_store` filters items to
   `curated_set = {item["market_hash_name"] for item in watchlist["items"] if item.get("tier") == "curated"}`
-  at cycle start. Zero `drift_verdict` rows for non-deep items by
+  at cycle start. Zero `drift_verdict` rows for non-curated items by
   construction. The validation doc's regression canary
   (`docs/phase2b-validation.md §4.b / §4.5`) checks this invariant
   continues to hold across cycles.
 - `analytics/anomaly_detection.py` (cross_source_spread /
   divergence) iterates source pairs and filters by source-side
-  only — orphans with pre-drop curated history continue producing
-  rows. Empirically 143 spread rows / 21h for orphans per §4.5;
-  the structural broad-exclusion holds, the orphan-exclusion does
+  only — substrate items with pre-drop curated history continue producing
+  rows. Empirically 143 spread rows / 21h for substrate per §4.5;
+  the structural featured-exclusion holds, the substrate-exclusion does
   not.
 - `analytics/cross_source.py` (cross_source_view) — same shape;
-  160 orphan rows / 21h per §4.5.
+  160 substrate rows / 21h per §4.5.
 - `analytics/moving_averages.py` — source-agnostic and
-  tier-agnostic by design; 1,288 + 1,288 = 2,576 orphan rows / 21h
+  tier-agnostic by design; 1,288 + 1,288 = 2,576 substrate rows / 21h
   per §4.5. Window-bounded so doesn't accumulate.
-- `analytics/unavailability_streak.py` — no tier filter; orphan
-  rows grow unbounded. **This is the load-bearing gap.**
+- `analytics/unavailability_streak.py` — removed in Phase 2c.
 
 **Rejected alternative: gate every insight type on `tier == "curated"`
 unconditionally.** Would suppress legitimate moving-average and
-volume-anomaly signals on broad items — both *can* be computed
+volume-anomaly signals on featured items — both *can* be computed
 meaningfully on Pricempire-only data. The per-job decision matters
-because broad and orphan have structurally different data
+because featured and substrate have structurally different data
 availability.
 
 ### §4.D4 API and bot surface for tier
 
 **What this decision is supposed to accomplish:** ensure the read
 API and the bot surface tier as a first-class field so consumers
-can distinguish data-quality differences (deep has multi-source
-curated data + drift; broad has Pricempire-only; orphan has only
+can distinguish data-quality differences (curated has multi-source
+curated data + drift; featured has Pricempire-only; substrate has only
 history) without parsing display names or guessing from absence of
 fields.
 
@@ -537,13 +566,13 @@ fields.
   framing (ADR 016 rationale).
 
 **Why three values and not two:**
-"Orphan" is observationally distinct from both deep and broad. A
-deep item has a curated cross-source view today. A broad item has
-Pricempire-only view today. An orphan item has *no current data*
-but may have historical prices, drift verdicts, and observation
-logs accumulated before it was dropped from the YAML. Collapsing
-orphan into broad would tell the bot "we track this with less
-detail" when the truth is "we no longer track this at all."
+"Substrate" is observationally distinct from both curated and featured. A
+curated item has a curated cross-source view today. A featured item has
+Pricempire-only view today. A substrate item has no YAML membership
+but may have historical prices, drift verdicts, and observation logs
+accumulated before it was dropped from the YAML. Collapsing substrate
+into featured would tell the bot "we track this with less detail" when
+the truth is "this is catalog substrate, not an active watchlist row."
 
 **Why bot copy is pre-composed instead of LLM-generated:**
 ADR 016's defensive-handling rationale: the abliterated Qwen3
@@ -561,20 +590,20 @@ disappears across the moves.
 
 **Choice:** three movement rules, applied independently.
 
-**Deep ↔ broad (operator-edited).**
-- Deep tier is editorial. `scripts/watchlist_edit.py` or hand edit
-  of the `items:` block in YAML, then `git commit`. The seeder
-  (`seed_broad_tier.py`) NEVER touches deep tier — its allow-list
-  is broad only.
-- A deep item demoted to broad just changes its `tier:` field. The
+**Curated ↔ featured (operator-edited).**
+- Curated tier is editorial. `scripts/watchlist_edit.py` or hand edit
+  of the `items:` block in YAML, then `git commit`. The featured-tier
+  seeder (`scripts/seed_featured_tier.py`) NEVER touches curated tier
+  — its allow-list is featured only.
+- A curated item demoted to featured just changes its `tier:` field. The
   next scheduler restart stops Steam + DMarket polls for that item;
   Skinport + Pricempire continue. Existing prices / drift rows /
   observation_log rows in the DB are preserved.
-- A broad item promoted to deep gains Steam + DMarket polls on the
+- A featured item promoted to curated gains Steam + DMarket polls on the
   next scheduler restart; the items table already has the row
-  (featured-tier seed wrote it via `seed_watchlist.py`'s
+  (featured-tier seeding or Path A catalog seeding wrote it via
   `ON CONFLICT DO NOTHING`).
-- **Operator checklist on broad → deep promotion** (not enforced by
+- **Operator checklist on featured → curated promotion** (not enforced by
   code today; a future `scripts/watchlist_edit.py` enhancement
   could automate the first item):
   - Add `dmarket_alias:` entries if the canonical Steam name
@@ -590,20 +619,21 @@ disappears across the moves.
     (Dopplers, Marble Fade, etc.) need a `phase_based`
     classification to avoid spurious drift_alerts.
 
-**Broad tier (seeder-driven, rank-based).**
-- `seed_broad_tier.py` reads
+**Featured tier (seeder-driven, rank-based).**
+- `scripts/seed_featured_tier.py` reads
   `pricempire_item_metadata` for rank-DESC and picks top-N filtered
-  by deep-set + `broad_tier_exclusions:`. Idempotent under stable
-  inputs.
-- A broad item dropped from the seeded output (rank fell out of
+  by curated-set + `featured_tier_exclusions:`. Idempotent under
+  stable inputs. After Path A, its DB source is backed by the
+  top-5,000 catalog substrate rather than only the already-YAML
+  population.
+- A featured item dropped from the seeded output (rank fell out of
   top-N, or operator added it to exclusions) is removed from the
   YAML's `items:` block. The DB row is **preserved** — it becomes
-  an orphan. **Once §4.D3's orphan-filter gap is closed (or
-  while it remains open), each drop adds to the orphan population
-  that `item_unavailability_streak` accumulates rows against
-  forever**; see Consequences for the projected scale once broad
-  is populated.
-- A broad item re-introduced by the seeder (rank climbed back, or
+  substrate. The former `item_unavailability_streak` unbounded-growth
+  concern is retired because the job was removed in Phase 2c; bounded
+  historical analytics may continue for substrate items that have old
+  direct-price history.
+- A featured item re-introduced by the seeder (rank climbed back, or
   exclusion removed) is `ON CONFLICT DO NOTHING`-upserted into
   items; existing historical rows in `prices` /
   `pricempire_observations` / `observation_log` / `insights` are
@@ -623,28 +653,28 @@ disappears across the moves.
   Their rows in `prices`, `pricempire_observations`, `observation_log`,
   `pricempire_observation_log`, `pricempire_item_metadata`, and
   `insights` remain queryable.
-- Collectors do NOT poll orphans:
+- Direct collectors do NOT poll substrate:
   - `collectors/scheduler.py:_load_watchlist` reads the YAML, not
-    the items table, so orphan rows are silently dropped from the
-    per-cycle poll list.
+    the items table, so substrate rows are silently dropped from the
+    direct per-cycle poll list.
   - Pricempire's `collect_snapshot` reads the items table directly
-    (preserving orphan refresh via the bulk call) — but the dedup
-    gate suppresses identical re-writes, so orphans on a stable
-    Pricempire response add zero rows.
-- The bot's orphan envelope copy points to the sibling curated-tier
+    (preserving substrate refresh via the bulk call) — but the dedup
+    gate suppresses identical re-writes, so stable substrate responses
+    add zero rows.
+- The bot's substrate envelope copy points to the sibling curated-tier
   wear when one exists (e.g. "USP-S | Neo-Noir (Factory New)" is
-  orphan; "USP-S | Neo-Noir (Field-Tested)" is the active deep wear
+  substrate; "USP-S | Neo-Noir (Field-Tested)" is the active curated wear
   → bot suggests the active wear).
 
-**Rejected alternative: orphan-cleanup migration.** Would delete
+**Rejected alternative: substrate-cleanup migration.** Would delete
 historical data for items the operator might later re-curate.
 Preservation is cheap (rows are small); reversal-by-history-loss is
 not.
 
-**Rejected alternative: explicit `tier: orphan` in YAML.** Would
+**Rejected alternative: explicit `tier: substrate` in YAML.** Would
 require an operator-visible state for items they've already removed
 from the YAML, which defeats the point of removal. The
-"present-in-items-absent-from-YAML" diff is the orphan state by
+"present-in-items-absent-from-YAML" diff is the substrate state by
 construction.
 
 ## Consequences
@@ -659,7 +689,7 @@ construction.
   set; the type system enforces exhaustiveness at every consumer
   (`bot/tools.py:_attach_tier_envelope`, `api/routes/drift.py`,
   etc.).
-- **Pro:** Orphan preservation makes "re-add a previously curated
+- **Pro:** Substrate preservation makes "re-add a previously curated
   item" a one-line YAML edit; no data migration, no insert.
 - **Pro:** The Doppler re-introduction (proposal exclusion →
   shipped via `phase_based` classifier) is a working precedent for
@@ -673,40 +703,37 @@ construction.
   test-coverage-only situation flagged as a con in the original
   draft is closed.
 - **Pro (Phase 2c update):** Bootstrap chicken-and-egg (§3
-  Addendum) is closed by Path A — once commit 2 lands, the
-  items table is the catalog substrate (~5,000 rows) and the
-  YAML-tier-membership-vs-items-table chicken-and-egg gap that
-  motivated path A/B/C deliberation evaporates. Until commit 2
-  lands, the items table still reflects yesterday's Path B v1
-  bootstrap output (545 rows); commit 2 grows it to ~5,000.
+  Addendum) is closed by Path A. The items table is now the catalog
+  substrate (5,000 rows), and the YAML-tier-membership-vs-items-table
+  chicken-and-egg gap that motivated path A/B/C deliberation
+  evaporates.
+- **Pro (classifier safety):** The pattern classifier still vetoes
+  non-curated explicit entries. Bulk-seeded substrate rows do not
+  broaden drift scope; `drift_verdict` remained 84 rows over
+  42 curated items after Path A, with zero non-curated drift rows.
+- **Pro (storage):** The catalog substrate is cheap at current scale.
+  Post-seed `items` was ~2 MB; Pricempire observations were
+  214,617 rows / 123 MB and metadata 48,732 rows / 12 MB. Both
+  Pricempire hypertables have 30-day Timescale compression policies,
+  so the large-ish first Path A cycle is storage-manageable.
 - **Con:** YAML-as-source-of-truth means a service restart is
   required after every tier change. The cost is real but matches
   the rest of the project's YAML reload discipline (ADR 012 §7,
   ADR 022 §2.6).
-- **Con (operationally subtle):** "Orphan" is computed at read
+- **Con (operationally subtle):** "Substrate" is computed at read
   time, so an item's tier can change without any DB write — just
   by editing the YAML. Investigators reading the DB in isolation
-  see no signal that an item is orphan; they need to cross-
+  see no signal that an item is substrate; they need to cross-
   reference the YAML. The ARCHITECTURE.md tone-and-style guidance
   ("state in one sentence what the app is supposed to do") applies:
   if you're debugging a "why isn't this polled" symptom, the first
   question is "is it in the YAML?", not "is it in the DB?".
-- **Con (known operational debt — unbounded orphan growth in
-  `item_unavailability_streak`).** §4.D3's table flags the
-  load-bearing gap: the unavailability-streak job has no tier
-  filter and writes one row per (orphan × source) per cycle
-  forever. Today's 28 orphans produce ~2.6M rows/year (§4.5
-  measured baseline). The interaction with §4.D5's broad-to-orphan
-  flow makes this worse: once the broad tier is populated (Phase
-  2c) and the seeder runs quarterly with ~5-10% rank churn, each
-  refresh drops 25-50 broad items into orphan state, and each new
-  orphan adds ~93k rows/year to the unavailability_streak counter
-  set. Two quarterly cycles past featured-tier launch and the orphan
-  population — and the row-rate — could double. The fix is a
-  per-job tier filter (§4.D3-TODO); the cost of NOT fixing is row
-  count, not correctness. Phase 2c should treat the streak filter
-  as adjacent-scope work even if not formally bundled with
-  bootstrap.
+- **Con (bounded historical analytics still see old substrate).**
+  Removing `item_unavailability_streak` retired the unbounded growth
+  problem, but bounded jobs still compute over historical direct
+  prices. Path A canary saw 12 moving-average rows over 3 pre-existing
+  substrate items; cross-source substrate volume was 0, and
+  Path-A-created substrate had no direct-price analytics.
 - **Failure mode (YAML corruption):** A malformed YAML (missing
   schema_version, invalid tier value, missing market_hash_name)
   fails fast at collector / api / analytics startup with a
@@ -717,19 +744,17 @@ construction.
 ## Open follow-ups
 
 - **~~Bootstrap design (path A vs B vs C-permanent).~~** ✓ Phase 2c
-  selected Path A (§3 Addendum). Commit 1 (this commit) landed the
-  rename groundwork; commit 2 (handoff prompt at
-  `notes/path-a-bulk-seed-session-prompt.md`) executes the bulk-
-  seed. Path B v1 was the working prior approach (yesterday's
-  session) and is preserved as audit history in §3 Addendum's
+  selected and landed Path A (§3 Addendum). Path B v1 was the working
+  prior approach and is preserved as audit history in §3 Addendum's
   "Path B variants are rejected" framing. Path B v2 remains an
   unexercised future-revisit option; not pre-committed.
 - **Slug algorithm v2 (ADR 005 v2 follow-up).** The Phase 2c
   bootstrap surfaced exactly the collision class ADR 005's
   Consequences section anticipated: two distinct
   market_hash_names (`Sunset Storm 壱` / `Sunset Storm 弐` Factory
-  New) collapsing to one slug because `slugify` strips non-ASCII.
-  Interim fix is two entries in `broad_tier_exclusions:`. The
+  New) collapsing to one slug because `slugify` strips non-ASCII;
+  Path A found the same family in more wears. Interim fix is ten
+  entries in `featured_tier_exclusions:`. The
   strategic fix is a v2 algorithm that disambiguates non-ASCII
   characters (Japanese ranks, future Cyrillic / Arabic /
   emoji item names from third-party content). ADR 005 specifies
@@ -739,26 +764,20 @@ construction.
   deferred this pending characterization of the Steam collector's
   behavior on non-skin item types (stickers, music kits, patches).
   Out of scope for two-tier; lives in the Tier 4 backlog.
-- **Per-featured-tier insight types when broad has items.** §4.D3's
-  rule is per-insight today; revisit when the broad tier has rows
-  whether per-source moving averages on Pricempire-only data
-  produce signal worth surfacing in the bot. May want a separate
-  rendering channel ("Pricempire-only view") vs. the current
-  uniform price-per-source rendering.
-- **§4.D3-TODO — analytics-side orphan tier filter.** Five insight
-  types currently write rows for orphan items
-  (`cross_source_spread`, `cross_source_view`,
-  `cross_source_divergence` derived, `moving_avg_7d` /
-  `moving_avg_30d`, `item_unavailability_streak`). Four are
-  bounded; `item_unavailability_streak` is unbounded and
-  load-bearing. Per-job filter pass needed. Streak-reset semantic
-  is the design question — does demotion to orphan reset the
-  counter to zero, freeze at last-seen, or stop incrementing?
-  Each has downstream consequences for the bot's
-  `query_unavailability_streak` rendering.
-- **Orphan-cleanup tooling (operator-triggered, never automatic).**
-  Long-tail orphans accumulating may eventually be worth a
-  `scripts/prune_orphans.py` that deletes items + their historical
+- **Per-featured-tier insight types now that featured has items.**
+  §4.D3's rule is per-insight today; revisit whether per-source
+  moving averages on Pricempire-only data produce signal worth
+  surfacing in the bot. May want a separate rendering channel
+  ("Pricempire-only view") vs. the current uniform price-per-source
+  rendering.
+- **Substrate historical-analytics filter (bounded only).**
+  `item_unavailability_streak` is gone, so there is no unbounded
+  substrate row-rate. The remaining question is whether bounded
+  historical jobs should keep writing for substrate items that have
+  old direct prices.
+- **Substrate-cleanup tooling (operator-triggered, never automatic).**
+  Long-tail substrate may eventually be worth a
+  `scripts/prune_substrate.py` that deletes items + their historical
   rows. Out of scope today; the cost of preservation is small.
 - **DMarket alias map (`dmarket_alias:` field) doc.** The
   `seed_watchlist.py:load_watchlist` validates the field's shape
