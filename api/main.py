@@ -30,6 +30,7 @@ Endpoints:
 - ``GET  /items/{slug}/chart``   — PNG chart, one source × N days
 - ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
+- ``POST /alerts/price``         — create/list/evaluate price alerts
 - ``POST /asset-valuations/inventory`` — public-inventory market baseline
 - ``POST /asset-valuations/inventory/summary`` — portfolio market baseline
 """
@@ -42,6 +43,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from api.auth import require_token
 from api.routes import (
+    alerts,
     asset_valuation,
     charts,
     deals,
@@ -75,6 +77,7 @@ app.include_router(history.router, dependencies=_auth)
 app.include_router(insights.router, dependencies=_auth)
 app.include_router(charts.router, dependencies=_auth)
 app.include_router(deals.router, dependencies=_auth)
+app.include_router(alerts.router, dependencies=_auth)
 app.include_router(drift.router, dependencies=_auth)
 app.include_router(asset_valuation.router, dependencies=_auth)
 

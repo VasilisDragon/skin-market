@@ -848,6 +848,116 @@ def market_baseline_inspect_link(inspect_url: str) -> dict:
         return resp.json()
 
 
+def create_price_alert(
+    slug: str,
+    direction: str,
+    threshold_price: str,
+    currency: str = "usd",
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Create one persistent Discord-owned price alert."""
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for price alert.")
+    payload = {
+        "discord_user_id": discord_user_id,
+        "discord_channel_id": discord_channel_id,
+        "slug": slug,
+        "direction": direction,
+        "threshold_price": threshold_price,
+        "currency": currency,
+    }
+    with _client() as c:
+        try:
+            resp = c.post("/alerts/price", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /alerts/price: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError(
+                f"Item not found for alert: {slug!r}."
+            )
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /alerts/price: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def list_price_alerts(
+    include_inactive: bool = False,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """List persistent price alerts for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for price alerts.")
+    with _client() as c:
+        raw = _get_json(
+            c,
+            "/alerts/price",
+            params={
+                "discord_user_id": discord_user_id,
+                "include_inactive": include_inactive,
+            },
+        )
+    return {"alerts": raw, "count": len(raw)}
+
+
+def cancel_price_alert(
+    alert_id: str,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Cancel one persistent price alert owned by the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError("Missing Discord user context for price alerts.")
+    payload = {"discord_user_id": discord_user_id}
+    with _client() as c:
+        try:
+            resp = c.post(f"/alerts/price/{alert_id}/cancel", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /alerts/price/{alert_id}/cancel: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Alert not found for your Discord user.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /alerts/price/{alert_id}/cancel: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def evaluate_triggered_price_alerts(limit: int = 100) -> dict:
+    """Evaluate active price alerts and return newly triggered rows."""
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post("/alerts/price/evaluate", json={"limit": limit})
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /alerts/price/evaluate: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /alerts/price/evaluate: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def narrative_today() -> dict:
     """Latest daily narrative. The ``text`` field is bounded (one
     English paragraph) and passes through unchanged; the ``meta``
@@ -1215,6 +1325,82 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "create_price_alert",
+            "description": (
+                "Call this when the user asks to alert, notify, or remind "
+                "them when a tracked item's price reaches a threshold. "
+                "Use at_or_below for buy/drop alerts and at_or_above for "
+                "rise/sell alerts. Discord user/channel context is injected "
+                "by the bot; do not ask the user for IDs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "Tracked item slug.",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["at_or_below", "at_or_above"],
+                    },
+                    "threshold_price": {
+                        "type": "string",
+                        "description": "Decimal threshold, e.g. 25.50.",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": ["usd", "wallet_credit"],
+                        "description": "usd for dollars; wallet_credit for SC.",
+                    },
+                },
+                "required": ["slug", "direction", "threshold_price"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_price_alerts",
+            "description": (
+                "Call this when the user asks what price alerts they have "
+                "set or wants to list active alerts."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_inactive": {
+                        "type": "boolean",
+                        "description": "Include triggered/cancelled alerts when true.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_price_alert",
+            "description": (
+                "Call this when the user asks to delete, cancel, or remove "
+                "one of their price alerts by alert id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "alert_id": {
+                        "type": "string",
+                        "description": "Alert id returned by list_price_alerts.",
+                    }
+                },
+                "required": ["alert_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "market_baseline_inventory_item",
             "description": (
                 "Call this when the user pastes a Steam public inventory "
@@ -1350,6 +1536,9 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "market_baseline_inventory_item": market_baseline_inventory_item,
     "market_baseline_inventory_summary": market_baseline_inventory_summary,
     "market_baseline_inspect_link": market_baseline_inspect_link,
+    "create_price_alert": create_price_alert,
+    "list_price_alerts": list_price_alerts,
+    "cancel_price_alert": cancel_price_alert,
     "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,

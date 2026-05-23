@@ -44,18 +44,26 @@ References checked:
 - Added optional DeepSeek rolling budget guards:
   - `DEEPSEEK_DAILY_COST_LIMIT_USD`,
   - `DEEPSEEK_DAILY_USER_COST_LIMIT_USD`.
+- Added persistent Discord price alerts:
+  - `POST /alerts/price`, `GET /alerts/price`,
+    `POST /alerts/price/{alert_id}/cancel`, and
+    `POST /alerts/price/evaluate`,
+  - hidden Discord user/channel context injection for create/list/cancel tools,
+  - an API-side deterministic threshold evaluator,
+  - a background Discord delivery loop that sends triggered alerts without an
+    LLM call.
 
 ## Next features worth building
 
-1. Persistent price alerts.
-   This is the most obvious paid-value gap. Users expect target alerts,
-   price-drop alerts, and market-mover alerts. It needs a DB table, hidden
-   Discord user/channel context, quota policy, and a bot delivery loop.
-
-2. Portfolio snapshots over time.
+1. Portfolio snapshots over time.
    The summary tool is stateless. Paid users will eventually expect daily
    inventory snapshots, P/L, item performance, and value-change alerts. This
    needs privacy/retention decisions before storing user inventories.
+
+2. Alert hardening and quotas.
+   The first persistent-alert pass lacks a delivery outbox and per-user quotas.
+   Production paid tiers should add retry-safe delivery state, quota/entitlement
+   checks, quiet hours, and market-mover/drop alert variants.
 
 3. Real asset-specific repricing.
    Float, pattern, sticker, and charm premiums are the differentiator for

@@ -28,6 +28,7 @@ import httpx
 import pytest
 
 from bot import deepseek_client, discord_render
+from bot.price_alert_delivery import format_price_alert_message
 from bot.tools import (
     HISTORY_DOWNSAMPLE_THRESHOLD,
     TOOL_DEFINITIONS,
@@ -39,7 +40,10 @@ from bot.tools import (
     Attachment,
     ItemNotInWatchlistError,
     _refresh_items_cache,
+    cancel_price_alert,
+    create_price_alert,
     evaluate_deal,
+    list_price_alerts,
     list_watchlist,
     market_baseline_inspect_link,
     market_baseline_inventory_item,
@@ -99,6 +103,9 @@ class TestToolsRegistry:
             "query_price_history",
             "render_chart",
             "evaluate_deal",
+            "create_price_alert",
+            "list_price_alerts",
+            "cancel_price_alert",
             "market_baseline_inventory_item",
             "market_baseline_inventory_summary",
             "market_baseline_inspect_link",
@@ -263,6 +270,84 @@ class TestToolsAuthAndConnectivity:
                 "https://steamcommunity.com/profiles/76561199276192848/inventory/"
             )
         }
+
+    def test_create_price_alert_wraps_api_route(self, httpx_mock) -> None:
+        payload = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "slug": "ak-47-redline-field-tested",
+            "display_name": "AK-47 | Redline (Field-Tested)",
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": None,
+            "triggered_at": None,
+            "trigger_price": None,
+            "trigger_source": None,
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/alerts/price",
+            json=payload,
+        )
+
+        result = create_price_alert(
+            slug="ak-47-redline-field-tested",
+            direction="at_or_below",
+            threshold_price="25.00",
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "slug": "ak-47-redline-field-tested",
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+        }
+
+    def test_list_and_cancel_price_alerts_wrap_api_routes(self, httpx_mock) -> None:
+        alert_id = "11111111-1111-1111-1111-111111111111"
+        alert = {
+            "id": alert_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "slug": "ak-47-redline-field-tested",
+            "display_name": "AK-47 | Redline (Field-Tested)",
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+            "status": "active",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": None,
+            "triggered_at": None,
+            "trigger_price": None,
+            "trigger_source": None,
+        }
+        httpx_mock.add_response(
+            method="GET",
+            url=f"{_BASE}/alerts/price?discord_user_id=1234&include_inactive=false",
+            json=[alert],
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/alerts/price/{alert_id}/cancel",
+            json={**alert, "status": "cancelled"},
+        )
+
+        listed = list_price_alerts(discord_user_id="1234")
+        cancelled = cancel_price_alert(alert_id, discord_user_id="1234")
+
+        assert listed == {"alerts": [alert], "count": 1}
+        assert cancelled["status"] == "cancelled"
 
 
 class TestQueryCurrentPriceComposer:
@@ -2032,6 +2117,62 @@ class TestDeepSeekClientSingleToolCall:
         assert reply.attachment.content.startswith(b"\x89PNG")
         assert "chart" in reply.text.lower()
 
+    async def test_price_alert_tool_receives_hidden_discord_context(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/alerts/price",
+            json={
+                "id": "11111111-1111-1111-1111-111111111111",
+                "discord_user_id": "1234",
+                "discord_channel_id": "5678",
+                "slug": "ak-47-redline-field-tested",
+                "display_name": "AK-47 | Redline (Field-Tested)",
+                "direction": "at_or_below",
+                "threshold_price": "25.00",
+                "currency": "usd",
+                "status": "active",
+                "created_at": "2026-05-23T00:00:00Z",
+                "last_checked_at": None,
+                "triggered_at": None,
+                "trigger_price": None,
+                "trigger_source": None,
+            },
+        )
+        client = _scripted_client(
+            [
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "create_price_alert",
+                            {
+                                "slug": "ak-47-redline-field-tested",
+                                "direction": "at_or_below",
+                                "threshold_price": "25.00",
+                            },
+                        )
+                    ]
+                ),
+                _make_msg(content="Alert set."),
+            ]
+        )
+
+        reply = await deepseek_client.handle_user_message(
+            "alert me when AK Redline FT drops below $25",
+            client=client,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content)["discord_user_id"] == "1234"
+        assert json.loads(request.content)["discord_channel_id"] == "5678"
+        assert reply.text == "Alert set."
+
 
 class TestDeepSeekClientDefensive:
     """Open-source model failure modes that must NOT crash the bot."""
@@ -2260,6 +2401,26 @@ class TestAttachmentToFile:
         file = discord_render.attachment_to_file(att)
         assert isinstance(file, discord.File)
         assert file.filename == "test.png"
+
+
+class TestPriceAlertDelivery:
+    def test_formats_triggered_price_alert_message(self) -> None:
+        text = format_price_alert_message(
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "display_name": "AK-47 | Redline (Field-Tested)",
+                "direction": "at_or_below",
+                "threshold_price": "25.00",
+                "currency": "usd",
+                "trigger_price": "24.00",
+                "trigger_source": "skinport",
+            }
+        )
+
+        assert "Price alert triggered: AK-47 | Redline (Field-Tested)" in text
+        assert "Target: at or below 25.00 USD" in text
+        assert "Current: 24.00 USD on skinport" in text
+        assert "Alert id: `11111111-1111-1111-1111-111111111111`" in text
 
 
 class TestSystemPrompt:

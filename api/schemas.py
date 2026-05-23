@@ -49,6 +49,8 @@ Denomination = Literal["usd", "wallet_credit"]
 # where the items table is bulk-populated and the YAML's tracked-list
 # is the editorial overlay.
 Tier = Literal["curated", "featured", "substrate"]
+AlertDirection = Literal["at_or_below", "at_or_above"]
+AlertStatus = Literal["active", "triggered", "cancelled"]
 
 
 class Item(BaseModel):
@@ -214,6 +216,53 @@ class InventorySummaryResponse(BaseModel):
     top_items: list[dict[str, Any]]
     largest_spread_items: list[dict[str, Any]]
     unpriced_sample: list[dict[str, Any]]
+
+
+class PriceAlertCreateRequest(BaseModel):
+    """Create one persistent Discord-owned price alert."""
+
+    discord_user_id: str
+    discord_channel_id: str | None = None
+    slug: str
+    direction: AlertDirection
+    threshold_price: MoneyStr
+    currency: Denomination = "usd"
+
+
+class PriceAlertCancelRequest(BaseModel):
+    """Cancel an active alert, scoped to the requesting Discord user."""
+
+    discord_user_id: str
+
+
+class PriceAlertEvaluateRequest(BaseModel):
+    """Evaluate active alerts and mark newly triggered rows."""
+
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class PriceAlertResponse(BaseModel):
+    """Persistent alert row as returned by the API."""
+
+    id: str
+    discord_user_id: str
+    discord_channel_id: str | None
+    slug: str
+    display_name: str
+    direction: AlertDirection
+    threshold_price: MoneyStr
+    currency: Denomination
+    status: AlertStatus
+    created_at: datetime
+    last_checked_at: datetime | None
+    triggered_at: datetime | None
+    trigger_price: MoneyStr | None
+    trigger_source: str | None
+
+
+class PriceAlertEvaluateResponse(BaseModel):
+    checked_count: int
+    triggered: list[PriceAlertResponse]
 
 
 class HistoryObservation(BaseModel):

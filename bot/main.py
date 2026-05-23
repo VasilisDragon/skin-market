@@ -32,6 +32,7 @@ messages from them are silently ignored.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -47,6 +48,7 @@ from bot.discord_render import (
     is_allowed,
     strip_bot_mention,
 )
+from bot.price_alert_delivery import price_alert_delivery_loop
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,7 @@ def build_client() -> discord.Client:
 
     client = discord.Client(intents=intents)
     allowlist = get_allowlist_from_env()
+    price_alert_task: asyncio.Task | None = None
     # In-memory note: users we've already told "not authorized" once
     # this process; we suppress further replies to them to avoid
     # spam if they keep poking.
@@ -94,6 +97,7 @@ def build_client() -> discord.Client:
 
     @client.event
     async def on_ready() -> None:  # type: ignore[misc]
+        nonlocal price_alert_task
         logger.info(
             "Bot connected as %s (id=%s); allowlist size=%d",
             client.user,
@@ -105,6 +109,8 @@ def build_client() -> discord.Client:
                 "DISCORD_ALLOWED_USER_IDS is empty — bot will "
                 "refuse every message until configured."
             )
+        if price_alert_task is None or price_alert_task.done():
+            price_alert_task = asyncio.create_task(price_alert_delivery_loop(client))
 
     @client.event
     async def on_message(message: discord.Message) -> None:  # type: ignore[misc]
@@ -154,6 +160,7 @@ def build_client() -> discord.Client:
             reply = await handle_user_message(
                 query,
                 discord_user_id=str(message.author.id),
+                discord_channel_id=str(message.channel.id),
             )
 
         file = (

@@ -47,6 +47,14 @@ or missing pairs.
 - `evaluate_deal`: "is $X fair", "should I pay X", "worth X". Pass decimal
   amount as a string; use `usd` for dollars and `wallet_credit` for Steam
   wallet credit / SC.
+- `create_price_alert`: "alert me", "notify me", "tell me when", price target,
+  drop, or rise requests for tracked item slugs. Convert dollars to `usd` and
+  Steam wallet credit / SC to `wallet_credit`. Use `at_or_below` for buy/drop
+  targets and `at_or_above` for rise/sell targets. Do not ask for Discord user
+  or channel ids; the bot injects them.
+- `list_price_alerts`: list/show my alerts.
+- `cancel_price_alert`: cancel/remove/delete an alert when the user gives an
+  alert id.
 - `market_baseline_inventory_item`: public Steam inventory item links, exact
   asset attributes, or market-baseline questions for a pasted inventory asset.
   Render in this order: `message`, asset float/seed/stickers, then

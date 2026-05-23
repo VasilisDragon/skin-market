@@ -46,6 +46,8 @@ DISCORD_BOT_TOKEN=<the token from step 1>
 DISCORD_ALLOWED_USER_IDS=<your user ID>          # single user
 # or
 DISCORD_ALLOWED_USER_IDS=<id1>,<id2>,<id3>       # multiple users
+PRICE_ALERT_POLL_SECONDS=60
+PRICE_ALERT_BATCH_LIMIT=100
 
 # Already set from Phase 6.6 — leave as is:
 SKIN_MARKET_API_TOKEN=<unchanged>

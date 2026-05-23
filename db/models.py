@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -343,3 +344,49 @@ class LLMUsageLog(Base):
     prompt_preview: Mapped[str] = mapped_column(Text, nullable=False)
     full_prompt: Mapped[str | None] = mapped_column(Text)
     raw_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class PriceAlert(Base):
+    """Persistent Discord-owned price alert subscription."""
+
+    __tablename__ = "price_alerts"
+    __table_args__ = (
+        CheckConstraint(
+            "currency IN ('usd', 'wallet_credit')",
+            name="ck_price_alerts_currency",
+        ),
+        CheckConstraint(
+            "direction IN ('at_or_below', 'at_or_above')",
+            name="ck_price_alerts_direction",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'triggered', 'cancelled')",
+            name="ck_price_alerts_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    discord_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[str | None] = mapped_column(Text)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
+    slug_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    currency: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(Text, nullable=False)
+    threshold_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'active'")
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trigger_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    trigger_source: Mapped[str | None] = mapped_column(Text)

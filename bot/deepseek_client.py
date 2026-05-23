@@ -33,6 +33,13 @@ DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_V4_FLASH_MODEL
 DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 120.0
 MAX_TOOL_CALLS: int = 5
+CONTEXT_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "create_price_alert",
+        "list_price_alerts",
+        "cancel_price_alert",
+    }
+)
 
 
 class DeepSeekError(RuntimeError):
@@ -220,7 +227,13 @@ def _serialize_tool_result(result) -> str:
     return str(result)
 
 
-async def _execute_tool(name: str, args: dict) -> tuple[str, Attachment | None]:
+async def _execute_tool(
+    name: str,
+    args: dict,
+    *,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> tuple[str, Attachment | None]:
     fn = TOOL_FUNCTIONS.get(name)
     if fn is None:
         logger.warning("DeepSeek requested unknown tool %r; arguments=%r", name, args)
@@ -229,6 +242,13 @@ async def _execute_tool(name: str, args: dict) -> tuple[str, Attachment | None]:
             f"{', '.join(sorted(TOOL_FUNCTIONS))}.",
             None,
         )
+
+    if name in CONTEXT_TOOL_NAMES:
+        args = {
+            **args,
+            "discord_user_id": discord_user_id,
+            "discord_channel_id": discord_channel_id,
+        }
 
     try:
         result = await asyncio.to_thread(fn, **args)
@@ -285,6 +305,7 @@ async def handle_user_message(
     *,
     client: DeepSeekChatClient | None = None,
     discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
 ) -> BotReply:
     """Run the tool-use loop for one user message."""
     client = client or DeepSeekChatClient(discord_user_id=discord_user_id)
@@ -344,7 +365,12 @@ async def handle_user_message(
             raw_args = _field(func, "arguments")
             args = _normalize_arguments(raw_args)
 
-            tool_result, maybe_attachment = await _execute_tool(name, args)
+            tool_result, maybe_attachment = await _execute_tool(
+                name,
+                args,
+                discord_user_id=discord_user_id,
+                discord_channel_id=discord_channel_id,
+            )
             if maybe_attachment is not None:
                 attachment = maybe_attachment
 
