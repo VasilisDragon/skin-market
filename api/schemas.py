@@ -218,6 +218,56 @@ class InventorySummaryResponse(BaseModel):
     unpriced_sample: list[dict[str, Any]]
 
 
+class PortfolioSnapshotCreateRequest(BaseModel):
+    """Save a public-inventory portfolio baseline for one Discord user."""
+
+    discord_user_id: str
+    inventory_url: str = Field(
+        ...,
+        description="Steam inventory URL for the portfolio owner.",
+    )
+
+
+class PortfolioSnapshotResponse(BaseModel):
+    """Persisted summary-level portfolio baseline snapshot."""
+
+    id: str
+    discord_user_id: str
+    steam_id: str
+    inventory_url: str
+    status: Literal["ok", "no_value_data"]
+    reason: str | None
+    message: str
+    created_at: datetime
+    portfolio_baseline: dict[str, Any] | None
+    top_items: list[dict[str, Any]]
+    largest_spread_items: list[dict[str, Any]]
+    unpriced_sample: list[dict[str, Any]]
+
+
+class PortfolioSnapshotCreateResponse(BaseModel):
+    """Snapshot creation result, including unreadable-inventory declines."""
+
+    status: Literal["ok", "no_value_data", "unreadable"]
+    message: str
+    snapshot: PortfolioSnapshotResponse | None
+    delta_vs_previous: dict[str, Any] | None
+    summary: InventorySummaryResponse
+
+
+class PortfolioSnapshotTrendResponse(BaseModel):
+    """Recent persisted portfolio movement for one Discord user."""
+
+    discord_user_id: str
+    steam_id: str | None
+    count: int
+    latest: PortfolioSnapshotResponse | None
+    previous: PortfolioSnapshotResponse | None
+    delta_vs_previous: dict[str, Any] | None
+    delta_since_oldest: dict[str, Any] | None
+    snapshots: list[PortfolioSnapshotResponse]
+
+
 class PriceAlertCreateRequest(BaseModel):
     """Create one persistent Discord-owned price alert."""
 

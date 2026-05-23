@@ -52,18 +52,24 @@ References checked:
   - an API-side deterministic threshold evaluator,
   - a background Discord delivery loop that sends triggered alerts without an
     LLM call.
+- Added persisted portfolio snapshots:
+  - `POST /portfolio/snapshots`, `GET /portfolio/snapshots`, and
+    `GET /portfolio/snapshots/trend`,
+  - hidden Discord user ownership for save/list/trend tools,
+  - latest-vs-previous and oldest-vs-latest movement calculations,
+  - summary-level retention rather than full raw inventory storage.
 
 ## Next features worth building
 
-1. Portfolio snapshots over time.
-   The summary tool is stateless. Paid users will eventually expect daily
-   inventory snapshots, P/L, item performance, and value-change alerts. This
-   needs privacy/retention decisions before storing user inventories.
-
-2. Alert hardening and quotas.
+1. Alert hardening and quotas.
    The first persistent-alert pass lacks a delivery outbox and per-user quotas.
    Production paid tiers should add retry-safe delivery state, quota/entitlement
    checks, quiet hours, and market-mover/drop alert variants.
+
+2. Portfolio automation and item-level performance.
+   Snapshot creation is manual and summary-level. The paid product version
+   should add scheduled snapshots, retention controls, value-change alerts, and
+   eventually full item-level performance after privacy/quota policy is explicit.
 
 3. Real asset-specific repricing.
    Float, pattern, sticker, and charm premiums are the differentiator for

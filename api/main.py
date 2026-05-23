@@ -31,6 +31,7 @@ Endpoints:
 - ``GET  /items/{slug}/drift``   — latest drift verdict per pair
 - ``POST /deals/evaluate``       — verdict on a price offer
 - ``POST /alerts/price``         — create/list/evaluate price alerts
+- ``POST /portfolio/snapshots``  — persist Discord portfolio baselines
 - ``POST /asset-valuations/inventory`` — public-inventory market baseline
 - ``POST /asset-valuations/inventory/summary`` — portfolio market baseline
 """
@@ -51,6 +52,7 @@ from api.routes import (
     history,
     insights,
     items,
+    portfolio,
 )
 from api.schemas import HealthResponse
 from db.connection import get_engine
@@ -78,6 +80,7 @@ app.include_router(insights.router, dependencies=_auth)
 app.include_router(charts.router, dependencies=_auth)
 app.include_router(deals.router, dependencies=_auth)
 app.include_router(alerts.router, dependencies=_auth)
+app.include_router(portfolio.router, dependencies=_auth)
 app.include_router(drift.router, dependencies=_auth)
 app.include_router(asset_valuation.router, dependencies=_auth)
 

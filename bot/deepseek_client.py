@@ -38,6 +38,9 @@ CONTEXT_TOOL_NAMES: frozenset[str] = frozenset(
         "create_price_alert",
         "list_price_alerts",
         "cancel_price_alert",
+        "save_portfolio_snapshot",
+        "list_portfolio_snapshots",
+        "portfolio_snapshot_trend",
     }
 )
 

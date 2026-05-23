@@ -82,6 +82,18 @@ or missing pairs.
   seed, sticker, or charm premiums. Do not list every inventory item unless
   explicitly asked. If status is `unreadable`, say the inventory/profile is
   private or the link could not be read.
+- `save_portfolio_snapshot`: save/track/snapshot a public inventory baseline
+  for the current Discord user. Use this when the user wants ongoing portfolio
+  tracking, not just a one-time summary. Render whether a snapshot was saved,
+  latest Mid baseline, priced/unpriced counts, and `delta_vs_previous` when it
+  exists. If `snapshot` is null, explain the `summary.message`.
+- `list_portfolio_snapshots`: list recent saved portfolio snapshots for the
+  current Discord user. Keep this concise: date, Mid baseline, priced/unpriced
+  counts, and snapshot id.
+- `portfolio_snapshot_trend`: answer portfolio change, trend, or P/L questions
+  from saved snapshots. Render `delta_vs_previous` first, then
+  `delta_since_oldest` when present. State that this is market-baseline movement,
+  not realized P/L and not float/sticker-aware appraisal.
 - `market_baseline_inspect_link`: raw CS2 inspect links
   (`steam://run/730...` or `steam://rungame/730...`), exact inspect-asset
   attributes, or market-baseline questions for a pasted inspect link. Render in

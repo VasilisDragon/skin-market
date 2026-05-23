@@ -827,6 +827,83 @@ def market_baseline_inventory_summary(inventory_url: str) -> dict:
         return resp.json()
 
 
+def save_portfolio_snapshot(
+    inventory_url: str,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Save a summary-level portfolio baseline for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError(
+            "Missing Discord user context for portfolio snapshot."
+        )
+    payload = {
+        "discord_user_id": discord_user_id,
+        "inventory_url": inventory_url,
+    }
+    with _client(timeout_read=90.0) as c:
+        try:
+            resp = c.post("/portfolio/snapshots", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/snapshots: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                f"Unexpected {resp.status_code} from /portfolio/snapshots: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def list_portfolio_snapshots(
+    limit: int = 10,
+    steam_id: str | None = None,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """List saved portfolio snapshots for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError(
+            "Missing Discord user context for portfolio snapshots."
+        )
+    params: dict[str, Any] = {
+        "discord_user_id": discord_user_id,
+        "limit": limit,
+    }
+    if steam_id is not None:
+        params["steam_id"] = steam_id
+    with _client() as c:
+        raw = _get_json(c, "/portfolio/snapshots", params=params)
+    return {"snapshots": raw, "count": len(raw)}
+
+
+def portfolio_snapshot_trend(
+    limit: int = 30,
+    steam_id: str | None = None,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Return recent saved portfolio movement for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError(
+            "Missing Discord user context for portfolio snapshots."
+        )
+    params: dict[str, Any] = {
+        "discord_user_id": discord_user_id,
+        "limit": limit,
+    }
+    if steam_id is not None:
+        params["steam_id"] = steam_id
+    with _client() as c:
+        return _get_json(c, "/portfolio/snapshots/trend", params=params)
+
+
 def market_baseline_inspect_link(inspect_url: str) -> dict:
     """Return decoded inspect attributes plus a market-name USD baseline."""
     payload = {"inspect_url": inspect_url}
@@ -1454,6 +1531,77 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "save_portfolio_snapshot",
+            "description": (
+                "Call this when the user wants to save, track, snapshot, or "
+                "record their public Steam inventory portfolio baseline. "
+                "Discord user context is injected by the bot; do not ask "
+                "the user for IDs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inventory_url": {
+                        "type": "string",
+                        "description": "Public Steam inventory URL.",
+                    }
+                },
+                "required": ["inventory_url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_portfolio_snapshots",
+            "description": (
+                "Call this when the user asks to list saved portfolio "
+                "snapshots or recent inventory baseline records."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum snapshots to return. Default 10.",
+                    },
+                    "steam_id": {
+                        "type": "string",
+                        "description": "Optional SteamID64 filter.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "portfolio_snapshot_trend",
+            "description": (
+                "Call this when the user asks how their saved portfolio is "
+                "doing, how it changed, P/L, trend, or movement since the "
+                "last snapshot."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Recent snapshot window. Default 30.",
+                    },
+                    "steam_id": {
+                        "type": "string",
+                        "description": "Optional SteamID64 filter.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "market_baseline_inspect_link",
             "description": (
                 "Call this when the user pastes a CS2 inspect link, "
@@ -1535,6 +1683,9 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "evaluate_deal": evaluate_deal,
     "market_baseline_inventory_item": market_baseline_inventory_item,
     "market_baseline_inventory_summary": market_baseline_inventory_summary,
+    "save_portfolio_snapshot": save_portfolio_snapshot,
+    "list_portfolio_snapshots": list_portfolio_snapshots,
+    "portfolio_snapshot_trend": portfolio_snapshot_trend,
     "market_baseline_inspect_link": market_baseline_inspect_link,
     "create_price_alert": create_price_alert,
     "list_price_alerts": list_price_alerts,

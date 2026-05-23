@@ -390,3 +390,58 @@ class PriceAlert(Base):
     triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trigger_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     trigger_source: Mapped[str | None] = mapped_column(Text)
+
+
+class PortfolioSnapshot(Base):
+    """Summary-level public-inventory baseline saved for one Discord user."""
+
+    __tablename__ = "portfolio_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ok', 'no_value_data')",
+            name="ck_portfolio_snapshots_status",
+        ),
+        CheckConstraint(
+            "currency IS NULL OR currency IN ('usd')",
+            name="ck_portfolio_snapshots_currency",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    discord_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    steam_id: Mapped[str] = mapped_column(Text, nullable=False)
+    inventory_url: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    currency: Mapped[str | None] = mapped_column(Text)
+    baseline_low: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    baseline_mid: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    baseline_high: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    priced_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    unpriced_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    stickered_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    top_item_share_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    portfolio_baseline: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    top_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    largest_spread_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    unpriced_sample: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )

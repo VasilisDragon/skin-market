@@ -43,16 +43,19 @@ from bot.tools import (
     cancel_price_alert,
     create_price_alert,
     evaluate_deal,
+    list_portfolio_snapshots,
     list_price_alerts,
     list_watchlist,
     market_baseline_inspect_link,
     market_baseline_inventory_item,
     market_baseline_inventory_summary,
     narrative_today,
+    portfolio_snapshot_trend,
     query_current_price,
     query_drift,
     query_price_history,
     render_chart,
+    save_portfolio_snapshot,
     whats_interesting,
 )
 
@@ -109,6 +112,9 @@ class TestToolsRegistry:
             "market_baseline_inventory_item",
             "market_baseline_inventory_summary",
             "market_baseline_inspect_link",
+            "save_portfolio_snapshot",
+            "list_portfolio_snapshots",
+            "portfolio_snapshot_trend",
             "query_drift",
             "narrative_today",
             "whats_interesting",
@@ -270,6 +276,114 @@ class TestToolsAuthAndConnectivity:
                 "https://steamcommunity.com/profiles/76561199276192848/inventory/"
             )
         }
+
+    def test_save_portfolio_snapshot_wraps_api_route(self, httpx_mock) -> None:
+        inventory_url = "https://steamcommunity.com/profiles/765/inventory/"
+        snapshot = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "discord_user_id": "1234",
+            "steam_id": "765",
+            "inventory_url": inventory_url,
+            "status": "ok",
+            "reason": None,
+            "message": "Found market baselines for 2 of 2 CS2 inventory assets.",
+            "created_at": "2026-05-23T00:00:00Z",
+            "portfolio_baseline": {
+                "currency": "usd",
+                "low": "150.00",
+                "mid": "180.00",
+                "high": "210.00",
+                "priced_count": 2,
+                "unpriced_count": 0,
+                "stickered_count": 1,
+                "top_item_share_pct": "66.67",
+            },
+            "top_items": [],
+            "largest_spread_items": [],
+            "unpriced_sample": [],
+        }
+        payload = {
+            "status": "ok",
+            "message": snapshot["message"],
+            "snapshot": snapshot,
+            "delta_vs_previous": None,
+            "summary": {
+                "status": "ok",
+                "reason": None,
+                "message": snapshot["message"],
+                "reference": {"steam_id": "765"},
+                "portfolio_baseline": snapshot["portfolio_baseline"],
+                "top_items": [],
+                "largest_spread_items": [],
+                "unpriced_sample": [],
+            },
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/snapshots",
+            json=payload,
+        )
+
+        result = save_portfolio_snapshot(
+            inventory_url,
+            discord_user_id="1234",
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "discord_user_id": "1234",
+            "inventory_url": inventory_url,
+        }
+
+    def test_portfolio_snapshot_list_and_trend_wrap_api_routes(
+        self,
+        httpx_mock,
+    ) -> None:
+        snapshot = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "discord_user_id": "1234",
+            "steam_id": "765",
+            "inventory_url": "https://steamcommunity.com/profiles/765/inventory/",
+            "status": "ok",
+            "reason": None,
+            "message": "Found market baselines for 1 of 1 CS2 inventory assets.",
+            "created_at": "2026-05-23T00:00:00Z",
+            "portfolio_baseline": {"mid": "180.00"},
+            "top_items": [],
+            "largest_spread_items": [],
+            "unpriced_sample": [],
+        }
+        trend = {
+            "discord_user_id": "1234",
+            "steam_id": "765",
+            "count": 1,
+            "latest": snapshot,
+            "previous": None,
+            "delta_vs_previous": None,
+            "delta_since_oldest": None,
+            "snapshots": [snapshot],
+        }
+        httpx_mock.add_response(
+            method="GET",
+            url=f"{_BASE}/portfolio/snapshots?discord_user_id=1234&limit=5",
+            json=[snapshot],
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url=(
+                f"{_BASE}/portfolio/snapshots/trend"
+                "?discord_user_id=1234&limit=30"
+            ),
+            json=trend,
+        )
+
+        listed = list_portfolio_snapshots(limit=5, discord_user_id="1234")
+        moved = portfolio_snapshot_trend(discord_user_id="1234")
+
+        assert listed == {"snapshots": [snapshot], "count": 1}
+        assert moved == trend
 
     def test_create_price_alert_wraps_api_route(self, httpx_mock) -> None:
         payload = {
@@ -2172,6 +2286,78 @@ class TestDeepSeekClientSingleToolCall:
         assert json.loads(request.content)["discord_user_id"] == "1234"
         assert json.loads(request.content)["discord_channel_id"] == "5678"
         assert reply.text == "Alert set."
+
+    async def test_portfolio_snapshot_tool_receives_hidden_discord_context(
+        self, monkeypatch, httpx_mock
+    ) -> None:
+        monkeypatch.setenv("SKIN_MARKET_API_TOKEN", _TEST_TOKEN)
+        monkeypatch.setenv("SKIN_MARKET_API_BASE_URL", _BASE)
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/snapshots",
+            json={
+                "status": "ok",
+                "message": "Snapshot saved.",
+                "snapshot": {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "discord_user_id": "1234",
+                    "steam_id": "765",
+                    "inventory_url": (
+                        "https://steamcommunity.com/profiles/765/inventory/"
+                    ),
+                    "status": "ok",
+                    "reason": None,
+                    "message": "Snapshot saved.",
+                    "created_at": "2026-05-23T00:00:00Z",
+                    "portfolio_baseline": {"mid": "180.00"},
+                    "top_items": [],
+                    "largest_spread_items": [],
+                    "unpriced_sample": [],
+                },
+                "delta_vs_previous": None,
+                "summary": {
+                    "status": "ok",
+                    "reason": None,
+                    "message": "Snapshot saved.",
+                    "reference": {"steam_id": "765"},
+                    "portfolio_baseline": {"mid": "180.00"},
+                    "top_items": [],
+                    "largest_spread_items": [],
+                    "unpriced_sample": [],
+                },
+            },
+        )
+        client = _scripted_client(
+            [
+                _make_msg(
+                    tool_calls=[
+                        _make_tool_call(
+                            "save_portfolio_snapshot",
+                            {
+                                "inventory_url": (
+                                    "https://steamcommunity.com/profiles/765/"
+                                    "inventory/"
+                                )
+                            },
+                        )
+                    ]
+                ),
+                _make_msg(content="Snapshot saved."),
+            ]
+        )
+
+        reply = await deepseek_client.handle_user_message(
+            "save a snapshot of my inventory",
+            client=client,
+            discord_user_id="1234",
+            discord_channel_id="5678",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content)["discord_user_id"] == "1234"
+        assert "discord_channel_id" not in json.loads(request.content)
+        assert reply.text == "Snapshot saved."
 
 
 class TestDeepSeekClientDefensive:
