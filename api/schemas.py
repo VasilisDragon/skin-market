@@ -52,6 +52,7 @@ Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
 AlertStatus = Literal["active", "triggered", "cancelled"]
 SignalSubscriptionStatus = Literal["active", "cancelled"]
+SignalLane = Literal["all", "market_movers", "spread_watch"]
 PortfolioMonitorStatus = Literal["active", "cancelled"]
 DiscordEntitlementTier = Literal["free", "trader", "pro"]
 EffectiveEntitlementTier = Literal["default", "free", "trader", "pro"]
@@ -368,6 +369,7 @@ class SignalSubscriptionCreateRequest(BaseModel):
 
     discord_user_id: str
     discord_channel_id: str
+    lane: SignalLane = "all"
     hours: int = Field(default=6, ge=1, le=24)
     limit: int = Field(default=8, ge=1, le=20)
     threshold_z: MoneyStr = Field(default=Decimal("3.00"), ge=0)
@@ -375,6 +377,14 @@ class SignalSubscriptionCreateRequest(BaseModel):
     quiet_start_hour: int | None = Field(default=None, ge=0, le=23)
     quiet_end_hour: int | None = Field(default=None, ge=0, le=23)
     timezone_offset_minutes: int = Field(default=0, ge=-720, le=840)
+
+    @model_validator(mode="after")
+    def quiet_hours_are_complete(self) -> SignalSubscriptionCreateRequest:
+        if (self.quiet_start_hour is None) != (self.quiet_end_hour is None):
+            raise ValueError(
+                "quiet_start_hour and quiet_end_hour must be provided together"
+            )
+        return self
 
 
 class SignalSubscriptionCancelRequest(BaseModel):
@@ -403,6 +413,7 @@ class SignalSubscriptionResponse(BaseModel):
     id: str
     discord_user_id: str
     discord_channel_id: str
+    lane: SignalLane
     hours: int
     limit: int
     threshold_z: MoneyStr
@@ -783,6 +794,7 @@ class SignalDigestResponse(BaseModel):
 
     generated_at: datetime
     since: datetime
+    lane: SignalLane
     hours: int
     total_anomalies: int
     returned_count: int

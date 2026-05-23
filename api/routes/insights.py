@@ -31,6 +31,7 @@ from api.schemas import (
     NarrativeResponse,
     SignalDigestResponse,
     SignalDigestRow,
+    SignalLane,
 )
 from api.watchlist_tiers import get_tier
 from db.connection import get_engine
@@ -233,6 +234,14 @@ def get_recent_anomalies(
     response_model=SignalDigestResponse,
 )
 def get_signal_digest(
+    lane: Annotated[
+        SignalLane,
+        Query(
+            description=(
+                "Signal lane to return: all, market_movers, or spread_watch."
+            ),
+        ),
+    ] = "all",
     hours: Annotated[
         int,
         Query(
@@ -257,11 +266,12 @@ def get_signal_digest(
     ] = SIGNAL_DIGEST_DEFAULT_LIMIT,
 ) -> SignalDigestResponse:
     """Return a compact ranked signal digest for Discord rendering."""
-    return build_signal_digest(hours=hours, limit=limit)
+    return build_signal_digest(lane=lane, hours=hours, limit=limit)
 
 
 def build_signal_digest(
     *,
+    lane: SignalLane = "all",
     hours: int,
     limit: int,
     min_abs_z: float = 0.0,
@@ -283,9 +293,20 @@ def build_signal_digest(
                 )
                   AND computed_at >= :since
                   AND ABS(value) >= :min_abs_z
+                  AND (
+                    :lane = 'all'
+                    OR (
+                        :lane = 'market_movers'
+                        AND insight_type = 'volume_anomaly'
+                    )
+                    OR (
+                        :lane = 'spread_watch'
+                        AND insight_type = 'cross_source_divergence'
+                    )
+                  )
                 """
             ),
-            {"since": since, "min_abs_z": min_abs_z},
+            {"since": since, "min_abs_z": min_abs_z, "lane": lane},
         ).scalar_one()
         rows = (
             session.execute(
@@ -306,11 +327,27 @@ def build_signal_digest(
                     )
                       AND ins.computed_at >= :since
                       AND ABS(ins.value) >= :min_abs_z
+                      AND (
+                        :lane = 'all'
+                        OR (
+                            :lane = 'market_movers'
+                            AND ins.insight_type = 'volume_anomaly'
+                        )
+                        OR (
+                            :lane = 'spread_watch'
+                            AND ins.insight_type = 'cross_source_divergence'
+                        )
+                      )
                     ORDER BY ABS(ins.value) DESC, ins.computed_at DESC
                     LIMIT :limit
                     """
                 ),
-                {"since": since, "min_abs_z": min_abs_z, "limit": limit},
+                {
+                    "since": since,
+                    "min_abs_z": min_abs_z,
+                    "limit": limit,
+                    "lane": lane,
+                },
             )
             .mappings()
             .all()
@@ -319,6 +356,7 @@ def build_signal_digest(
     return SignalDigestResponse(
         generated_at=generated_at,
         since=since,
+        lane=lane,
         hours=hours,
         total_anomalies=total,
         returned_count=len(rows),

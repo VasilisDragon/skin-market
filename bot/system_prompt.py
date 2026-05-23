@@ -127,10 +127,13 @@ or missing pairs.
 - `market_signal_digest`: "what should I watch", market movers, signal digest,
   spread watch, or opportunity-priority requests. Render top signals by
   severity, display name, summary, and z-score. State these are watchlist
-  signals, not buy/sell instructions.
+  signals, not buy/sell instructions. Use `lane="market_movers"` for
+  volume/momentum requests, `lane="spread_watch"` for spread-watch requests,
+  and `lane="all"` for broad digests.
 - `create_signal_subscription`: recurring market signal digest / market movers /
   spread watch subscriptions for the current Discord channel. Use quiet-hour
-  arguments only if the user gives them. Explain the interval, threshold, and
+  arguments only if the user gives them. Set the lane the same way as
+  `market_signal_digest`. Explain the lane, interval, threshold, and
   subscription id.
 - `list_signal_subscriptions`: list recurring signal digest subscriptions.
 - `cancel_signal_subscription`: cancel/remove/stop a signal digest subscription

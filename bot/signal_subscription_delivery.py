@@ -41,8 +41,9 @@ def format_signal_digest_message(payload: dict[str, Any]) -> str:
     subscription = payload["subscription"]
     digest = payload["digest"]
     signals = digest.get("signals") or []
+    lane = digest.get("lane") or subscription.get("lane") or "all"
     lines = [
-        "Market signal digest",
+        f"{_lane_title(lane)} digest",
         (
             f"- Window: last {digest['hours']}h; "
             f"{digest['total_anomalies']} qualifying signals"
@@ -59,6 +60,14 @@ def format_signal_digest_message(payload: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Watchlist signals only; not buy/sell instructions.")
     return "\n".join(lines)
+
+
+def _lane_title(lane: str) -> str:
+    if lane == "market_movers":
+        return "Market movers"
+    if lane == "spread_watch":
+        return "Spread watch"
+    return "Market signal"
 
 
 async def signal_subscription_delivery_loop(client) -> None:

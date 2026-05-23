@@ -581,6 +581,7 @@ class TestToolsAuthAndConnectivity:
             "id": subscription_id,
             "discord_user_id": "1234",
             "discord_channel_id": "5678",
+            "lane": "spread_watch",
             "hours": 6,
             "limit": 4,
             "threshold_z": "3.00",
@@ -617,6 +618,7 @@ class TestToolsAuthAndConnectivity:
         )
 
         created = create_signal_subscription(
+            lane="spread_watch",
             hours=6,
             limit=4,
             threshold_z="3.00",
@@ -646,6 +648,7 @@ class TestToolsAuthAndConnectivity:
             "id": subscription_id,
             "discord_user_id": "1234",
             "discord_channel_id": "5678",
+            "lane": "all",
             "hours": 6,
             "limit": 4,
             "threshold_z": "3.00",
@@ -983,6 +986,7 @@ class TestMarketSignalDigest:
         payload = {
             "generated_at": "2026-05-23T00:00:00Z",
             "since": "2026-05-22T18:00:00Z",
+            "lane": "market_movers",
             "hours": 6,
             "total_anomalies": 1,
             "returned_count": 1,
@@ -1002,12 +1006,12 @@ class TestMarketSignalDigest:
         httpx_mock.add_response(
             url=re.compile(
                 rf"^{re.escape(_BASE)}/insights/signals/digest"
-                r"\?hours=12&limit=4$"
+                r"\?lane=market_movers&hours=12&limit=4$"
             ),
             json=payload,
         )
 
-        result = market_signal_digest(hours=12, limit=4)
+        result = market_signal_digest(hours=12, limit=4, lane="market_movers")
 
         assert result == payload
 
@@ -2670,6 +2674,7 @@ class TestDeepSeekClientSingleToolCall:
                 "id": "33333333-3333-3333-3333-333333333333",
                 "discord_user_id": "1234",
                 "discord_channel_id": "5678",
+                "lane": "all",
                 "hours": 6,
                 "limit": 8,
                 "threshold_z": "3.00",
@@ -3034,6 +3039,7 @@ class TestSignalSubscriptionDelivery:
                 },
                 "digest": {
                     "hours": 6,
+                    "lane": "spread_watch",
                     "total_anomalies": 1,
                     "signals": [
                         {
@@ -3047,7 +3053,7 @@ class TestSignalSubscriptionDelivery:
             }
         )
 
-        assert "Market signal digest" in text
+        assert "Spread watch digest" in text
         assert "last 6h; 1 qualifying signals" in text
         assert "High | AK-47 | Redline (Field-Tested) (3.20 z)" in text
         assert "Spread between 1 and 27 is unusual." in text

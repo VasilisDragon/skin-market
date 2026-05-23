@@ -24,14 +24,22 @@ The route reads existing deterministic insight rows from the last N hours:
 - `cross_source_divergence`
 - `volume_anomaly`
 
-It ranks by absolute z-score, labels severity (`moderate`, `high`, `extreme`),
-and returns a compact deterministic summary for each signal. The Discord bot gets
-a `market_signal_digest` tool for "what should I watch", market-mover, spread
-watch, and opportunity-priority requests.
+It supports deterministic lanes:
+
+- `all` for the broad digest,
+- `market_movers` for volume anomalies,
+- `spread_watch` for cross-source divergence.
+
+Each lane ranks by absolute z-score, labels severity (`moderate`, `high`,
+`extreme`), and returns a compact deterministic summary for each signal. The
+Discord bot gets a `market_signal_digest` tool for "what should I watch",
+market-mover, spread-watch, and opportunity-priority requests.
 
 ## Consequences
 
 - Users get a paid-style watchlist digest without paging through raw anomalies.
+- Users can request a broad digest or a targeted lane without the LLM filtering
+  rows itself.
 - The LLM renders ranked rows but does not calculate severity, rank, or summary
   text.
 - The route reuses existing analytics outputs and does not add new collection

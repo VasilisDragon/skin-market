@@ -108,7 +108,24 @@ def _cleanup(session: Session, item_id: uuid.UUID) -> None:
     )
 
 
-def _seed_signal(item_id: uuid.UUID, z_score: str = "99.00") -> None:
+def _seed_signal(
+    item_id: uuid.UUID,
+    z_score: str = "99.00",
+    insight_type: str = "cross_source_divergence",
+) -> None:
+    if insight_type == "volume_anomaly":
+        meta = {
+            "source_id": "1",
+            "observed_volume": "10",
+            "baseline_mean": "3",
+        }
+    else:
+        meta = {
+            "source_a_id": "1",
+            "source_b_id": "27",
+            "observed_spread": "0.42",
+            "baseline_mean": "0.10",
+        }
     engine = get_engine()
     with Session(engine) as session:
         session.execute(
@@ -118,7 +135,7 @@ def _seed_signal(item_id: uuid.UUID, z_score: str = "99.00") -> None:
                     item_id, computed_at, insight_type, value, meta_info
                 )
                 VALUES (
-                    :i, :t, 'cross_source_divergence', :z,
+                    :i, :t, :insight_type, :z,
                     CAST(:m AS jsonb)
                 )
                 """
@@ -126,15 +143,9 @@ def _seed_signal(item_id: uuid.UUID, z_score: str = "99.00") -> None:
             {
                 "i": item_id,
                 "t": datetime.now(UTC),
+                "insight_type": insight_type,
                 "z": z_score,
-                "m": json.dumps(
-                    {
-                        "source_a_id": "1",
-                        "source_b_id": "27",
-                        "observed_spread": "0.42",
-                        "baseline_mean": "0.10",
-                    }
-                ),
+                "m": json.dumps(meta),
             },
         )
         session.commit()
@@ -144,6 +155,7 @@ def _subscription_payload(**overrides) -> dict:
     payload = {
         "discord_user_id": _DISCORD_USER_ID,
         "discord_channel_id": _DISCORD_CHANNEL_ID,
+        "lane": "all",
         "hours": 6,
         "limit": 4,
         "threshold_z": "3.00",
@@ -163,6 +175,7 @@ def test_create_list_and_cancel_signal_subscription(client, signal_item) -> None
     assert created.status_code == 200
     sub = created.json()
     assert sub["status"] == "active"
+    assert sub["lane"] == "all"
     assert sub["threshold_z"] == "3.00"
 
     listed = client.get(
@@ -225,6 +238,27 @@ def test_signal_subscription_evaluate_and_delivery_ack(
     assert created["id"] not in [
         row["subscription"]["id"] for row in final.json()["due"]
     ]
+
+
+def test_signal_subscription_lane_filters_digest(client, signal_item) -> None:
+    _seed_signal(signal_item, z_score="99.00", insight_type="cross_source_divergence")
+    _seed_signal(signal_item, z_score="98.00", insight_type="volume_anomaly")
+    created = client.post(
+        "/signals/subscriptions",
+        json=_subscription_payload(lane="market_movers", threshold_z="90.00"),
+    ).json()
+
+    evaluated = client.post("/signals/subscriptions/evaluate", json={"limit": 10})
+    assert evaluated.status_code == 200
+    due = [
+        row for row in evaluated.json()["due"]
+        if row["subscription"]["id"] == created["id"]
+    ]
+
+    assert len(due) == 1
+    assert due[0]["subscription"]["lane"] == "market_movers"
+    assert due[0]["digest"]["lane"] == "market_movers"
+    assert due[0]["digest"]["signals"][0]["signal_type"] == "volume_anomaly"
 
 
 def test_signal_subscription_quiet_hours_skip_due(client, signal_item) -> None:

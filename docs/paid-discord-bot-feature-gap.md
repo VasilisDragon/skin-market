@@ -69,14 +69,17 @@ References checked:
   - `GET /insights/signals/digest`,
   - `market_signal_digest` Discord tool,
   - deterministic severity/ranking/summary over recent spread and volume
-    anomalies.
+    anomalies,
+  - lane filters for broad, market-mover, and spread-watch digests.
 - Added recurring signal digest subscriptions:
   - `POST /signals/subscriptions`, `GET /signals/subscriptions`,
     `POST /signals/subscriptions/{id}/cancel`,
     `POST /signals/subscriptions/evaluate`, and
     `POST /signals/subscriptions/{id}/delivery`,
   - channel delivery loop with deterministic digest messages,
-  - quiet-hour support and entitlement-backed subscription quotas.
+  - quiet-hour support and entitlement-backed subscription quotas,
+  - lane-specific channel subscriptions for broad, market-mover, and
+    spread-watch feeds.
 - Added recurring portfolio baseline monitors:
   - `POST /portfolio/monitors`, `GET /portfolio/monitors`,
     `POST /portfolio/monitors/{id}/cancel`,
@@ -103,9 +106,10 @@ References checked:
    model before it should affect user-facing dollar values.
 
 4. Signal lanes / digest channels.
-   The bot now has on-demand and scheduled signal digests. The next version
-   should split digest types into named lanes such as liquid flips, market
-   movers, sticker crafts, and float hunts.
+   The bot now has on-demand and scheduled lanes for broad, market-mover, and
+   spread-watch digests. Future lanes such as liquid flips, sticker crafts, and
+   float hunts need additional deterministic source data before they should be
+   exposed as product promises.
 
 5. Trade safety and execution context.
    Add trade-lock awareness, sold-status context when a source supports it, and

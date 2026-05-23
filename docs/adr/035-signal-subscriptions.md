@@ -17,6 +17,7 @@ acknowledge delivery after Discord sends.
 Add a `signal_subscriptions` table with:
 
 - Discord user/channel ownership,
+- signal lane (`all`, `market_movers`, or `spread_watch`),
 - digest parameters (`hours`, `limit`, `threshold_z`),
 - cadence (`interval_minutes`),
 - optional quiet hours using a fixed UTC offset,
@@ -33,16 +34,16 @@ POST /signals/subscriptions/{id}/delivery
 ```
 
 Evaluation selects active subscriptions that are due, outside quiet hours, and
-have at least one qualifying signal. It returns the digest plus a fingerprint.
-The bot delivery loop sends the digest to the stored channel and records
-delivery state. Delivered fingerprints are not resent, so unchanged digests do
-not repeatedly spam a channel.
+have at least one qualifying signal in the subscription's lane. It returns the
+digest plus a fingerprint. The bot delivery loop labels the lane, sends the
+digest to the stored channel, and records delivery state. Delivered fingerprints
+are not resent, so unchanged digests do not repeatedly spam a channel.
 
 Signal subscription count is part of the Discord entitlement quota policy.
 
 ## Consequences
 
-- Paid users can subscribe a channel to recurring market-mover/spread-watch
+- Paid users can subscribe a channel to broad, market-mover, or spread-watch
   digests.
 - The LLM only creates/lists/cancels subscriptions. It does not rank signals,
   decide due state, enforce quiet hours, or own delivery state.

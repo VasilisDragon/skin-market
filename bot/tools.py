@@ -1195,17 +1195,22 @@ def whats_interesting(hours: int = 6) -> dict:
     return _summarize_anomalies(raw)
 
 
-def market_signal_digest(hours: int = 6, limit: int = 8) -> dict:
+def market_signal_digest(
+    hours: int = 6,
+    limit: int = 8,
+    lane: str = "all",
+) -> dict:
     """Ranked compact anomaly digest for Discord rendering."""
     with _client() as c:
         return _get_json(
             c,
             "/insights/signals/digest",
-            params={"hours": hours, "limit": limit},
+            params={"lane": lane, "hours": hours, "limit": limit},
         )
 
 
 def create_signal_subscription(
+    lane: str = "all",
     hours: int = 6,
     limit: int = 8,
     threshold_z: str = "3.00",
@@ -1222,6 +1227,7 @@ def create_signal_subscription(
     payload = {
         "discord_user_id": discord_user_id,
         "discord_channel_id": discord_channel_id,
+        "lane": lane,
         "hours": hours,
         "limit": limit,
         "threshold_z": threshold_z,
@@ -2131,6 +2137,15 @@ TOOL_DEFINITIONS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "lane": {
+                        "type": "string",
+                        "enum": ["all", "market_movers", "spread_watch"],
+                        "description": (
+                            "Signal lane. Use market_movers for volume/momentum "
+                            "watch, spread_watch for cross-source spreads, all "
+                            "for the broad digest."
+                        ),
+                    },
                     "hours": {
                         "type": "integer",
                         "description": "Lookback in hours. Default 6, max 24.",
@@ -2157,6 +2172,15 @@ TOOL_DEFINITIONS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "lane": {
+                        "type": "string",
+                        "enum": ["all", "market_movers", "spread_watch"],
+                        "description": (
+                            "Signal lane. Use market_movers for volume/momentum "
+                            "watch, spread_watch for cross-source spreads, all "
+                            "for the broad digest."
+                        ),
+                    },
                     "hours": {
                         "type": "integer",
                         "description": "Lookback in hours. Default 6, max 24.",

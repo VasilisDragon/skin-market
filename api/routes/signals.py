@@ -7,7 +7,7 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from api.entitlements import effective_entitlement_policy
 from api.routes.insights import build_signal_digest
 from api.schemas import (
+    SignalLane,
     SignalSubscriptionCancelRequest,
     SignalSubscriptionCreateRequest,
     SignalSubscriptionDeliveryRequest,
@@ -68,6 +69,7 @@ def create_signal_subscription(
         sub = SignalSubscription(
             discord_user_id=req.discord_user_id,
             discord_channel_id=req.discord_channel_id,
+            lane=req.lane,
             hours=req.hours,
             limit=req.limit,
             threshold_z=req.threshold_z,
@@ -163,6 +165,7 @@ def evaluate_signal_subscriptions(
             checked_count += 1
             sub.last_checked_at = now
             digest = build_signal_digest(
+                lane=_subscription_lane(sub),
                 hours=sub.hours,
                 limit=sub.limit,
                 min_abs_z=float(sub.threshold_z),
@@ -233,6 +236,7 @@ def _subscription_response(sub: SignalSubscription) -> SignalSubscriptionRespons
         id=str(sub.id),
         discord_user_id=sub.discord_user_id,
         discord_channel_id=sub.discord_channel_id,
+        lane=_subscription_lane(sub),
         hours=sub.hours,
         limit=sub.limit,
         threshold_z=sub.threshold_z,
@@ -257,6 +261,10 @@ def _is_due(sub: SignalSubscription, now: datetime) -> bool:
     return now >= sub.last_checked_at + timedelta(minutes=sub.interval_minutes)
 
 
+def _subscription_lane(sub: SignalSubscription) -> SignalLane:
+    return cast(SignalLane, sub.lane)
+
+
 def _is_quiet_now(sub: SignalSubscription, now: datetime) -> bool:
     if sub.quiet_start_hour is None or sub.quiet_end_hour is None:
         return False
@@ -273,16 +281,19 @@ def _is_quiet_now(sub: SignalSubscription, now: datetime) -> bool:
 
 
 def _digest_fingerprint(digest: dict[str, Any]) -> str:
-    rows = [
-        {
-            "signal_type": row["signal_type"],
-            "slug": row["slug"],
-            "computed_at": row["computed_at"],
-            "z_score": row["z_score"],
-        }
-        for row in digest.get("signals") or []
-    ]
-    encoded = json.dumps(rows, sort_keys=True, separators=(",", ":"))
+    payload = {
+        "lane": digest.get("lane"),
+        "signals": [
+            {
+                "signal_type": row["signal_type"],
+                "slug": row["slug"],
+                "computed_at": row["computed_at"],
+                "z_score": row["z_score"],
+            }
+            for row in digest.get("signals") or []
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 

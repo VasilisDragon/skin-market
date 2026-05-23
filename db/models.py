@@ -517,6 +517,10 @@ class SignalSubscription(Base):
             name="ck_signal_subscriptions_threshold_z",
         ),
         CheckConstraint(
+            "lane IN ('all', 'market_movers', 'spread_watch')",
+            name="ck_signal_subscriptions_lane",
+        ),
+        CheckConstraint(
             "interval_minutes >= 15 AND interval_minutes <= 10080",
             name="ck_signal_subscriptions_interval",
         ),
@@ -546,6 +550,9 @@ class SignalSubscription(Base):
     )
     discord_user_id: Mapped[str] = mapped_column(Text, nullable=False)
     discord_channel_id: Mapped[str] = mapped_column(Text, nullable=False)
+    lane: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'all'")
+    )
     hours: Mapped[int] = mapped_column(Integer, nullable=False)
     limit: Mapped[int] = mapped_column(Integer, nullable=False)
     threshold_z: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
