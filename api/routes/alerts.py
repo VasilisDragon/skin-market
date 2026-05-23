@@ -13,6 +13,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.asset_valuation import PricePoint, load_latest_usd_price_points
+from api.entitlements import effective_entitlement_policy
 from api.schemas import (
     PriceAlertCancelRequest,
     PriceAlertCreateRequest,
@@ -46,7 +47,13 @@ def create_price_alert(req: PriceAlertCreateRequest) -> PriceAlertResponse:
                 PriceAlert.status == "active",
             )
         )
-        max_active = price_alert_max_active_per_user()
+        policy = effective_entitlement_policy(
+            session,
+            req.discord_user_id,
+            default_active_price_alerts=price_alert_max_active_per_user(),
+            default_portfolio_snapshots_per_day=10,
+        )
+        max_active = policy.active_price_alerts
         if active_count is not None and active_count >= max_active:
             raise HTTPException(
                 status_code=409,

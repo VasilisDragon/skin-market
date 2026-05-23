@@ -210,6 +210,26 @@ def test_create_and_list_portfolio_snapshot(client, portfolio_item) -> None:
     assert [row["id"] for row in listed.json()] == [body["snapshot"]["id"]]
 
 
+def test_portfolio_snapshot_enforces_daily_quota(
+    client,
+    portfolio_item,
+    monkeypatch,
+) -> None:
+    del portfolio_item
+    monkeypatch.setenv("PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER", "1")
+    payload = {
+        "discord_user_id": _DISCORD_USER_ID,
+        "inventory_url": _INVENTORY_URL,
+    }
+
+    first = client.post("/portfolio/snapshots", json=payload)
+    second = client.post("/portfolio/snapshots", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "quota" in second.json()["detail"].lower()
+
+
 def test_portfolio_snapshot_trend_reports_delta(
     client,
     portfolio_item,

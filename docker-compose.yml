@@ -92,6 +92,9 @@ services:
       # public-inventory lookup through Pricempire, then combines the
       # exact asset attributes with local market-name rows.
       PRICEMPIRE_API_KEY: ${PRICEMPIRE_API_KEY:-}
+      PRICE_ALERT_MAX_ACTIVE_PER_USER: ${PRICE_ALERT_MAX_ACTIVE_PER_USER:-25}
+      PRICE_ALERT_MAX_DELIVERY_ATTEMPTS: ${PRICE_ALERT_MAX_DELIVERY_ATTEMPTS:-5}
+      PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER: ${PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER:-10}
     # Host-local port mapping (NEVER 0.0.0.0) so Hermes — which runs
     # as a host process at ~/.hermes-discord/, not as a compose
     # service — can reach the api with the bearer token. Host port

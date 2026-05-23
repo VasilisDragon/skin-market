@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from fastapi import APIRouter, Query
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.entitlements import effective_entitlement_policy
 from api.routes.asset_valuation import inventory_portfolio_market_baseline
 from api.schemas import (
     InventorySummaryRequest,
@@ -24,6 +27,7 @@ router = APIRouter(tags=["portfolio snapshots"])
 
 _CENTS = Decimal("0.01")
 _PCT = Decimal("0.01")
+DEFAULT_PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER = 10
 
 
 @router.post(
@@ -34,6 +38,34 @@ def create_portfolio_snapshot(
     req: PortfolioSnapshotCreateRequest,
 ) -> PortfolioSnapshotCreateResponse:
     """Read a public inventory baseline and persist a summary-level snapshot."""
+    engine = get_engine()
+    with Session(engine) as session:
+        policy = effective_entitlement_policy(
+            session,
+            req.discord_user_id,
+            default_active_price_alerts=25,
+            default_portfolio_snapshots_per_day=(
+                portfolio_snapshot_max_daily_per_user()
+            ),
+        )
+        daily_count = session.scalar(
+            select(func.count())
+            .select_from(PortfolioSnapshot)
+            .where(
+                PortfolioSnapshot.discord_user_id == req.discord_user_id,
+                PortfolioSnapshot.created_at >= datetime.now(UTC) - timedelta(days=1),
+            )
+        )
+        daily_limit = policy.portfolio_snapshots_per_day
+        if daily_count is not None and daily_count >= daily_limit:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Daily portfolio snapshot quota reached "
+                    f"({daily_count}/{daily_limit})."
+                ),
+            )
+
     summary = inventory_portfolio_market_baseline(
         InventorySummaryRequest(inventory_url=req.inventory_url)
     )
@@ -50,7 +82,6 @@ def create_portfolio_snapshot(
     baseline = summary_data["portfolio_baseline"]
     steam_id = str(summary_data["reference"]["steam_id"])
 
-    engine = get_engine()
     with Session(engine) as session:
         previous = session.execute(
             select(PortfolioSnapshot)
@@ -241,3 +272,12 @@ def _money(value: Decimal) -> str:
 
 def _pct(value: Decimal) -> str:
     return str(value.quantize(_PCT, rounding=ROUND_HALF_UP))
+
+
+def portfolio_snapshot_max_daily_per_user() -> int:
+    return int(
+        os.environ.get(
+            "PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER",
+            DEFAULT_PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER,
+        )
+    )

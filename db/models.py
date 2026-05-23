@@ -450,3 +450,31 @@ class PortfolioSnapshot(Base):
     unpriced_sample: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
+
+
+class DiscordEntitlement(Base):
+    """Operator-managed Discord tier/status row for quota enforcement."""
+
+    __tablename__ = "discord_entitlements"
+    __table_args__ = (
+        CheckConstraint(
+            "tier IN ('free', 'trader', 'pro')",
+            name="ck_discord_entitlements_tier",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'disabled')",
+            name="ck_discord_entitlements_status",
+        ),
+    )
+
+    discord_user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    tier: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'active'")
+    )

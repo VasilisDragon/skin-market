@@ -851,6 +851,10 @@ def save_portfolio_snapshot(
             ) from exc
         if resp.status_code == 401:
             raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 409:
+            raise ApiUnexpectedError(
+                f"Portfolio snapshot quota reached: {resp.text[:200]}"
+            )
         if resp.status_code >= 400:
             raise ApiUnexpectedError(
                 f"Unexpected {resp.status_code} from /portfolio/snapshots: "

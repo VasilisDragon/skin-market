@@ -59,13 +59,18 @@ References checked:
   - hidden Discord user ownership for save/list/trend tools,
   - latest-vs-previous and oldest-vs-latest movement calculations,
   - summary-level retention rather than full raw inventory storage.
+- Added Discord entitlement/quota plumbing:
+  - `GET /entitlements/discord/{discord_user_id}` and
+    `PUT /entitlements/discord/{discord_user_id}`,
+  - deterministic `free`, `trader`, and `pro` tier quotas,
+  - API-side enforcement for active alerts and daily portfolio snapshots.
 
 ## Next features worth building
 
-1. Subscription-tier quotas and alert variants.
-   Alerts now have retryable delivery state and a global active-alert cap.
-   Production paid tiers should add entitlement-specific quotas, quiet hours,
-   and market-mover/drop alert variants.
+1. Alert variants and quiet hours.
+   Alerts now have retryable delivery state and entitlement-specific quota
+   checks. The next paid-alert step is market-mover/drop variants plus
+   user-configurable quiet hours.
 
 2. Portfolio automation and item-level performance.
    Snapshot creation is manual and summary-level. The paid product version

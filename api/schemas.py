@@ -51,6 +51,9 @@ Denomination = Literal["usd", "wallet_credit"]
 Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
 AlertStatus = Literal["active", "triggered", "cancelled"]
+DiscordEntitlementTier = Literal["free", "trader", "pro"]
+EffectiveEntitlementTier = Literal["default", "free", "trader", "pro"]
+DiscordEntitlementStatus = Literal["active", "disabled"]
 
 
 class Item(BaseModel):
@@ -323,6 +326,25 @@ class PriceAlertResponse(BaseModel):
 class PriceAlertEvaluateResponse(BaseModel):
     checked_count: int
     triggered: list[PriceAlertResponse]
+
+
+class DiscordEntitlementUpdateRequest(BaseModel):
+    """Operator-managed Discord entitlement state."""
+
+    tier: DiscordEntitlementTier
+    status: DiscordEntitlementStatus = "active"
+
+
+class DiscordEntitlementResponse(BaseModel):
+    """Effective Discord entitlement and deterministic quota policy."""
+
+    discord_user_id: str
+    tier: EffectiveEntitlementTier
+    status: DiscordEntitlementStatus
+    source: Literal["default", "stored"]
+    created_at: datetime | None
+    updated_at: datetime | None
+    quotas: dict[str, int]
 
 
 class HistoryObservation(BaseModel):
