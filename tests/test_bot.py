@@ -1019,12 +1019,12 @@ class TestSystemPromptPhase2bStep9:
         assert "## query_drift" in SYSTEM_PROMPT
         assert "is X drifting" in SYSTEM_PROMPT
 
-    def test_prompt_mentions_wear_swaps(self) -> None:
+    def test_prompt_requires_wear_clarification(self) -> None:
         from bot.system_prompt import SYSTEM_PROMPT
 
-        # Hardcoded swap list per Step 9 sub-decision 5.
-        assert "USP-S | Neo-Noir" in SYSTEM_PROMPT
-        assert "AWP | Dragon Lore" in SYSTEM_PROMPT
+        assert "ask which wear before using tools" in SYSTEM_PROMPT
+        assert "Do not query multiple wears" in SYSTEM_PROMPT
+        assert "Do not list item-specific wear availability" in SYSTEM_PROMPT
 
     def test_prompt_mentions_correctly_priced_clarification(self) -> None:
         from bot.system_prompt import SYSTEM_PROMPT

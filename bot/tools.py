@@ -1015,14 +1015,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "list_watchlist",
             "description": (
-                "Return a summarized watchlist. Call this when the "
-                "user asks 'what do you track?' / 'list items' / "
-                "'what items are available?', or before an item query "
-                "ONLY when the user omitted wear and the active wear "
-                "is ambiguous. Do NOT call this for named price, "
-                "history, deal, chart, or drift questions that include "
-                "FN/MW/FT/WW/BS; derive the slug and call the target "
-                "item tool."
+                "Call this for watchlist/list/what-do-you-track questions. "
+                "Returns a summarized watchlist. Do not use for named item "
+                "questions with explicit or omitted wear."
             ),
             "parameters": {
                 "type": "object",
@@ -1036,16 +1031,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "query_current_price",
             "description": (
-                "Get the current per-source price snapshot for one "
-                "item. Returns prices from each source (Skinport, "
-                "DMarket in USD; Steam in wallet credit), each with "
-                "freshness, plus (for curated-tier items) a "
-                "drift_summary comparing our direct sources to "
-                "Pricempire and an anomaly_flag when a curated "
-                "cross-source divergence is active. Call this when "
-                "the user asks about a specific item's price — "
-                "'how much is X?', 'what's the price of X?', 'X "
-                "price'."
+                "Call this for specific item price, how-much, or up/down "
+                "questions. Returns the current per-source price snapshot. "
+                "Curated items may include drift_summary and anomaly_flag."
             ),
             "parameters": {
                 "type": "object",
@@ -1053,13 +1041,8 @@ TOOL_DEFINITIONS: list[dict] = [
                     "slug": {
                         "type": "string",
                         "description": (
-                            "Item slug. Lowercase, hyphens for "
-                            "spaces/punctuation, special characters "
-                            "stripped. E.g. 'ak-47-redline-field-"
-                            "tested', 'star-karambit-doppler-"
-                            "factory-new', 'stattrak-ak-47-redline-"
-                            "field-tested'. If unsure, call "
-                            "list_watchlist first."
+                            "Lowercase hyphenated item slug, e.g. "
+                            "ak-47-redline-field-tested."
                         ),
                     }
                 },
@@ -1072,10 +1055,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "query_price_history",
             "description": (
-                "Time-series of prices for one item over a window. "
-                "Call this when the user asks about price movement, "
-                "history, trends — 'how has X moved?', 'X history', "
-                "'X trend this week'."
+                "Call this for movement, history, trend, or this-week "
+                "questions. Returns a price time series for one item."
             ),
             "parameters": {
                 "type": "object",
@@ -1084,9 +1065,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "source": {
                         "type": "string",
                         "description": (
-                            "Optional source filter: 'skinport', "
-                            "'dmarket', or 'steam_market'. Omit for "
-                            "all sources."
+                            "Optional: skinport, dmarket, or steam_market."
                         ),
                     },
                     "days": {
@@ -1103,12 +1082,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "render_chart",
             "description": (
-                "Generate a PNG price chart for ONE source over N "
-                "days. Single-source by design — denominations "
-                "differ across sources. Call when the user asks for "
-                "a chart, plot, or graph. The PNG is attached to "
-                "your reply automatically; you should still add a "
-                "short text comment describing what the chart shows."
+                "Call this for chart, plot, graph, or visualize requests. "
+                "Generates a PNG chart for one source over N days."
             ),
             "parameters": {
                 "type": "object",
@@ -1117,8 +1092,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "source": {
                         "type": "string",
                         "description": (
-                            "Source to plot — 'skinport' (default), "
-                            "'dmarket', or 'steam_market'."
+                            "Source to plot: skinport, dmarket, or steam_market."
                         ),
                     },
                     "days": {
@@ -1135,12 +1109,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "evaluate_deal",
             "description": (
-                "Run the opinionated deal evaluator. Returns "
-                "verdict ('below_market'|'at_market'|'above_market'|"
-                "'no_comparable_data') plus a pre-formatted summary "
-                "string. Call when the user asks whether a price is "
-                "fair — 'is $30 a good price for X?', 'should I pay "
-                "45 SC for X?'."
+                "Call this for fair, good price, should I pay, or worth-it "
+                "questions. Evaluates one item and offered amount."
             ),
             "parameters": {
                 "type": "object",
@@ -1149,17 +1119,14 @@ TOOL_DEFINITIONS: list[dict] = [
                     "amount": {
                         "type": "string",
                         "description": (
-                            "Decimal as string. '42.50', '500'. "
-                            "Don't pass a float — precision matters."
+                            "Decimal as string, e.g. 42.50. Do not pass float."
                         ),
                     },
                     "currency": {
                         "type": "string",
                         "enum": ["usd", "wallet_credit"],
                         "description": (
-                            "'usd' for $-amounts on Skinport/DMarket "
-                            "or USD-context questions. "
-                            "'wallet_credit' for Steam wallet SC."
+                            "usd for dollars; wallet_credit for Steam wallet SC."
                         ),
                     },
                 },
@@ -1172,10 +1139,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "narrative_today",
             "description": (
-                "Return the latest daily English-prose market "
-                "summary (generated nightly at 02:00 UTC). Call when "
-                "the user asks 'what happened today?', 'daily "
-                "summary', 'market recap', 'anything new'."
+                "Call this for today, daily summary, market recap, or what's "
+                "new. Returns the latest daily market summary."
             ),
             "parameters": {
                 "type": "object",
@@ -1189,16 +1154,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "query_drift",
             "description": (
-                "Return the latest drift verdict per Pricempire pair "
-                "for one item — compares our direct skinport/dmarket "
-                "prices against Pricempire's corresponding sub-"
-                "provider. Each pair entry carries a 'framing' string "
-                "the model should render verbatim. Call when the user "
-                "asks about Pricempire consistency, drift, or whether "
-                "our prices agree with a third-party reference — 'is "
-                "X drifting from Pricempire?', 'is X consistent with "
-                "Pricempire?', 'drift check on X', 'how does our X "
-                "compare to Pricempire?'."
+                "Call this for drift, Pricempire consistency, or "
+                "source-agreement checks. Returns latest Pricempire drift "
+                "verdicts for one item. Render pair framing verbatim."
             ),
             "parameters": {
                 "type": "object",
@@ -1206,8 +1164,7 @@ TOOL_DEFINITIONS: list[dict] = [
                     "slug": {
                         "type": "string",
                         "description": (
-                            "Item slug. Same normalization rules as "
-                            "query_current_price."
+                            "Lowercase hyphenated item slug."
                         ),
                     }
                 },
@@ -1220,14 +1177,9 @@ TOOL_DEFINITIONS: list[dict] = [
         "function": {
             "name": "whats_interesting",
             "description": (
-                "Return currently-firing market anomalies — "
-                "cross-source divergences (one source diverging "
-                "from baseline against another) and volume "
-                "anomalies (Steam 24h sales outside the rolling "
-                "baseline). Each row includes the item, the z-score, "
-                "and the source pair. Call when the user asks "
-                "'anything interesting?', 'what's moving?', 'any "
-                "anomalies?', 'what's weird today?'."
+                "Call this for interesting, moving, anomalies, or weird-today "
+                "questions. Returns current cross-source spread and volume "
+                "anomalies."
             ),
             "parameters": {
                 "type": "object",
