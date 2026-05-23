@@ -291,6 +291,13 @@ class PriceAlertEvaluateRequest(BaseModel):
     limit: int = Field(default=100, ge=1, le=500)
 
 
+class PriceAlertDeliveryRequest(BaseModel):
+    """Record a Discord delivery attempt for one triggered alert."""
+
+    delivered: bool
+    error: str | None = Field(default=None, max_length=500)
+
+
 class PriceAlertResponse(BaseModel):
     """Persistent alert row as returned by the API."""
 
@@ -308,6 +315,9 @@ class PriceAlertResponse(BaseModel):
     triggered_at: datetime | None
     trigger_price: MoneyStr | None
     trigger_source: str | None
+    delivered_at: datetime | None
+    delivery_attempts: int
+    last_delivery_error: str | None
 
 
 class PriceAlertEvaluateResponse(BaseModel):

@@ -46,6 +46,7 @@ from bot.tools import (
     list_portfolio_snapshots,
     list_price_alerts,
     list_watchlist,
+    mark_price_alert_delivery,
     market_baseline_inspect_link,
     market_baseline_inventory_item,
     market_baseline_inventory_summary,
@@ -462,6 +463,43 @@ class TestToolsAuthAndConnectivity:
 
         assert listed == {"alerts": [alert], "count": 1}
         assert cancelled["status"] == "cancelled"
+
+    def test_mark_price_alert_delivery_wraps_api_route(self, httpx_mock) -> None:
+        alert_id = "11111111-1111-1111-1111-111111111111"
+        payload = {
+            "id": alert_id,
+            "discord_user_id": "1234",
+            "discord_channel_id": "5678",
+            "slug": "ak-47-redline-field-tested",
+            "display_name": "AK-47 | Redline (Field-Tested)",
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+            "status": "triggered",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_checked_at": "2026-05-23T00:01:00Z",
+            "triggered_at": "2026-05-23T00:01:00Z",
+            "trigger_price": "24.00",
+            "trigger_source": "skinport",
+            "delivered_at": "2026-05-23T00:02:00Z",
+            "delivery_attempts": 1,
+            "last_delivery_error": None,
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/alerts/price/{alert_id}/delivery",
+            json=payload,
+        )
+
+        result = mark_price_alert_delivery(alert_id, delivered=True)
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "delivered": True,
+            "error": None,
+        }
 
 
 class TestQueryCurrentPriceComposer:

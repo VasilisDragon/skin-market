@@ -957,6 +957,10 @@ def create_price_alert(
             raise ItemNotInWatchlistError(
                 f"Item not found for alert: {slug!r}."
             )
+        if resp.status_code == 409:
+            raise ApiUnexpectedError(
+                f"Price alert quota reached: {resp.text[:200]}"
+            )
         if resp.status_code >= 400:
             raise ApiUnexpectedError(
                 f"Unexpected {resp.status_code} from /alerts/price: "
@@ -1030,6 +1034,33 @@ def evaluate_triggered_price_alerts(limit: int = 100) -> dict:
         if resp.status_code >= 400:
             raise ApiUnexpectedError(
                 f"Unexpected {resp.status_code} from /alerts/price/evaluate: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
+def mark_price_alert_delivery(
+    alert_id: str,
+    delivered: bool,
+    error: str | None = None,
+) -> dict:
+    """Record whether Discord delivery succeeded for one triggered alert."""
+    payload = {"delivered": delivered, "error": error}
+    with _client(timeout_read=30.0) as c:
+        try:
+            resp = c.post(f"/alerts/price/{alert_id}/delivery", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /alerts/price/{alert_id}/delivery: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code == 404:
+            raise ItemNotInWatchlistError("Alert not found for delivery update.")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /alerts/price/{alert_id}/delivery: "
                 f"{resp.text[:200]}"
             )
         return resp.json()

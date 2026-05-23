@@ -147,6 +147,8 @@ services:
       DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:-}
       PRICE_ALERT_POLL_SECONDS: ${PRICE_ALERT_POLL_SECONDS:-60}
       PRICE_ALERT_BATCH_LIMIT: ${PRICE_ALERT_BATCH_LIMIT:-100}
+      PRICE_ALERT_MAX_ACTIVE_PER_USER: ${PRICE_ALERT_MAX_ACTIVE_PER_USER:-25}
+      PRICE_ALERT_MAX_DELIVERY_ATTEMPTS: ${PRICE_ALERT_MAX_DELIVERY_ATTEMPTS:-5}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     # No ``ports:`` mapping — the bot makes outbound connections
     # only (Discord + DeepSeek + api + postgres). Nothing reaches in.

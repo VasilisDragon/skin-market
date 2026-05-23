@@ -25,7 +25,8 @@ stores:
 - the direction (`at_or_below` or `at_or_above`),
 - the threshold,
 - lifecycle state (`active`, `triggered`, `cancelled`),
-- the latest evaluation and trigger metadata.
+- the latest evaluation and trigger metadata,
+- delivery acknowledgement and retry metadata.
 
 Expose deterministic API routes:
 
@@ -34,6 +35,7 @@ POST /alerts/price
 GET  /alerts/price
 POST /alerts/price/{alert_id}/cancel
 POST /alerts/price/evaluate
+POST /alerts/price/{alert_id}/delivery
 ```
 
 The Discord bot gets three LLM-callable tools for create/list/cancel. Discord
@@ -42,6 +44,12 @@ see or supply that ownership context. A separate bot background loop calls the
 evaluation endpoint, formats triggered alerts with deterministic copy, and sends
 them to the stored channel. No DeepSeek call is used for delivery.
 
+Triggered alerts are not considered delivered until the bot records a successful
+delivery acknowledgement. Failed sends increment `delivery_attempts` and keep the
+row eligible for retry until `PRICE_ALERT_MAX_DELIVERY_ATTEMPTS` is reached.
+Creation is capped by `PRICE_ALERT_MAX_ACTIVE_PER_USER` to provide the first
+quota boundary for a paid tier.
+
 Alert evaluation stays API-side:
 
 1. Load active alerts in creation order up to a batch limit.
@@ -49,6 +57,7 @@ Alert evaluation stays API-side:
 3. Use the lowest current price for `at_or_below` and the highest current price
    for `at_or_above`.
 4. Mark matched rows as `triggered` with trigger price/source metadata.
+5. Return triggered rows that still need Discord delivery.
 
 ## Consequences
 
@@ -58,17 +67,18 @@ Alert evaluation stays API-side:
   and cancel their own alerts through bot tools.
 - Delivery does not spend LLM tokens and does not depend on the model being
   available.
+- Failed Discord sends are retryable instead of disappearing after threshold
+  evaluation.
+- The active-alert cap prevents one user from creating unbounded background work.
 - The first version intentionally watches current market-name prices. It does
   not account for float, pattern, sticker, charm, trade-lock, or liquidity
   adjustments.
 
 ## Known limitations
 
-- Evaluation currently marks an alert `triggered` before the Discord send is
-  acknowledged. If delivery fails after evaluation, the row will not be retried.
-  A production hardening pass should add an outbox or explicit delivered state.
-- There is not yet a per-user alert quota. Entitlement and quota enforcement
-  belong with the paid-tier plumbing.
+- Quotas are a simple global per-user cap, not subscription-tier-aware yet.
+- Alerts that exhaust delivery attempts stay triggered but undelivered. A future
+  operator-facing repair surface should expose those rows.
 - Alerts are item-slug based. Watchlist coverage still determines which items
   can be monitored.
 

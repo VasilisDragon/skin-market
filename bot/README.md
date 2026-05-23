@@ -48,6 +48,8 @@ DISCORD_ALLOWED_USER_IDS=<your user ID>          # single user
 DISCORD_ALLOWED_USER_IDS=<id1>,<id2>,<id3>       # multiple users
 PRICE_ALERT_POLL_SECONDS=60
 PRICE_ALERT_BATCH_LIMIT=100
+PRICE_ALERT_MAX_ACTIVE_PER_USER=25
+PRICE_ALERT_MAX_DELIVERY_ATTEMPTS=5
 
 # Already set from Phase 6.6 — leave as is:
 SKIN_MARKET_API_TOKEN=<unchanged>

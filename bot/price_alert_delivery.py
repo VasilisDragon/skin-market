@@ -8,7 +8,11 @@ import os
 from decimal import Decimal
 from typing import Any
 
-from bot.tools import SkinMarketBotError, evaluate_triggered_price_alerts
+from bot.tools import (
+    SkinMarketBotError,
+    evaluate_triggered_price_alerts,
+    mark_price_alert_delivery,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,17 @@ async def price_alert_delivery_loop(client) -> None:
                 price_alert_batch_limit(),
             )
             for alert in payload.get("triggered") or []:
-                await _send_alert(client, alert)
+                delivered, error = await _send_alert(client, alert)
+                alert_id = alert.get("id")
+                if not alert_id:
+                    logger.warning("Triggered alert payload missing id: %r", alert)
+                    continue
+                await asyncio.to_thread(
+                    mark_price_alert_delivery,
+                    alert_id,
+                    delivered,
+                    error,
+                )
         except SkinMarketBotError as exc:
             logger.warning("Price alert delivery API error: %s", exc)
         except Exception:
@@ -60,27 +74,43 @@ async def price_alert_delivery_loop(client) -> None:
         await asyncio.sleep(poll_seconds)
 
 
-async def _send_alert(client, alert: dict[str, Any]) -> None:
+async def _send_alert(client, alert: dict[str, Any]) -> tuple[bool, str | None]:
     channel_id = alert.get("discord_channel_id")
     if not channel_id:
+        error = "missing Discord channel id"
         logger.warning("Triggered alert %s has no channel id", alert.get("id"))
-        return
+        return False, error
     try:
         channel_int = int(channel_id)
     except (TypeError, ValueError):
-        logger.warning("Triggered alert %s has invalid channel id %r", alert.get("id"), channel_id)
-        return
+        error = f"invalid Discord channel id: {channel_id!r}"
+        logger.warning(
+            "Triggered alert %s has invalid channel id %r",
+            alert.get("id"),
+            channel_id,
+        )
+        return False, error
 
     channel = client.get_channel(channel_int)
     if channel is None:
         try:
             channel = await client.fetch_channel(channel_int)
         except Exception:
+            error = f"could not resolve Discord channel {channel_id}"
             logger.exception(
                 "Could not resolve Discord channel %s for alert %s",
                 channel_id,
                 alert.get("id"),
             )
-            return
+            return False, error
 
-    await channel.send(format_price_alert_message(alert))
+    try:
+        await channel.send(format_price_alert_message(alert))
+    except Exception:
+        logger.exception(
+            "Could not send price alert %s to channel %s",
+            alert.get("id"),
+            channel_id,
+        )
+        return False, f"could not send Discord message to channel {channel_id}"
+    return True, None

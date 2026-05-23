@@ -51,7 +51,8 @@ References checked:
   - hidden Discord user/channel context injection for create/list/cancel tools,
   - an API-side deterministic threshold evaluator,
   - a background Discord delivery loop that sends triggered alerts without an
-    LLM call.
+    LLM call,
+  - delivery acknowledgement/retry state and a configurable active-alert cap.
 - Added persisted portfolio snapshots:
   - `POST /portfolio/snapshots`, `GET /portfolio/snapshots`, and
     `GET /portfolio/snapshots/trend`,
@@ -61,10 +62,10 @@ References checked:
 
 ## Next features worth building
 
-1. Alert hardening and quotas.
-   The first persistent-alert pass lacks a delivery outbox and per-user quotas.
-   Production paid tiers should add retry-safe delivery state, quota/entitlement
-   checks, quiet hours, and market-mover/drop alert variants.
+1. Subscription-tier quotas and alert variants.
+   Alerts now have retryable delivery state and a global active-alert cap.
+   Production paid tiers should add entitlement-specific quotas, quiet hours,
+   and market-mover/drop alert variants.
 
 2. Portfolio automation and item-level performance.
    Snapshot creation is manual and summary-level. The paid product version

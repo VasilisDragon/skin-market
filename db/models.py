@@ -390,6 +390,11 @@ class PriceAlert(Base):
     triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trigger_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     trigger_source: Mapped[str | None] = mapped_column(Text)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_delivery_error: Mapped[str | None] = mapped_column(Text)
 
 
 class PortfolioSnapshot(Base):

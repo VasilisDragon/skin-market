@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.asset_valuation import PricePoint, load_latest_usd_price_points
 from api.schemas import (
     PriceAlertCancelRequest,
     PriceAlertCreateRequest,
+    PriceAlertDeliveryRequest,
     PriceAlertEvaluateRequest,
     PriceAlertEvaluateResponse,
     PriceAlertResponse,
@@ -23,6 +25,8 @@ from db.connection import get_engine
 from db.models import Item, PriceAlert
 
 router = APIRouter(tags=["alerts"])
+DEFAULT_PRICE_ALERT_MAX_ACTIVE_PER_USER = 25
+DEFAULT_PRICE_ALERT_MAX_DELIVERY_ATTEMPTS = 5
 
 
 @router.post("/alerts/price", response_model=PriceAlertResponse)
@@ -34,6 +38,23 @@ def create_price_alert(req: PriceAlertCreateRequest) -> PriceAlertResponse:
         ).scalar_one_or_none()
         if item is None:
             raise HTTPException(status_code=404, detail=f"Item not found: {req.slug!r}")
+        active_count = session.scalar(
+            select(func.count())
+            .select_from(PriceAlert)
+            .where(
+                PriceAlert.discord_user_id == req.discord_user_id,
+                PriceAlert.status == "active",
+            )
+        )
+        max_active = price_alert_max_active_per_user()
+        if active_count is not None and active_count >= max_active:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Active price alert quota reached "
+                    f"({active_count}/{max_active})."
+                ),
+            )
 
         alert = PriceAlert(
             discord_user_id=req.discord_user_id,
@@ -98,6 +119,40 @@ def cancel_price_alert(
         return _alert_response(alert)
 
 
+@router.post("/alerts/price/{alert_id}/delivery", response_model=PriceAlertResponse)
+def record_price_alert_delivery(
+    alert_id: str,
+    req: PriceAlertDeliveryRequest,
+) -> PriceAlertResponse:
+    try:
+        parsed_id = uuid.UUID(alert_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Alert not found") from exc
+
+    engine = get_engine()
+    with Session(engine) as session:
+        alert = session.execute(
+            select(PriceAlert).where(PriceAlert.id == parsed_id)
+        ).scalar_one_or_none()
+        if alert is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if alert.status != "triggered":
+            raise HTTPException(
+                status_code=409,
+                detail="Only triggered alerts can receive delivery state.",
+            )
+
+        alert.delivery_attempts += 1
+        if req.delivered:
+            alert.delivered_at = datetime.now(UTC)
+            alert.last_delivery_error = None
+        else:
+            alert.last_delivery_error = (req.error or "delivery failed")[:500]
+        session.commit()
+        session.refresh(alert)
+        return _alert_response(alert)
+
+
 @router.post("/alerts/price/evaluate", response_model=PriceAlertEvaluateResponse)
 def evaluate_price_alerts(
     req: PriceAlertEvaluateRequest,
@@ -109,7 +164,6 @@ def evaluate_price_alerts(
     """
     engine = get_engine()
     now = datetime.now(UTC)
-    triggered: list[PriceAlert] = []
     checked_count = 0
 
     with Session(engine) as session:
@@ -132,15 +186,22 @@ def evaluate_price_alerts(
             alert.triggered_at = now
             alert.trigger_price = current["price"]
             alert.trigger_source = current["source"]
-            triggered.append(alert)
 
         session.commit()
-        for alert in triggered:
-            session.refresh(alert)
+        pending_delivery = session.execute(
+            select(PriceAlert)
+            .where(
+                PriceAlert.status == "triggered",
+                PriceAlert.delivered_at.is_(None),
+                PriceAlert.delivery_attempts < price_alert_max_delivery_attempts(),
+            )
+            .order_by(PriceAlert.triggered_at, PriceAlert.created_at)
+            .limit(req.limit)
+        ).scalars().all()
 
     return PriceAlertEvaluateResponse(
         checked_count=checked_count,
-        triggered=[_alert_response(row) for row in triggered],
+        triggered=[_alert_response(row) for row in pending_delivery],
     )
 
 
@@ -234,4 +295,25 @@ def _alert_response(alert: PriceAlert) -> PriceAlertResponse:
         triggered_at=alert.triggered_at,
         trigger_price=alert.trigger_price,
         trigger_source=alert.trigger_source,
+        delivered_at=alert.delivered_at,
+        delivery_attempts=alert.delivery_attempts,
+        last_delivery_error=alert.last_delivery_error,
+    )
+
+
+def price_alert_max_active_per_user() -> int:
+    return int(
+        os.environ.get(
+            "PRICE_ALERT_MAX_ACTIVE_PER_USER",
+            DEFAULT_PRICE_ALERT_MAX_ACTIVE_PER_USER,
+        )
+    )
+
+
+def price_alert_max_delivery_attempts() -> int:
+    return int(
+        os.environ.get(
+            "PRICE_ALERT_MAX_DELIVERY_ATTEMPTS",
+            DEFAULT_PRICE_ALERT_MAX_DELIVERY_ATTEMPTS,
+        )
     )

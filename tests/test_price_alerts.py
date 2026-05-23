@@ -172,6 +172,30 @@ def test_create_list_and_cancel_price_alert(client, alert_item) -> None:
     assert cancelled.json()["status"] == "cancelled"
 
 
+def test_create_price_alert_enforces_active_quota(
+    client,
+    alert_item,
+    monkeypatch,
+) -> None:
+    del alert_item
+    monkeypatch.setenv("PRICE_ALERT_MAX_ACTIVE_PER_USER", "1")
+    payload = {
+        "discord_user_id": _DISCORD_USER_ID,
+        "discord_channel_id": _DISCORD_CHANNEL_ID,
+        "slug": _SENTINEL_SLUG,
+        "direction": "at_or_below",
+        "threshold_price": "25.00",
+        "currency": "usd",
+    }
+
+    first = client.post("/alerts/price", json=payload)
+    second = client.post("/alerts/price", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "quota" in second.json()["detail"].lower()
+
+
 def test_evaluate_price_alerts_marks_triggered(client, alert_item) -> None:
     del alert_item
     created = client.post(
@@ -196,3 +220,48 @@ def test_evaluate_price_alerts_marks_triggered(client, alert_item) -> None:
     assert triggered[0]["status"] == "triggered"
     assert triggered[0]["trigger_price"] == "24.00"
     assert triggered[0]["trigger_source"] == "skinport"
+    assert triggered[0]["delivered_at"] is None
+    assert triggered[0]["delivery_attempts"] == 0
+
+
+def test_price_alert_delivery_state_retries_until_acknowledged(
+    client,
+    alert_item,
+) -> None:
+    del alert_item
+    created = client.post(
+        "/alerts/price",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "discord_channel_id": _DISCORD_CHANNEL_ID,
+            "slug": _SENTINEL_SLUG,
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+        },
+    ).json()
+    client.post("/alerts/price/evaluate", json={"limit": 10})
+
+    failed = client.post(
+        f"/alerts/price/{created['id']}/delivery",
+        json={"delivered": False, "error": "channel missing"},
+    )
+    assert failed.status_code == 200
+    assert failed.json()["delivery_attempts"] == 1
+    assert failed.json()["last_delivery_error"] == "channel missing"
+    assert failed.json()["delivered_at"] is None
+
+    retried = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
+    assert [row["id"] for row in retried["triggered"]] == [created["id"]]
+
+    delivered = client.post(
+        f"/alerts/price/{created['id']}/delivery",
+        json={"delivered": True},
+    )
+    assert delivered.status_code == 200
+    assert delivered.json()["delivery_attempts"] == 2
+    assert delivered.json()["last_delivery_error"] is None
+    assert delivered.json()["delivered_at"] is not None
+
+    final = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
+    assert created["id"] not in [row["id"] for row in final["triggered"]]
