@@ -277,3 +277,123 @@ def test_portfolio_snapshot_trend_reports_delta(
     assert body["latest"]["id"] == second["snapshot"]["id"]
     assert body["previous"]["id"] == first["snapshot"]["id"]
     assert body["delta_vs_previous"]["mid_change"] == "25.00"
+
+
+def test_portfolio_snapshot_prune_dry_run_preserves_rows(
+    client,
+    portfolio_item,
+) -> None:
+    del portfolio_item
+    snapshots = [
+        client.post(
+            "/portfolio/snapshots",
+            json={
+                "discord_user_id": _DISCORD_USER_ID,
+                "inventory_url": _INVENTORY_URL,
+            },
+        ).json()["snapshot"]
+        for _ in range(3)
+    ]
+    _set_snapshot_ages(
+        {
+            snapshots[0]["id"]: 10,
+            snapshots[1]["id"]: 5,
+            snapshots[2]["id"]: 1,
+        }
+    )
+
+    pruned = client.post(
+        "/portfolio/snapshots/prune",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "steam_id": _STEAM_ID,
+            "keep_latest": 1,
+            "dry_run": True,
+        },
+    )
+    listed = client.get(
+        "/portfolio/snapshots",
+        params={"discord_user_id": _DISCORD_USER_ID, "limit": 10},
+    )
+
+    assert pruned.status_code == 200
+    body = pruned.json()
+    assert body["dry_run"] is True
+    assert body["matched_count"] == 3
+    assert body["deleted_count"] == 2
+    assert [row["id"] for row in listed.json()] == [
+        snapshots[2]["id"],
+        snapshots[1]["id"],
+        snapshots[0]["id"],
+    ]
+
+
+def test_portfolio_snapshot_prune_deletes_by_age_and_keep_latest(
+    client,
+    portfolio_item,
+) -> None:
+    del portfolio_item
+    snapshots = [
+        client.post(
+            "/portfolio/snapshots",
+            json={
+                "discord_user_id": _DISCORD_USER_ID,
+                "inventory_url": _INVENTORY_URL,
+            },
+        ).json()["snapshot"]
+        for _ in range(3)
+    ]
+    _set_snapshot_ages(
+        {
+            snapshots[0]["id"]: 10,
+            snapshots[1]["id"]: 5,
+            snapshots[2]["id"]: 1,
+        }
+    )
+
+    pruned = client.post(
+        "/portfolio/snapshots/prune",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "steam_id": _STEAM_ID,
+            "keep_latest": 1,
+            "older_than_days": 7,
+            "dry_run": False,
+        },
+    )
+    listed = client.get(
+        "/portfolio/snapshots",
+        params={"discord_user_id": _DISCORD_USER_ID, "limit": 10},
+    )
+
+    assert pruned.status_code == 200
+    body = pruned.json()
+    assert body["dry_run"] is False
+    assert body["matched_count"] == 3
+    assert body["deleted_count"] == 1
+    assert body["deleted_snapshot_ids"] == [snapshots[0]["id"]]
+    assert [row["id"] for row in listed.json()] == [
+        snapshots[2]["id"],
+        snapshots[1]["id"],
+    ]
+
+
+def _set_snapshot_ages(snapshot_days: dict[str, int]) -> None:
+    engine = get_engine()
+    now = datetime.now(UTC)
+    with Session(engine) as session:
+        for snapshot_id, days_old in snapshot_days.items():
+            session.execute(
+                text(
+                    """
+                    UPDATE portfolio_snapshots
+                    SET created_at = :created_at
+                    WHERE id = :snapshot_id
+                    """
+                ),
+                {
+                    "snapshot_id": uuid.UUID(snapshot_id),
+                    "created_at": now - timedelta(days=days_old),
+                },
+            )
+        session.commit()

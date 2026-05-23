@@ -34,6 +34,7 @@ Expose deterministic API routes:
 POST /portfolio/snapshots
 GET  /portfolio/snapshots
 GET  /portfolio/snapshots/trend
+POST /portfolio/snapshots/prune
 ```
 
 The create route reuses the existing public-inventory baseline path, persists a
@@ -42,11 +43,18 @@ previous snapshot for the same Discord user and Steam account. The trend route
 returns latest, previous, latest-vs-previous delta, oldest-vs-latest delta, and
 the bounded recent snapshot list.
 
-The Discord bot gets three LLM-callable tools:
+The prune route previews or deletes old summary snapshots for a Discord user. It
+can keep the latest N snapshots, optionally scope to one SteamID64, and
+optionally delete only rows older than a configured age. The default is a
+`dry_run` preview so the bot can show users exactly what would be removed before
+destructive cleanup.
+
+The Discord bot gets four LLM-callable tools:
 
 - `save_portfolio_snapshot`
 - `list_portfolio_snapshots`
 - `portfolio_snapshot_trend`
+- `prune_portfolio_snapshots`
 
 Discord user context is injected by the bot. The LLM does not supply ownership
 ids and does not calculate portfolio movement.
@@ -57,6 +65,8 @@ ids and does not calculate portfolio movement.
   manual comparison.
 - The first version is privacy-conservative: it persists summary baselines and
   bounded samples, not full raw inventories.
+- Users can preview or prune their saved summary history without operator
+  database access.
 - The bot can answer trend/P&L-style questions from saved snapshots while
   stating that this is market-baseline movement, not realized P/L.
 - Snapshot accuracy inherits ADR 030's limitation: totals are market-name

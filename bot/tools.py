@@ -908,6 +908,47 @@ def portfolio_snapshot_trend(
         return _get_json(c, "/portfolio/snapshots/trend", params=params)
 
 
+def prune_portfolio_snapshots(
+    keep_latest: int = 10,
+    steam_id: str | None = None,
+    older_than_days: int | None = None,
+    dry_run: bool = True,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> dict:
+    """Preview or delete old portfolio snapshots for the current Discord user."""
+    del discord_channel_id
+    if discord_user_id is None:
+        raise ApiUnexpectedError(
+            "Missing Discord user context for portfolio snapshots."
+        )
+    payload: dict[str, Any] = {
+        "discord_user_id": discord_user_id,
+        "keep_latest": keep_latest,
+        "dry_run": dry_run,
+    }
+    if steam_id is not None:
+        payload["steam_id"] = steam_id
+    if older_than_days is not None:
+        payload["older_than_days"] = older_than_days
+    with _client() as c:
+        try:
+            resp = c.post("/portfolio/snapshots/prune", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /portfolio/snapshots/prune: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /portfolio/snapshots/prune: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def create_portfolio_monitor(
     inventory_url: str,
     interval_minutes: int = 1440,
@@ -1973,6 +2014,41 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "prune_portfolio_snapshots",
+            "description": (
+                "Call this when the user asks to delete, prune, clean up, "
+                "or preview deletion of saved portfolio snapshots. Discord "
+                "user context is injected by the bot; do not ask the user "
+                "for IDs. Use dry_run=true for preview requests and "
+                "dry_run=false only when the user explicitly asks to delete."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keep_latest": {
+                        "type": "integer",
+                        "description": "Number of newest snapshots to keep. Default 10.",
+                    },
+                    "steam_id": {
+                        "type": "string",
+                        "description": "Optional SteamID64 filter.",
+                    },
+                    "older_than_days": {
+                        "type": "integer",
+                        "description": "Only prune snapshots older than this many days.",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Preview only when true. Default true.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_portfolio_monitor",
             "description": (
                 "Call this when the user asks to monitor, subscribe to, or "
@@ -2268,6 +2344,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "save_portfolio_snapshot": save_portfolio_snapshot,
     "list_portfolio_snapshots": list_portfolio_snapshots,
     "portfolio_snapshot_trend": portfolio_snapshot_trend,
+    "prune_portfolio_snapshots": prune_portfolio_snapshots,
     "create_portfolio_monitor": create_portfolio_monitor,
     "list_portfolio_monitors": list_portfolio_monitors,
     "cancel_portfolio_monitor": cancel_portfolio_monitor,

@@ -274,6 +274,29 @@ class PortfolioSnapshotTrendResponse(BaseModel):
     snapshots: list[PortfolioSnapshotResponse]
 
 
+class PortfolioSnapshotPruneRequest(BaseModel):
+    """Delete or preview deletion of old summary-level portfolio snapshots."""
+
+    discord_user_id: str
+    steam_id: str | None = None
+    keep_latest: int = Field(default=10, ge=0, le=500)
+    older_than_days: int | None = Field(default=None, ge=1, le=3650)
+    dry_run: bool = True
+
+
+class PortfolioSnapshotPruneResponse(BaseModel):
+    """Result of portfolio snapshot retention pruning."""
+
+    discord_user_id: str
+    steam_id: str | None
+    keep_latest: int
+    older_than_days: int | None
+    dry_run: bool
+    matched_count: int
+    deleted_count: int
+    deleted_snapshot_ids: list[str]
+
+
 class PriceAlertCreateRequest(BaseModel):
     """Create one persistent Discord-owned price alert."""
 

@@ -17,6 +17,8 @@ from api.schemas import (
     InventorySummaryRequest,
     PortfolioSnapshotCreateRequest,
     PortfolioSnapshotCreateResponse,
+    PortfolioSnapshotPruneRequest,
+    PortfolioSnapshotPruneResponse,
     PortfolioSnapshotResponse,
     PortfolioSnapshotTrendResponse,
 )
@@ -204,6 +206,55 @@ def portfolio_snapshot_trend(
         delta_vs_previous=_snapshot_delta(latest_row, previous_row),
         delta_since_oldest=_snapshot_delta(latest_row, oldest_row),
         snapshots=snapshots,
+    )
+
+
+@router.post(
+    "/portfolio/snapshots/prune",
+    response_model=PortfolioSnapshotPruneResponse,
+)
+def prune_portfolio_snapshots(
+    req: PortfolioSnapshotPruneRequest,
+) -> PortfolioSnapshotPruneResponse:
+    """Preview or delete older summary-level snapshots for one Discord user."""
+    stmt = (
+        select(PortfolioSnapshot)
+        .where(PortfolioSnapshot.discord_user_id == req.discord_user_id)
+        .order_by(PortfolioSnapshot.created_at.desc())
+    )
+    if req.steam_id is not None:
+        stmt = stmt.where(PortfolioSnapshot.steam_id == req.steam_id)
+
+    cutoff = (
+        datetime.now(UTC) - timedelta(days=req.older_than_days)
+        if req.older_than_days is not None
+        else None
+    )
+
+    engine = get_engine()
+    with Session(engine) as session:
+        rows = session.execute(stmt).scalars().all()
+        to_delete = [
+            row
+            for index, row in enumerate(rows)
+            if index >= req.keep_latest
+            and (cutoff is None or row.created_at < cutoff)
+        ]
+        deleted_ids = [str(row.id) for row in to_delete]
+        if not req.dry_run:
+            for row in to_delete:
+                session.delete(row)
+            session.commit()
+
+    return PortfolioSnapshotPruneResponse(
+        discord_user_id=req.discord_user_id,
+        steam_id=req.steam_id,
+        keep_latest=req.keep_latest,
+        older_than_days=req.older_than_days,
+        dry_run=req.dry_run,
+        matched_count=len(rows),
+        deleted_count=len(deleted_ids),
+        deleted_snapshot_ids=deleted_ids,
     )
 
 

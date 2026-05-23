@@ -41,6 +41,7 @@ CONTEXT_TOOL_NAMES: frozenset[str] = frozenset(
         "save_portfolio_snapshot",
         "list_portfolio_snapshots",
         "portfolio_snapshot_trend",
+        "prune_portfolio_snapshots",
         "create_portfolio_monitor",
         "list_portfolio_monitors",
         "cancel_portfolio_monitor",

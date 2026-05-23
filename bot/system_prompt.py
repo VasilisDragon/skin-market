@@ -95,6 +95,10 @@ or missing pairs.
   from saved snapshots. Render `delta_vs_previous` first, then
   `delta_since_oldest` when present. State that this is market-baseline movement,
   not realized P/L and not float/sticker-aware appraisal.
+- `prune_portfolio_snapshots`: preview or delete saved portfolio snapshots.
+  Use `dry_run=true` when the user asks what would be deleted. Use
+  `dry_run=false` only when the user explicitly asks to delete/prune/clear
+  saved snapshots. Render matched count, deleted count, and retention rule.
 - `create_portfolio_monitor`: recurring monitoring of a public inventory
   baseline. Use when the user wants alerts/updates when their portfolio changes
   over time. Explain interval, change threshold, and monitor id.

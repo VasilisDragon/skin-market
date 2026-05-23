@@ -57,7 +57,8 @@ References checked:
 - Added persisted portfolio snapshots:
   - `POST /portfolio/snapshots`, `GET /portfolio/snapshots`, and
     `GET /portfolio/snapshots/trend`,
-  - hidden Discord user ownership for save/list/trend tools,
+  - `POST /portfolio/snapshots/prune` for dry-run and confirmed cleanup,
+  - hidden Discord user ownership for save/list/trend/prune tools,
   - latest-vs-previous and oldest-vs-latest movement calculations,
   - summary-level retention rather than full raw inventory storage.
 - Added Discord entitlement/quota plumbing:
@@ -96,8 +97,8 @@ References checked:
    market-mover/drop variants beyond exact price thresholds.
 
 2. Portfolio automation and item-level performance.
-   Snapshot creation now supports scheduled baseline monitors. The paid product
-   version should add retention controls and eventually full item-level
+   Snapshot creation now supports scheduled baseline monitors plus user-visible
+   retention cleanup. The remaining paid-product step is full item-level
    performance after privacy/quota policy is explicit.
 
 3. Real asset-specific repricing.

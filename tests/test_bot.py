@@ -63,6 +63,7 @@ from bot.tools import (
     market_signal_digest,
     narrative_today,
     portfolio_snapshot_trend,
+    prune_portfolio_snapshots,
     query_current_price,
     query_drift,
     query_price_history,
@@ -130,6 +131,7 @@ class TestToolsRegistry:
             "save_portfolio_snapshot",
             "list_portfolio_snapshots",
             "portfolio_snapshot_trend",
+            "prune_portfolio_snapshots",
             "create_portfolio_monitor",
             "list_portfolio_monitors",
             "cancel_portfolio_monitor",
@@ -403,6 +405,45 @@ class TestToolsAuthAndConnectivity:
 
         assert listed == {"snapshots": [snapshot], "count": 1}
         assert moved == trend
+
+    def test_prune_portfolio_snapshots_wraps_api_route(self, httpx_mock) -> None:
+        payload = {
+            "discord_user_id": "1234",
+            "steam_id": "765",
+            "keep_latest": 3,
+            "older_than_days": 30,
+            "dry_run": False,
+            "matched_count": 6,
+            "deleted_count": 2,
+            "deleted_snapshot_ids": [
+                "22222222-2222-2222-2222-222222222222",
+                "33333333-3333-3333-3333-333333333333",
+            ],
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/portfolio/snapshots/prune",
+            json=payload,
+        )
+
+        result = prune_portfolio_snapshots(
+            keep_latest=3,
+            steam_id="765",
+            older_than_days=30,
+            dry_run=False,
+            discord_user_id="1234",
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "discord_user_id": "1234",
+            "keep_latest": 3,
+            "dry_run": False,
+            "steam_id": "765",
+            "older_than_days": 30,
+        }
 
     def test_portfolio_monitor_wrappers(self, httpx_mock) -> None:
         monitor_id = "44444444-4444-4444-4444-444444444444"
