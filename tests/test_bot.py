@@ -498,6 +498,9 @@ class TestToolsAuthAndConnectivity:
             "direction": "at_or_below",
             "threshold_price": "25.00",
             "currency": "usd",
+            "quiet_start_hour": None,
+            "quiet_end_hour": None,
+            "timezone_offset_minutes": 0,
         }
 
     def test_list_and_cancel_price_alerts_wrap_api_routes(self, httpx_mock) -> None:

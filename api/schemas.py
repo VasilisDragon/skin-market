@@ -22,7 +22,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, PlainSerializer
+from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
 # Decimal → str at JSON time. Pydantic v2 idiom. Field type stays
 # ``Decimal`` so arithmetic inside route handlers works without
@@ -282,6 +282,17 @@ class PriceAlertCreateRequest(BaseModel):
     direction: AlertDirection
     threshold_price: MoneyStr
     currency: Denomination = "usd"
+    quiet_start_hour: int | None = Field(default=None, ge=0, le=23)
+    quiet_end_hour: int | None = Field(default=None, ge=0, le=23)
+    timezone_offset_minutes: int = Field(default=0, ge=-720, le=840)
+
+    @model_validator(mode="after")
+    def quiet_hours_are_complete(self) -> PriceAlertCreateRequest:
+        if (self.quiet_start_hour is None) != (self.quiet_end_hour is None):
+            raise ValueError(
+                "quiet_start_hour and quiet_end_hour must be provided together"
+            )
+        return self
 
 
 class PriceAlertCancelRequest(BaseModel):
@@ -323,6 +334,9 @@ class PriceAlertResponse(BaseModel):
     delivered_at: datetime | None
     delivery_attempts: int
     last_delivery_error: str | None
+    quiet_start_hour: int | None
+    quiet_end_hour: int | None
+    timezone_offset_minutes: int
 
 
 class PriceAlertEvaluateResponse(BaseModel):

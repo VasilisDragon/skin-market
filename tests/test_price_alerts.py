@@ -265,3 +265,60 @@ def test_price_alert_delivery_state_retries_until_acknowledged(
 
     final = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
     assert created["id"] not in [row["id"] for row in final["triggered"]]
+
+
+def test_triggered_price_alert_respects_quiet_hours(client, alert_item) -> None:
+    del alert_item
+    now_hour = datetime.now(UTC).hour
+    quiet = client.post(
+        "/alerts/price",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "discord_channel_id": _DISCORD_CHANNEL_ID,
+            "slug": _SENTINEL_SLUG,
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+            "quiet_start_hour": now_hour,
+            "quiet_end_hour": (now_hour + 1) % 24,
+            "timezone_offset_minutes": 0,
+        },
+    ).json()
+    ready = client.post(
+        "/alerts/price",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "discord_channel_id": _DISCORD_CHANNEL_ID,
+            "slug": _SENTINEL_SLUG,
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+        },
+    ).json()
+
+    evaluated = client.post("/alerts/price/evaluate", json={"limit": 10}).json()
+
+    assert quiet["id"] not in [row["id"] for row in evaluated["triggered"]]
+    assert ready["id"] in [row["id"] for row in evaluated["triggered"]]
+
+    pending = client.post("/alerts/price/evaluate", json={"limit": 1}).json()
+
+    assert [row["id"] for row in pending["triggered"]] == [ready["id"]]
+
+
+def test_create_price_alert_rejects_partial_quiet_hours(client, alert_item) -> None:
+    del alert_item
+    response = client.post(
+        "/alerts/price",
+        json={
+            "discord_user_id": _DISCORD_USER_ID,
+            "discord_channel_id": _DISCORD_CHANNEL_ID,
+            "slug": _SENTINEL_SLUG,
+            "direction": "at_or_below",
+            "threshold_price": "25.00",
+            "currency": "usd",
+            "quiet_start_hour": 22,
+        },
+    )
+
+    assert response.status_code == 422

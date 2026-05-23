@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -73,6 +73,9 @@ def create_price_alert(req: PriceAlertCreateRequest) -> PriceAlertResponse:
             direction=req.direction,
             threshold_price=req.threshold_price,
             status="active",
+            quiet_start_hour=req.quiet_start_hour,
+            quiet_end_hour=req.quiet_end_hour,
+            timezone_offset_minutes=req.timezone_offset_minutes,
         )
         session.add(alert)
         session.commit()
@@ -203,8 +206,10 @@ def evaluate_price_alerts(
                 PriceAlert.delivery_attempts < price_alert_max_delivery_attempts(),
             )
             .order_by(PriceAlert.triggered_at, PriceAlert.created_at)
-            .limit(req.limit)
         ).scalars().all()
+        pending_delivery = [
+            alert for alert in pending_delivery if not _is_quiet_now(alert, now)
+        ][: req.limit]
 
     return PriceAlertEvaluateResponse(
         checked_count=checked_count,
@@ -305,6 +310,9 @@ def _alert_response(alert: PriceAlert) -> PriceAlertResponse:
         delivered_at=alert.delivered_at,
         delivery_attempts=alert.delivery_attempts,
         last_delivery_error=alert.last_delivery_error,
+        quiet_start_hour=alert.quiet_start_hour,
+        quiet_end_hour=alert.quiet_end_hour,
+        timezone_offset_minutes=alert.timezone_offset_minutes,
     )
 
 
@@ -324,3 +332,18 @@ def price_alert_max_delivery_attempts() -> int:
             DEFAULT_PRICE_ALERT_MAX_DELIVERY_ATTEMPTS,
         )
     )
+
+
+def _is_quiet_now(alert: PriceAlert, now: datetime) -> bool:
+    if alert.quiet_start_hour is None or alert.quiet_end_hour is None:
+        return False
+    local_hour = (
+        now + timedelta(minutes=alert.timezone_offset_minutes)
+    ).hour
+    start = alert.quiet_start_hour
+    end = alert.quiet_end_hour
+    if start == end:
+        return False
+    if start < end:
+        return start <= local_hour < end
+    return local_hour >= start or local_hour < end

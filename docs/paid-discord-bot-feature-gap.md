@@ -52,7 +52,8 @@ References checked:
   - an API-side deterministic threshold evaluator,
   - a background Discord delivery loop that sends triggered alerts without an
     LLM call,
-  - delivery acknowledgement/retry state and a configurable active-alert cap.
+  - delivery acknowledgement/retry state, optional quiet hours, and a
+    configurable active-alert cap.
 - Added persisted portfolio snapshots:
   - `POST /portfolio/snapshots`, `GET /portfolio/snapshots`, and
     `GET /portfolio/snapshots/trend`,
@@ -87,9 +88,9 @@ References checked:
 ## Next features worth building
 
 1. Alert variants and quiet hours.
-   Alerts now have retryable delivery state and entitlement-specific quota
-   checks. The next paid-alert step is market-mover/drop variants plus
-   user-configurable quiet hours.
+   Alerts now have retryable delivery state, quiet hours, and
+   entitlement-specific quota checks. The next paid-alert step is
+   market-mover/drop variants beyond exact price thresholds.
 
 2. Portfolio automation and item-level performance.
    Snapshot creation now supports scheduled baseline monitors. The paid product

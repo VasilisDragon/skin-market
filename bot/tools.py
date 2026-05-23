@@ -1029,6 +1029,9 @@ def create_price_alert(
     direction: str,
     threshold_price: str,
     currency: str = "usd",
+    quiet_start_hour: int | None = None,
+    quiet_end_hour: int | None = None,
+    timezone_offset_minutes: int = 0,
     discord_user_id: str | None = None,
     discord_channel_id: str | None = None,
 ) -> dict:
@@ -1042,6 +1045,9 @@ def create_price_alert(
         "direction": direction,
         "threshold_price": threshold_price,
         "currency": currency,
+        "quiet_start_hour": quiet_start_hour,
+        "quiet_end_hour": quiet_end_hour,
+        "timezone_offset_minutes": timezone_offset_minutes,
     }
     with _client() as c:
         try:
@@ -1776,6 +1782,18 @@ TOOL_DEFINITIONS: list[dict] = [
                         "type": "string",
                         "enum": ["usd", "wallet_credit"],
                         "description": "usd for dollars; wallet_credit for SC.",
+                    },
+                    "quiet_start_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet start hour, 0-23.",
+                    },
+                    "quiet_end_hour": {
+                        "type": "integer",
+                        "description": "Optional local quiet end hour, 0-23.",
+                    },
+                    "timezone_offset_minutes": {
+                        "type": "integer",
+                        "description": "User local offset from UTC in minutes.",
                     },
                 },
                 "required": ["slug", "direction", "threshold_price"],

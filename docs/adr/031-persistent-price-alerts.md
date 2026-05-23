@@ -27,6 +27,7 @@ stores:
 - lifecycle state (`active`, `triggered`, `cancelled`),
 - the latest evaluation and trigger metadata,
 - delivery acknowledgement and retry metadata.
+- optional quiet-hour delivery window using a fixed UTC offset.
 
 Expose deterministic API routes:
 
@@ -49,6 +50,8 @@ delivery acknowledgement. Failed sends increment `delivery_attempts` and keep th
 row eligible for retry until `PRICE_ALERT_MAX_DELIVERY_ATTEMPTS` is reached.
 Creation is capped by `PRICE_ALERT_MAX_ACTIVE_PER_USER` to provide the first
 quota boundary for a paid tier.
+If quiet hours are configured, triggered alerts remain pending until the user's
+local quiet window ends.
 
 Alert evaluation stays API-side:
 
@@ -58,6 +61,7 @@ Alert evaluation stays API-side:
    for `at_or_above`.
 4. Mark matched rows as `triggered` with trigger price/source metadata.
 5. Return triggered rows that still need Discord delivery.
+6. Suppress pending-delivery rows while their quiet-hour window is active.
 
 ## Consequences
 
@@ -69,6 +73,8 @@ Alert evaluation stays API-side:
   available.
 - Failed Discord sends are retryable instead of disappearing after threshold
   evaluation.
+- Overnight notifications can be deferred without cancelling or losing the
+  triggered alert.
 - The active-alert cap prevents one user from creating unbounded background work.
 - The first version intentionally watches current market-name prices. It does
   not account for float, pattern, sticker, charm, trade-lock, or liquidity

@@ -51,7 +51,8 @@ or missing pairs.
   drop, or rise requests for tracked item slugs. Convert dollars to `usd` and
   Steam wallet credit / SC to `wallet_credit`. Use `at_or_below` for buy/drop
   targets and `at_or_above` for rise/sell targets. Do not ask for Discord user
-  or channel ids; the bot injects them.
+  or channel ids; the bot injects them. Use quiet-hour arguments only if the
+  user gives them.
 - `list_price_alerts`: list/show my alerts.
 - `cancel_price_alert`: cancel/remove/delete an alert when the user gives an
   alert id.

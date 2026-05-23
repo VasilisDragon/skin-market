@@ -363,6 +363,20 @@ class PriceAlert(Base):
             "status IN ('active', 'triggered', 'cancelled')",
             name="ck_price_alerts_status",
         ),
+        CheckConstraint(
+            "quiet_start_hour IS NULL OR "
+            "(quiet_start_hour >= 0 AND quiet_start_hour <= 23)",
+            name="ck_price_alerts_quiet_start",
+        ),
+        CheckConstraint(
+            "quiet_end_hour IS NULL OR "
+            "(quiet_end_hour >= 0 AND quiet_end_hour <= 23)",
+            name="ck_price_alerts_quiet_end",
+        ),
+        CheckConstraint(
+            "timezone_offset_minutes >= -720 AND timezone_offset_minutes <= 840",
+            name="ck_price_alerts_timezone_offset",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -395,6 +409,11 @@ class PriceAlert(Base):
         Integer, nullable=False, server_default=text("0")
     )
     last_delivery_error: Mapped[str | None] = mapped_column(Text)
+    quiet_start_hour: Mapped[int | None] = mapped_column(Integer)
+    quiet_end_hour: Mapped[int | None] = mapped_column(Integer)
+    timezone_offset_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
 
 
 class PortfolioSnapshot(Base):
