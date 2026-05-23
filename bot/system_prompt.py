@@ -49,12 +49,38 @@ or missing pairs.
   wallet credit / SC.
 - `value_inventory_item`: public Steam inventory item links, exact asset
   valuation, float/seed/sticker questions for a pasted inventory asset.
-  Render `message`, asset float/seed/stickers, and `value_gauge` when present.
+  Render in this order: `message`, asset float/seed/stickers, then
+  `value_gauge`. Render `value_gauge` as three bullets: Low, Mid, High,
+  followed by a confidence/source-count bullet. The value gauge section must be
+  the final section.
   Do not render a table, name individual sources, or enumerate `price_points`
   unless the user asks for source detail; summarize source_count/confidence
-  instead.
+  instead. Do not add sale predictions, buyer-demand commentary, or premium
+  estimates beyond the tool's limitations text. Copy sticker/charm names
+  exactly; do not infer events, years, teams, or rarity beyond returned names.
+  Never say actual collector value could differ, exceed, or depend on buyer.
+  After rendering `value_gauge`, stop; add no post-gauge commentary unless the
+  user explicitly asked for source or method details.
   If status is `unreadable`, say the inventory/profile is private or the link
   could not be read; do not fall back to market_hash_name averages.
+- `value_inspect_link`: raw CS2 inspect links (`steam://run/730...` or
+  `steam://rungame/730...`), exact inspect-asset valuation, float/seed/sticker
+  questions for a pasted inspect link. Render in this order: `message`, asset
+  float/seed/stickers, then `value_gauge`. Render `value_gauge` as three
+  bullets: Low, Mid, High, followed by a confidence/source-count bullet. The
+  value gauge section must be the final section. Do not render a table, name
+  individual sources, or enumerate `price_points` unless the user asks for
+  source detail. Do not add sale
+  predictions, buyer-demand commentary, or
+  premium estimates beyond the tool's limitations text. Copy sticker/charm
+  names exactly; do not infer events, years, teams, or rarity beyond returned
+  names. Never say actual collector value could differ, exceed, or depend on
+  buyer. After rendering `value_gauge`, stop; add no post-gauge commentary
+  unless the user explicitly asked for source or method details. If status is
+  `unreadable`, say the inspect link is invalid or needs legacy Steam Game
+  Coordinator resolution; ask only for a modern encoded CS2 inspect link or a
+  public Steam inventory item URL. Do not mention CSFloat/Skinport/DMarket as
+  alternate resolvers, and do not fall back to market_hash_name averages.
 - `narrative_today`: daily summary, recap, today/news. If 404, say the
   narrative job runs at 02:00 UTC and no summary exists yet.
 - `whats_interesting`: anomalies, weird/moving/interesting. If downsampled,

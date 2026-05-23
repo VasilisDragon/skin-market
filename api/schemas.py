@@ -164,6 +164,14 @@ class InventoryValuationRequest(BaseModel):
     )
 
 
+class InspectValuationRequest(BaseModel):
+    """Request body for inspect-link asset valuation."""
+
+    inspect_url: str = Field(
+        ..., description="CS2 inspect URL, such as steam://run/730//+..."
+    )
+
+
 class InventoryValuationResponse(BaseModel):
     """Structured per-asset valuation result.
 

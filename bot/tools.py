@@ -806,6 +806,27 @@ def value_inventory_item(inventory_url: str) -> dict:
         return resp.json()
 
 
+def value_inspect_link(inspect_url: str) -> dict:
+    """Return a deterministic value gauge for one modern CS2 inspect link."""
+    payload = {"inspect_url": inspect_url}
+    with _client(timeout_read=60.0) as c:
+        try:
+            resp = c.post("/asset-valuations/inspect", json=payload)
+        except httpx.RequestError as exc:
+            raise ApiUnreachableError(
+                f"Couldn't reach /asset-valuations/inspect: {exc}"
+            ) from exc
+        if resp.status_code == 401:
+            raise ApiAuthError("API rejected the bearer token (401).")
+        if resp.status_code >= 400:
+            raise ApiUnexpectedError(
+                "Unexpected "
+                f"{resp.status_code} from /asset-valuations/inspect: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+
 def narrative_today() -> dict:
     """Latest daily narrative. The ``text`` field is bounded (one
     English paragraph) and passes through unchanged; the ``meta``
@@ -1198,6 +1219,31 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "value_inspect_link",
+            "description": (
+                "Call this when the user pastes a CS2 inspect link, "
+                "steam://run link, or asks to value an exact inspect "
+                "asset. Returns decoded float/seed/stickers plus a "
+                "deterministic USD value gauge when local market data exists."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inspect_url": {
+                        "type": "string",
+                        "description": (
+                            "Full CS2 inspect URL, usually starting with "
+                            "steam://run/730 or steam://rungame/730."
+                        ),
+                    }
+                },
+                "required": ["inspect_url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "query_drift",
             "description": (
                 "Call this for drift, Pricempire consistency, or "
@@ -1251,6 +1297,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "render_chart": render_chart,
     "evaluate_deal": evaluate_deal,
     "value_inventory_item": value_inventory_item,
+    "value_inspect_link": value_inspect_link,
     "query_drift": query_drift,
     "narrative_today": narrative_today,
     "whats_interesting": whats_interesting,

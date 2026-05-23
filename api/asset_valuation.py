@@ -13,11 +13,13 @@ import os
 import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import httpx
+from cs2_inspect_lite import decode_inspect_url, is_classic, is_masked
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,9 @@ from db.naming import slugify
 
 PRICEMPIRE_BASE_URL = "https://api.pricempire.com"
 PRICEMPIRE_INVENTORY_PATH = "/v4/paid/inventory"
+CSGO_API_BASE_URL = (
+    "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en"
+)
 STEAM_COMMUNITY_BASE_URL = "https://steamcommunity.com"
 CS2_APP_ID = "730"
 CS2_CONTEXT_ID = "2"
@@ -46,6 +51,18 @@ class InventoryAssetNotFoundError(RuntimeError):
     """Pricempire returned the inventory, but not the requested asset id."""
 
 
+class InspectLinkError(ValueError):
+    """The supplied URL is not a supported CS2 inspect link."""
+
+
+class InspectLinkUnsupportedError(RuntimeError):
+    """The inspect link is valid but needs an out-of-scope resolver."""
+
+
+class CSGOReferenceUnavailableError(RuntimeError):
+    """The public CS2 schema reference could not be loaded."""
+
+
 @dataclass(frozen=True)
 class InventoryItemReference:
     steam_id: str | None
@@ -62,6 +79,13 @@ class PricePoint:
     price: Decimal
     volume: int | None
     observed_at: str | None
+
+
+@dataclass(frozen=True)
+class CSGOReferenceData:
+    skins_not_grouped: list[dict[str, Any]]
+    stickers_by_id: dict[str, dict[str, Any]]
+    keychains_by_id: dict[str, dict[str, Any]]
 
 
 def parse_inventory_item_url(url: str) -> InventoryItemReference:
@@ -219,6 +243,93 @@ def find_inventory_asset(inventory: dict[str, Any], asset_id: str) -> dict[str, 
     )
 
 
+def decode_modern_inspect_link(inspect_url: str) -> Any:
+    """Decode a modern CS2 inspect link without Steam account state.
+
+    March 2026+ masked/hybrid links self-encode item properties. Classic
+    ``S...A...D<decimal>`` links are only pointers; resolving them needs
+    the Steam Game Coordinator and a Steam account, so the route declines
+    them explicitly under the session scope boundary.
+    """
+    inspect_url = inspect_url.strip()
+    if not inspect_url:
+        raise InspectLinkError("Expected a CS2 inspect link.")
+    if is_classic(inspect_url):
+        raise InspectLinkUnsupportedError(
+            "Legacy inspect links only contain Steam Game Coordinator "
+            "pointers. Resolving them requires a Steam account/GC session, "
+            "which is outside this session's scope."
+        )
+    if not is_masked(inspect_url):
+        raise InspectLinkError(
+            "Expected a modern CS2 inspect link with an encoded payload."
+        )
+    decoded = decode_inspect_url(inspect_url)
+    if decoded is None:
+        raise InspectLinkError("Could not decode that CS2 inspect link.")
+    return decoded
+
+
+@lru_cache(maxsize=1)
+def fetch_csgo_reference_data() -> CSGOReferenceData:
+    """Load public CS2 schema data used to name decoded inspect links."""
+    try:
+        with httpx.Client(
+            base_url=CSGO_API_BASE_URL,
+            timeout=httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0),
+        ) as client:
+            skins_response = client.get("/skins_not_grouped.json")
+            inventory_response = client.get("/inventory.json")
+    except httpx.RequestError as exc:
+        raise CSGOReferenceUnavailableError(
+            "Could not load the public CS2 schema reference."
+        ) from exc
+
+    if skins_response.status_code >= 400 or inventory_response.status_code >= 400:
+        raise CSGOReferenceUnavailableError(
+            "The public CS2 schema reference returned an HTTP error."
+        )
+
+    skins = skins_response.json()
+    inventory = inventory_response.json()
+    if not isinstance(skins, list) or not isinstance(inventory, dict):
+        raise CSGOReferenceUnavailableError(
+            "The public CS2 schema reference had an unexpected shape."
+        )
+
+    return CSGOReferenceData(
+        skins_not_grouped=skins,
+        stickers_by_id=inventory.get("stickers") or {},
+        keychains_by_id=inventory.get("keychains") or {},
+    )
+
+
+def resolve_decoded_market_hash_name(
+    decoded: Any, reference_data: CSGOReferenceData
+) -> str | None:
+    """Map decoded defindex/paint/wear/quality to a market hash name."""
+    wear_name = _wear_name(decoded.paintwear)
+    is_stattrak = _is_stattrak_quality(decoded.quality)
+    is_souvenir = _is_souvenir_quality(decoded.quality)
+
+    for row in reference_data.skins_not_grouped:
+        weapon = row.get("weapon") or {}
+        wear = row.get("wear") or {}
+        if int(weapon.get("weapon_id") or -1) != int(decoded.defindex):
+            continue
+        if int(row.get("paint_index") or -1) != int(decoded.paintindex):
+            continue
+        if wear.get("name") != wear_name:
+            continue
+        if bool(row.get("stattrak")) != is_stattrak:
+            continue
+        if bool(row.get("souvenir")) != is_souvenir:
+            continue
+        market_hash_name = row.get("market_hash_name")
+        return str(market_hash_name) if market_hash_name else None
+    return None
+
+
 def load_latest_usd_price_points(
     session: Session, market_hash_name: str
 ) -> list[PricePoint]:
@@ -321,7 +432,9 @@ def build_value_gauge(price_points: list[PricePoint]) -> dict[str, Any] | None:
         "limitations": (
             "This is a market-name baseline. Float, seed, sticker, and "
             "charm premiums are surfaced as attributes but are not repriced "
-            "until stronger independent known-answer fixtures calibrate them."
+            "until stronger independent known-answer fixtures calibrate them. "
+            "Do not infer collector upside, buyer demand, or a premium-adjusted "
+            "value from these attributes."
         ),
     }
 
@@ -374,6 +487,75 @@ def build_inventory_valuation_response(
     }
 
 
+def build_inspect_valuation_response(
+    *,
+    inspect_url: str,
+    decoded: Any,
+    market_hash_name: str | None,
+    reference_data: CSGOReferenceData | None,
+    price_points: list[PricePoint],
+) -> dict[str, Any]:
+    value_gauge = build_value_gauge(price_points)
+    if market_hash_name is None:
+        status = "no_value_data"
+        reason = "market_hash_name_unresolved"
+        explanation = (
+            "Exact asset attributes were decoded from the inspect link, "
+            "but the market_hash_name could not be resolved from the CS2 "
+            "schema, so no value gauge is available."
+        )
+    else:
+        status = "ok" if value_gauge is not None else "no_value_data"
+        reason = None if status == "ok" else "no_local_price_data"
+        explanation = _inspect_explanation(
+            status=status,
+            market_hash_name=market_hash_name,
+        )
+
+    return {
+        "status": status,
+        "reason": reason,
+        "message": explanation,
+        "reference": {
+            "inspect_url": inspect_url,
+            "inspect_link_format": "modern_encoded",
+            "decoder": "cs2-inspect-lite",
+        },
+        "asset": {
+            "asset_id": str(decoded.itemid) if decoded.itemid else None,
+            "market_hash_name": market_hash_name,
+            "slug": slugify(market_hash_name) if market_hash_name else None,
+            "float_value": _float_text(decoded.paintwear),
+            "paint_seed": decoded.paintseed,
+            "paint_id": decoded.paintindex,
+            "defindex": decoded.defindex,
+            "rarity": decoded.rarity,
+            "quality": decoded.quality,
+            "is_stattrak": _is_stattrak_quality(decoded.quality),
+            "is_souvenir": _is_souvenir_quality(decoded.quality),
+            "stickers": [
+                _shape_decoded_sticker(row, reference_data)
+                for row in decoded.stickers
+            ],
+            "charms": [
+                _shape_decoded_keychain(row, reference_data)
+                for row in decoded.keychains
+            ],
+        },
+        "value_gauge": value_gauge,
+        "price_points": [
+            {
+                "source": point.source,
+                "source_family": point.source_family,
+                "price": _money(point.price),
+                "volume": point.volume,
+                "observed_at": point.observed_at,
+            }
+            for point in price_points
+        ],
+    }
+
+
 def unreadable_response(reason: str, message: str) -> dict[str, Any]:
     return {
         "status": "unreadable",
@@ -407,6 +589,12 @@ def _decimal_text(value: Any) -> str | None:
     return str(value)
 
 
+def _float_text(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
 def _shape_sticker(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": row.get("name"),
@@ -414,6 +602,73 @@ def _shape_sticker(row: dict[str, Any]) -> dict[str, Any]:
         "wear": _decimal_text(row.get("wear")),
         "sticker_id": row.get("stickerId") or row.get("sticker_id"),
     }
+
+
+def _shape_decoded_sticker(
+    row: Any, reference_data: CSGOReferenceData | None
+) -> dict[str, Any]:
+    sticker_id = row.sticker_id
+    name = None
+    if reference_data is not None:
+        ref = reference_data.stickers_by_id.get(str(sticker_id)) or {}
+        raw_name = ref.get("market_hash_name") or ref.get("name")
+        if raw_name:
+            name = str(raw_name).removeprefix("Sticker | ")
+    return {
+        "name": name,
+        "slot": row.slot,
+        "wear": _float_text(row.wear),
+        "sticker_id": sticker_id,
+        "scale": _float_text(row.scale),
+        "rotation": _float_text(row.rotation),
+        "offset_x": _float_text(row.offset_x),
+        "offset_y": _float_text(row.offset_y),
+        "offset_z": _float_text(row.offset_z),
+    }
+
+
+def _shape_decoded_keychain(
+    row: Any, reference_data: CSGOReferenceData | None
+) -> dict[str, Any]:
+    keychain_id = row.sticker_id
+    name = None
+    if reference_data is not None:
+        ref = reference_data.keychains_by_id.get(str(keychain_id)) or {}
+        raw_name = ref.get("market_hash_name") or ref.get("name")
+        if raw_name:
+            name = str(raw_name).removeprefix("Charm | ")
+    return {
+        "name": name,
+        "slot": row.slot,
+        "wear": _float_text(row.wear),
+        "keychain_id": keychain_id,
+        "scale": _float_text(row.scale),
+        "rotation": _float_text(row.rotation),
+        "offset_x": _float_text(row.offset_x),
+        "offset_y": _float_text(row.offset_y),
+        "offset_z": _float_text(row.offset_z),
+    }
+
+
+def _wear_name(float_value: float) -> str:
+    wear = Decimal(str(float_value))
+    if wear < Decimal("0.07"):
+        return "Factory New"
+    if wear < Decimal("0.15"):
+        return "Minimal Wear"
+    if wear < Decimal("0.38"):
+        return "Field-Tested"
+    if wear < Decimal("0.45"):
+        return "Well-Worn"
+    return "Battle-Scarred"
+
+
+def _is_stattrak_quality(quality: int) -> bool:
+    return quality == 9
+
+
+def _is_souvenir_quality(quality: int) -> bool:
+    return quality == 12
 
 
 def _explanation(*, status: str, market_hash_name: str | None) -> str:
@@ -426,5 +681,19 @@ def _explanation(*, status: str, market_hash_name: str | None) -> str:
         )
     return (
         f"Exact asset attributes were read for {market_hash_name}, but no "
+        f"local USD market rows are available for a value gauge."
+    )
+
+
+def _inspect_explanation(*, status: str, market_hash_name: str) -> str:
+    if status == "ok":
+        return (
+            f"Exact asset attributes were decoded from the inspect link. "
+            f"The value gauge for {market_hash_name} is a deterministic "
+            f"USD baseline from local market data; asset-specific premiums "
+            f"remain fixture-gated."
+        )
+    return (
+        f"Exact asset attributes were decoded for {market_hash_name}, but no "
         f"local USD market rows are available for a value gauge."
     )

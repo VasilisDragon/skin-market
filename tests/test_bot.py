@@ -45,6 +45,7 @@ from bot.tools import (
     query_drift,
     query_price_history,
     render_chart,
+    value_inspect_link,
     value_inventory_item,
     whats_interesting,
 )
@@ -97,6 +98,7 @@ class TestToolsRegistry:
             "render_chart",
             "evaluate_deal",
             "value_inventory_item",
+            "value_inspect_link",
             "query_drift",
             "narrative_today",
             "whats_interesting",
@@ -188,6 +190,37 @@ class TestToolsAuthAndConnectivity:
                 "https://steamcommunity.com/profiles/76561199276192848/"
                 "inventory/#730_2_51590003382"
             )
+        }
+
+    def test_value_inspect_link_wraps_api_route(self, httpx_mock) -> None:
+        payload = {
+            "status": "ok",
+            "reason": None,
+            "message": "valued",
+            "reference": {"inspect_link_format": "modern_encoded"},
+            "asset": {"float_value": "0.035739749670028687"},
+            "value_gauge": {
+                "low": "150.13",
+                "mid": "174.42",
+                "high": "198.70",
+            },
+            "price_points": [],
+        }
+        httpx_mock.add_response(
+            method="POST",
+            url=f"{_BASE}/asset-valuations/inspect",
+            json=payload,
+        )
+
+        result = value_inspect_link(
+            "steam://run/730//+csgo_econ_action_preview%20A0B016"
+        )
+
+        assert result == payload
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "inspect_url": "steam://run/730//+csgo_econ_action_preview%20A0B016"
         }
 
 
@@ -1088,8 +1121,17 @@ class TestSystemPromptPhase2bStep9:
         from bot.system_prompt import SYSTEM_PROMPT
 
         assert "value_inventory_item" in SYSTEM_PROMPT
+        assert "value_inspect_link" in SYSTEM_PROMPT
         assert "Do not render a table" in SYSTEM_PROMPT
         assert "name individual sources" in SYSTEM_PROMPT
+        assert "Do not add sale predictions" in SYSTEM_PROMPT
+        assert "sticker/charm" in SYSTEM_PROMPT
+        assert "names exactly" in SYSTEM_PROMPT
+        assert "Never say actual collector value could differ" in SYSTEM_PROMPT
+        assert "After rendering `value_gauge`, stop" in SYSTEM_PROMPT
+        assert "Render `value_gauge` as three bullets" in SYSTEM_PROMPT
+        assert "value gauge section must be the final section" in SYSTEM_PROMPT
+        assert "Do not mention CSFloat/Skinport/DMarket" in SYSTEM_PROMPT
         assert "do not fall back to market_hash_name averages" in SYSTEM_PROMPT
 
 
