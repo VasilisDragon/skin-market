@@ -14,10 +14,8 @@ What these cover:
   (Skinport's 2025-01-01 sentinel).
 - The cycle-complete log line format.
 
-What these don't cover: streaming via ijson is exercised end-to-end
-against pytest-httpx, which serves the mocked body in one chunk; the
-production streaming path against the live 33MB response is verified
-by Step 3's first scheduled cycle.
+What these don't cover: pytest-httpx serves mocked bodies in one chunk,
+so live streaming performance is validated outside the unit suite.
 """
 
 from __future__ import annotations
@@ -436,7 +434,7 @@ class TestCollectSnapshot:
 
     def test_unknown_item_skipped(self, httpx_mock, caplog) -> None:
         """An item Pricempire returns that isn't in our items table is
-        skipped — Phase 2a only ingests curated-watchlist items."""
+        skipped."""
         body = _make_response(
             [
                 _wire_item(
@@ -528,8 +526,8 @@ class TestCollectSnapshot:
     ) -> None:
         """Pricempire's Skinport rows carry updated_at='2025-01-01...'
         as a placeholder while last_checked_at is real. The collector
-        must persist both honestly so Phase 2b drift logic can
-        recognize the placeholder shape."""
+        persists both timestamps so freshness logic can distinguish
+        placeholder metadata from provider polling time."""
         body = _make_response(
             [
                 _wire_item(
@@ -657,11 +655,8 @@ class TestCollectSnapshot:
     ) -> None:
         """Cycle 1 writes one row per (resolved) provider; cycle 2
         re-issues the same prices and everything dedup's. The
-        cycle-complete log line must surface BOTH the aggregate counts
-        AND the per-provider breakdown in a stable alphabetical order
-        with zero-row providers explicit, so operators can spot
-        provider-specific quiet periods (e.g. swap_gg per §6 of
-        docs/phase2a-ingest-validation.md).
+        cycle-complete log line includes aggregate counts and a stable
+        per-provider breakdown.
         """
         # Cycle 1: one row for two distinct providers. The other four
         # providers contribute zero writes — they MUST still appear in
@@ -781,11 +776,6 @@ class TestCollectSnapshot:
             f"cycle 2 missing per-provider unchanged breakdown\n"
             f"got: {c2}"
         )
-
-
-# ────────────────────────────────────────────────────────────────────
-# Item-metadata extraction (Phase 2a follow-up, ADR 020)
-# ────────────────────────────────────────────────────────────────────
 
 
 def _wire_item_full_metadata(
@@ -1048,13 +1038,7 @@ class TestMetadataExtraction:
 
 
 class TestObservationLogInvariant:
-    """Phase 2b (ADR 023): pricempire_observation_log advances
-    UNCONDITIONALLY on every successful wire-row parse, BEFORE the
-    dedup gate. These tests pin the invariant so a future refactor
-    that moves the upsert inside the dedup branch fails loudly —
-    that refactor would silently reproduce Phase 1's observed_at bug
-    at one level up.
-    """
+    """Observation freshness advances before price-row deduplication."""
 
     @_db_required
     def test_observation_log_upserts_before_dedup(

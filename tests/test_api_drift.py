@@ -1,4 +1,4 @@
-"""Tests for ``GET /items/{slug}/drift`` (Phase 2b Step 8).
+"""Tests for ``GET /items/{slug}/drift``.
 
 Verdict rows are inserted directly into the insights table to focus
 on the route's read-side; the detector's write-side is exercised by
@@ -288,12 +288,7 @@ class TestDriftPairShapes:
         sentinel_item,
         missing_pair: tuple[str, str],
     ) -> None:
-        """The realistic middle state for items added at Step 7.1
-        (USP-S Neo-Noir FT, AWP Dragon Lore FN) — only one of the two
-        meaningful pairs has produced a verdict row historically (the
-        other side is filling in mid-collection). Endpoint must return
-        the right shape (1 entry, tier=orphan-since-not-in-YAML, no
-        exception) so the bot's Step 9 rendering doesn't fall over."""
+        """A partially populated item returns one drift pair cleanly."""
         item_id = sentinel_item
         now = datetime.now(UTC)
         engine = get_engine()

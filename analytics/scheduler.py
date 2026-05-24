@@ -81,15 +81,12 @@ def run_hourly_cycle() -> None:
             session,
             now,
         )
-        # item_unavailability_streak removed in Phase 2c (2026-05-18).
-        # See TODO.md "item_unavailability_streak removal" for the
-        # reasoning. Do NOT reintroduce without re-reading the rationale.
         session.commit()
     logger.info("Hourly analytics cycle complete")
 
 
 def run_drift_cycle() -> None:
-    """30-minute pattern-aware drift detection cycle (Phase 2b, ADR 022).
+    """30-minute pattern-aware drift detection cycle.
 
     Compares each curated-tier item's direct-collector latest price
     against the corresponding Pricempire sub-provider latest price.
@@ -102,23 +99,21 @@ def run_drift_cycle() -> None:
     so each cycle is guaranteed to see at least one fresh poll on
     each side under normal operation.
 
-    ── Feature flag (Phase 2b Step 5) ────────────────────────────────
-    Gated behind the ``DRIFT_DETECTION_ENABLED`` env var so the
-    detector is dormant until Step 7's re-seed gate validates the
-    curated-tier composition. Defaults to false at every analytics
-    service restart — Step 7 flips it true after sign-off.
+    Feature flag:
+    Gated behind the ``DRIFT_DETECTION_ENABLED`` env var. Defaults to
+    false at every analytics service restart.
 
     Accepted truthy values (case-insensitive): "true", "1", "yes",
     "on". Anything else (unset, empty, "false", "0", etc.) means
     "the cycle fires but no-ops with a single log line."
 
-    ── Runtime reload semantics ──────────────────────────────────────
+    Runtime reload semantics:
     The classifier YAML (data/pattern_sensitivity.yaml) and the
     watchlist tier filter (data/watchlist.yaml) are loaded ONCE per
     cycle at the start of ``compute_and_store``. Across cycles, the
     Python process re-reads both files — but the analytics service's
     APScheduler keeps the same Python process alive between cycles,
-    so an operator-side YAML edit takes effect on the NEXT 30-min
+    so a YAML edit takes effect on the NEXT 30-min
     tick after the file is saved. An analytics service restart is
     NOT required for YAML edits to apply, but a restart IS required
     if you change module-level constants (BASELINE_DRIFT_THRESHOLD,
@@ -128,7 +123,7 @@ def run_drift_cycle() -> None:
         logger.info(
             "Drift detection cycle: DRIFT_DETECTION_ENABLED not set "
             "(or falsy); cycle is a no-op. Set the env var to a "
-            "truthy value to enable. Phase 2b Step 7 flips this."
+            "truthy value to enable."
         )
         return
 
@@ -153,9 +148,6 @@ def _drift_detection_enabled() -> bool:
     """Read ``DRIFT_DETECTION_ENABLED`` from the environment. Returns
     True when the env var is set to one of {"true", "1", "yes", "on"}
     (case-insensitive). Anything else — including unset — is False.
-
-    Phase 2b Step 5 (feature flag): the drift detector is dormant
-    until Step 7's re-seed gate validates the curated-tier composition.
     """
     raw = (os.environ.get("DRIFT_DETECTION_ENABLED") or "").strip().lower()
     return raw in {"true", "1", "yes", "on"}
@@ -198,10 +190,7 @@ def build_scheduler() -> BlockingScheduler:
         id="hourly_analytics",
         name="Hourly analytics (MAs + cross-source + anomalies)",
     )
-    # Phase 2b — ADR 022. Off-cycle from hourly so it doesn't queue
-    # behind MA/anomaly computations. 30 min matches the stale
-    # threshold; each cycle sees at least one fresh poll on each
-    # side under normal operation.
+    # Off-cycle from hourly so it does not queue behind heavier jobs.
     scheduler.add_job(
         run_drift_cycle,
         trigger=IntervalTrigger(minutes=30),

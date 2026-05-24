@@ -1,62 +1,13 @@
-"""Pricempire bulk-snapshot collector — Phase 2a.
+"""Pricempire bulk-snapshot collector.
 
-Pricempire serves a single-shot bulk endpoint
-(``GET /v4/paid/items/prices``) that returns the entire CS2 catalog —
-~39,400 items, ~33 MB — in one response. There is no pagination, no
-per-item endpoint, no app_id filter. ADR 018 has the architectural
-context; ADR 019 has this module's design.
+Pricempire exposes a single bulk endpoint for the CS2 catalog. This
+collector streams that payload, maps known sub-providers to internal
+sources, and writes provider-specific observations.
 
-This collector deliberately does NOT extend ``collectors.base.Collector``.
-The BaseCollector abstraction is per-item-per-source (one HTTP call →
-one PriceObservation → one prices row), and Pricempire's shape (one
-HTTP call → ~39k items × up to 6 sub-providers → many rows) doesn't
-fit. Forcing the abstraction would either bloat BaseCollector with a
-"bulk mode" branch or pretend each item is a separate HTTP call —
-neither helps. The scheduler's job-per-source pattern is preserved by
-treating ``pricempire`` as a pseudo-source in the ``sources`` table
-(see migration 0005 and ADR 018 §3).
-
-Why ijson:
-
-The response is ~33 MB. Loading it as a Python ``dict`` would peak
-around 100-150 MB of resident memory for transient parse state. ijson
-streams the top-level array, yielding one item dict at a time, so the
-collector's footprint stays in the low-MB range throughout. The
-``yajl2_c`` backend is used when available (it ships with most ijson
-installs); ijson falls back to pure-Python parsing otherwise. The
-default backend is fine.
-
-Dedup gate:
-
-Same shape as the prices collectors (ADR 009 §3): skip insert when
-``(price, count)`` matches the latest existing row for that
-``(item_id, source_id)`` pair. Phase 1's dedup-vs-display lessons
-(ADR 017) apply — Phase 2b added ``pricempire_observation_log``
-(ADR 023) as the dedup-independent freshness signal, mirroring the
-curated-collector ``observation_log``. The dedup gate operates
-against ``pricempire_observations`` itself; freshness is advanced
-unconditionally in ``_upsert_observation_log``, called before the
-dedup SELECT.
-
-Failure handling:
-
-- 4xx/5xx → log WARNING, exit cleanly. No retry inside a single
-  cycle; the next 15-minute cycle is the retry.
-- httpx.RequestError → same. Logged at WARNING with the error type.
-- Missing PRICEMPIRE_API_KEY → fail fast at module-load time so a
-  misconfigured deploy doesn't silently run zero-effective cycles.
-- Unknown item (market_hash_name not in our ``items`` table) → skip.
-  Phase 2a only ingests Pricempire data for items we already curate;
-  Phase 2b adds the indexed-item layer for the long tail.
-- Unknown provider_key (not one of the six known sub-providers) →
-  skip with a counter. Logged once per cycle; Pricempire may add
-  providers without warning, and we don't want to write rows we
-  can't account for.
-
-Cycle-complete log line:
-
-Mirrors the existing collectors' ``"X cycle complete: ..."`` shape so
-the scheduler's log format stays uniform.
+The collector is intentionally separate from ``collectors.base``:
+Pricempire is one request producing many item/source rows, while the
+base collector contract is one item request producing one observation.
+ADR 018 and ADR 019 document the architecture.
 """
 
 from __future__ import annotations
@@ -128,11 +79,7 @@ _PROVIDER_KEY_TO_SOURCE_NAME: dict[str, str] = {
 # The order doesn't matter to Pricempire; alphabetical for stability.
 _SOURCES_PARAM = ",".join(sorted(_PROVIDER_KEY_TO_SOURCE_NAME.keys()))
 
-# Stable display order for the per-provider breakdowns in the
-# cycle-complete log line. Alphabetical by sub-provider source name
-# (without the "pricempire_" prefix) — matches the sort order in §2 of
-# docs/phase2a-ingest-validation.md so operators reading both don't
-# context-switch.
+# Stable display order for the per-provider cycle summary.
 _PROVIDER_ORDER: tuple[str, ...] = tuple(
     sorted(_PROVIDER_KEY_TO_SOURCE_NAME.values())
 )
@@ -145,11 +92,6 @@ _CENTS_PER_DOLLAR = Decimal("100")
 # prices endpoint; 60s is comfortable headroom for cold-cache or
 # slow-network days without masking a genuinely-stuck request.
 _HTTP_TIMEOUT_SECONDS = 60.0
-
-
-# ────────────────────────────────────────────────────────────────────
-# Public entry point
-# ────────────────────────────────────────────────────────────────────
 
 
 def collect_snapshot() -> None:
@@ -224,8 +166,6 @@ def collect_snapshot() -> None:
                     canonical_name = normalize_name(market_hash_name)
                     item_id = item_id_by_name.get(canonical_name)
                     if item_id is None:
-                        # Phase 2a only ingests curated-watchlist
-                        # items. Phase 2b adds the long-tail layer.
                         items_skipped_unknown += 1
                         continue
 
@@ -254,11 +194,8 @@ def collect_snapshot() -> None:
                         else:  # unknown_provider
                             rows_unknown_provider += 1
 
-                    # Phase 2a follow-up: lift item-level metadata out
-                    # of the wire dict into pricempire_item_metadata.
-                    # ADR 020 documents the side-effect-of-price-ingest
-                    # pattern; the dedup gate makes this near-free in
-                    # steady state.
+                    # Metadata changes slowly, so this side write is
+                    # cheap after the first populated cycle.
                     if _persist_metadata(
                         session=session,
                         item_id=item_id,
@@ -288,9 +225,7 @@ def collect_snapshot() -> None:
         )
         return
     except Exception:
-        # Defensive: anything else (parser error, DB error) gets
-        # logged with traceback so an operator can diagnose without
-        # the scheduler losing track.
+        # Keep the scheduler process alive on parser or database errors.
         logger.exception(
             "Pricempire cycle: unexpected error mid-stream after "
             "%d items, %d rows written",
@@ -388,11 +323,6 @@ def _stream_prices(client: httpx.Client) -> Iterator[dict[str, Any]]:
     )
 
 
-# ────────────────────────────────────────────────────────────────────
-# DB write path
-# ────────────────────────────────────────────────────────────────────
-
-
 def _upsert_observation_log(
     session: Session,
     item_id: Any,
@@ -402,12 +332,10 @@ def _upsert_observation_log(
     """Upsert (item_id, source_id) into pricempire_observation_log
     with Pricempire's claimed ``last_checked_at``.
 
-    LOAD-BEARING INVARIANT: this helper MUST be called BEFORE the
-    dedup gate's SELECT in ``_persist_row``. Moving the call inside
-    the "row written" branch silently reproduces Phase 1's
-    observed_at bug at one level up — dedup-suppressed cycles would
-    leave the log row stale even though Pricempire is still actively
-    polling. ADR 023.
+    LOAD-BEARING INVARIANT: this helper MUST be called before the
+    dedup SELECT in ``_persist_row``. Otherwise dedup-suppressed cycles
+    leave the freshness log stale even when Pricempire is still
+    actively polling. See ADR 023.
 
     Skips the upsert when ``last_checked_at`` is None (e.g. wire row
     omitted the field or it didn't parse as ISO 8601). The drift
@@ -472,12 +400,7 @@ def _persist_row(
         unknown_providers_seen.add(source_name)
         return "unknown_provider", None
 
-    # ──────────────────────────────────────────────────────────────
-    # LOAD-BEARING: upsert the observation log BEFORE the dedup gate
-    # below. See _upsert_observation_log() docstring and ADR 023.
-    # Moving this call inside the "row written" branch silently
-    # reproduces Phase 1's observed_at bug at one level up.
-    # ──────────────────────────────────────────────────────────────
+    # Keep freshness independent from price-row deduplication.
     _upsert_observation_log(
         session=session,
         item_id=item_id,

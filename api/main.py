@@ -4,20 +4,12 @@ Mounted at the repo root as ``api.main:app``. The collector and
 analytics services don't share this process — they're separate Docker
 services. Reads from the same Postgres via ``db.connection.get_engine``.
 
-Authentication (Phase 6.6, ADR 014 §10): every router requires
-``Authorization: Bearer <token>`` matching the
-``SKIN_MARKET_API_TOKEN`` env var. The previous "no auth, compose
-network is the gatekeeper" posture (ADR 014 §3) did not survive Phase
-7 contact — Hermes installs to ``~/.hermes-discord/`` as a host
-process, so the api service must be reachable from the host. The
-single-token bearer dependency in ``api.auth.require_token`` is the
-documented escape hatch ADR 014 §3 anticipated.
+Authentication: every router requires ``Authorization: Bearer <token>``
+matching one of the configured API tokens. See ``api.auth`` and ADR 014.
 
 ``/health`` is the explicit exception — it's declared directly on the
 app (not inside any router), so it skips the auth dependency entirely.
-Docker's healthcheck calls it without credentials, and surfacing the
-api's actual state when auth is misconfigured is more useful than a
-blanket 401. ADR 014 §10 has the rationale.
+Docker's healthcheck calls it without credentials.
 
 Endpoints:
 

@@ -14,8 +14,7 @@ Per-source policy at v1 (set by migration 0003):
   cycle (full watchlist while it fits in 50; rotation logic kicks in
   if the watchlist grows past 50).
 - ``skinport``:     15 min interval, bulk fetch (per-item delay N/A,
-  stored as 0). ``enabled`` is set by the operator after verifying
-  rate-limit recovery — migration leaves the flag as-is.
+  stored as 0). ``enabled`` is controlled through the ``sources`` row.
 - ``dmarket``:      15 min interval, 3s per-item delay.
 
 All jobs run under ``BlockingScheduler`` with ``max_instances=1`` and
@@ -135,12 +134,8 @@ _state_lock = threading.Lock()
 _active_source_specs: dict[str, SourceJobSpec] = {}
 _scheduler_ref: BlockingScheduler | None = None
 
-# Phase 2b Step 6 (ADR 012 §7): DMarket alias map loaded at scheduler
-# start; immutable for the process lifetime. Operators edit the
-# `dmarket_alias:` field in data/watchlist.yaml and restart the
-# COLLECTOR service (not analytics — alias map is collector-owned)
-# for changes to take effect. Empty dict on import; populated by
-# build_scheduler().
+# DMarket aliases are loaded once per scheduler process from
+# data/watchlist.yaml. Restart the collector service after alias edits.
 _DMARKET_ALIAS_MAP: dict[str, frozenset[str]] = {}
 
 
@@ -162,7 +157,6 @@ def _load_dmarket_alias_map(
     frozenset of normalize_name(alias)}`` for curated-tier items with a
     non-empty ``dmarket_alias`` list.
 
-    Phase 2b Step 6 (ADR 012 §7). Called once at scheduler start.
     Featured-tier items with ``dmarket_alias`` are silently skipped
     here — the watchlist loader already logged a WARN at YAML-load
     time. Items without the field don't appear in the result.
@@ -206,21 +200,10 @@ def _load_enabled_sources(session: Session) -> list[SourceJobSpec]:
     ]
 
 
-# Phase 2b Step 7.1.5 (ADR 024): collectors filter the active
-# watchlist by tier from data/watchlist.yaml. Phase 1's items-table-
-# only read polled every row regardless of YAML state, which meant
-# items dropped by a Step 7.1-style re-seed (now "substrate" items,
-# previously "orphan") still got polled. The gap surfaced at Step
-# 7.2's Gate 1 verification — collectors were polling 70 items (28
-# of them substrate) instead of the intended 42.
-#
 # Per-source tier filter:
-#   steam_market, dmarket → curated tier ONLY (rate-limit math; ADR 024)
-#   skinport              → curated + featured (bulk-fetch, free to
-#                           expand)
-#   pricempire            → bypasses this function entirely
-#                           (collect_snapshot() reads items table
-#                           directly, preserving substrate refresh)
+#   steam_market, dmarket -> curated tier only
+#   skinport              -> curated + featured
+#   pricempire            -> bypasses this function entirely
 _CURATED_ONLY_SOURCES: frozenset[str] = frozenset(
     {"steam_market", "dmarket"}
 )
@@ -237,11 +220,8 @@ def _load_watchlist(
     tier per ADR 024.
 
     Reads from ``data/watchlist.yaml`` (NOT the items table). Items
-    dropped by a re-seed — present in items but absent from YAML —
-    are silently excluded (these items are now "substrate"; see
-    api/watchlist_tiers.py). The ``session`` parameter is retained
-    for signature stability but no longer used; future revisions can
-    drop it once all call sites are updated.
+    present in items but absent from YAML are silently excluded. The
+    ``session`` parameter is retained for signature stability.
 
     Tier filtering:
     - source_name in {"steam_market", "dmarket"} → curated tier only
@@ -253,10 +233,8 @@ def _load_watchlist(
       reads the items table directly so substrate-row data continues
       to accumulate (ADR 024's data-preservation invariant).
 
-    Loaded ONCE per cycle by ``_run_cycle`` (confirmed at the call
-    site). Future operator YAML edits require a collector restart to
-    take effect, matching the alias-map reload discipline (ADR 012
-    §7). No per-item YAML re-read.
+    Loaded once per cycle by ``_run_cycle``. YAML edits require a
+    collector restart to refresh the process-local alias map.
     """
     # session is reserved for future use (e.g. an alternative
     # tier-from-DB path); ignored under the current YAML-driven shape.
@@ -473,9 +451,8 @@ def _run_cycle(
                 unchanged += 1
                 continue
             if persist_observation(session, obs):
-                # Commit per-item so a mid-cycle SIGKILL keeps partial
-                # progress, and so an operator can watch the prices
-                # table grow live with `\watch` in psql.
+                # Commit per item so abrupt shutdown keeps partial
+                # progress.
                 session.commit()
                 written += 1
             else:
@@ -539,8 +516,6 @@ def _run_named_source(source_name: str) -> None:
         return
     collector_cls, source_label, watchlist_limit = SOURCE_REGISTRY[source_name]
     try:
-        # Phase 2b Step 6 (ADR 012 §7): DMarket gets the alias map
-        # loaded at scheduler start. Other collectors are unparameterized.
         if source_name == "dmarket":
             collector = collector_cls(alias_map=_DMARKET_ALIAS_MAP)
         else:
@@ -634,11 +609,8 @@ def build_scheduler(
     # build_scheduler in the same process (e.g. tests) gets a clean view.
     _active_source_specs.clear()
 
-    # Phase 2b Step 6: load the DMarket alias map ONCE per scheduler
-    # build. Held for the process lifetime; operators must restart the
-    # collector service for YAML edits to take effect. Failure to load
-    # the YAML (file missing, schema_version drift) is a fail-fast
-    # since the collector can't run without a valid watchlist anyway.
+    # Alias-map loading is fail-fast because collectors require a
+    # valid watchlist.
     global _DMARKET_ALIAS_MAP
     _DMARKET_ALIAS_MAP = _load_dmarket_alias_map()
     if _DMARKET_ALIAS_MAP:

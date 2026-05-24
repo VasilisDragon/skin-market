@@ -610,10 +610,16 @@ class _FakeCollector(Collector):
             raise self._raise_at_end
 
     def make_client(self):  # type: ignore[override]
-        # Return a context manager whose body the cycle iterates.
         from contextlib import nullcontext
 
         return nullcontext(enter_result=None)
+
+
+def _fake_watchlist_size() -> int:
+    from collectors.scheduler import _load_watchlist
+
+    with Session(get_engine()) as session:
+        return len(_load_watchlist(session, source_name="fake_source"))
 
 
 @_db_required
@@ -629,18 +635,7 @@ class TestRunCycleDeclinedHeuristic:
         # synthetic outcome list whose length is <= the real watchlist;
         # the slicing in _load_watchlist preserves order. We script as
         # many outcomes as the watchlist length.
-        engine = get_engine()
-        # Phase 2b Step 7.1.5: _load_watchlist now filters by YAML
-        # tier per source. _FakeCollector.source_name = "fake_source",
-        # which falls into the non-deep-only branch (deep+broad).
-        # Query via the same function the production code uses so
-        # the test isn't tied to items-table cardinality (which
-        # diverges from YAML cardinality after Step 7.1 orphans).
-        from collectors.scheduler import _load_watchlist as _lw
-        with Session(engine) as session:
-            watchlist_size = len(
-                _lw(session, source_name="fake_source")
-            )
+        watchlist_size = _fake_watchlist_size()
         # Few Nones, mostly written (PriceObservations) — well below
         # the 50% threshold.
         scripted = [_make_obs("1.00", 1) for _ in range(watchlist_size - 2)]
@@ -659,18 +654,7 @@ class TestRunCycleDeclinedHeuristic:
     def test_above_threshold_relabels_nones_as_declined(
         self, caplog
     ) -> None:
-        engine = get_engine()
-        # Phase 2b Step 7.1.5: _load_watchlist now filters by YAML
-        # tier per source. _FakeCollector.source_name = "fake_source",
-        # which falls into the non-deep-only branch (deep+broad).
-        # Query via the same function the production code uses so
-        # the test isn't tied to items-table cardinality (which
-        # diverges from YAML cardinality after Step 7.1 orphans).
-        from collectors.scheduler import _load_watchlist as _lw
-        with Session(engine) as session:
-            watchlist_size = len(
-                _lw(session, source_name="fake_source")
-            )
+        watchlist_size = _fake_watchlist_size()
         # >50% Nones — cycle marked degraded, all Nones become declined.
         none_count = (watchlist_size // 2) + 2  # comfortably above 50%
         scripted = [None] * none_count + [
@@ -691,18 +675,7 @@ class TestRunCycleDeclinedHeuristic:
         assert f"{none_count} declined" in msg
 
     def test_explicit_declined_always_counted(self, caplog) -> None:
-        engine = get_engine()
-        # Phase 2b Step 7.1.5: _load_watchlist now filters by YAML
-        # tier per source. _FakeCollector.source_name = "fake_source",
-        # which falls into the non-deep-only branch (deep+broad).
-        # Query via the same function the production code uses so
-        # the test isn't tied to items-table cardinality (which
-        # diverges from YAML cardinality after Step 7.1 orphans).
-        from collectors.scheduler import _load_watchlist as _lw
-        with Session(engine) as session:
-            watchlist_size = len(
-                _lw(session, source_name="fake_source")
-            )
+        watchlist_size = _fake_watchlist_size()
         # Mostly DECLINED — even without ambiguous Nones to relabel,
         # the declined counter should reflect explicit DECLINEDs.
         scripted = [DECLINED] * watchlist_size
@@ -726,18 +699,7 @@ class TestRunCycleRateLimited:
     def test_partial_results_counted_then_pause_logged(
         self, caplog
     ) -> None:
-        engine = get_engine()
-        # Phase 2b Step 7.1.5: _load_watchlist now filters by YAML
-        # tier per source. _FakeCollector.source_name = "fake_source",
-        # which falls into the non-deep-only branch (deep+broad).
-        # Query via the same function the production code uses so
-        # the test isn't tied to items-table cardinality (which
-        # diverges from YAML cardinality after Step 7.1 orphans).
-        from collectors.scheduler import _load_watchlist as _lw
-        with Session(engine) as session:
-            watchlist_size = len(
-                _lw(session, source_name="fake_source")
-            )
+        watchlist_size = _fake_watchlist_size()
         # Two successful items then RateLimited — cycle should record
         # the partial outcomes and compute a fallback pause.
         scripted = [None, None]
@@ -779,11 +741,6 @@ class TestAmbiguousThresholdConstant:
         assert AMBIGUOUS_CYCLE_DEGRADED_THRESHOLD == 0.5
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Phase 2b Step 7.1.5 — _load_watchlist YAML-driven tier filter
-# ──────────────────────────────────────────────────────────────────────
-
-
 _LW_FIXTURE_YAML = """\
 schema_version: 3
 sources:
@@ -798,10 +755,7 @@ items:
 
 
 class TestLoadWatchlistTierFilter:
-    """Phase 2b Step 7.1.5 (ADR 024): _load_watchlist filters the
-    active watchlist by tier from data/watchlist.yaml, not from the
-    items table. Pins the per-source filter rules and the
-    orphan-exclusion invariant."""
+    """_load_watchlist filters active items from watchlist.yaml."""
 
     def _write_yaml(self, tmp_path: Path, body: str = _LW_FIXTURE_YAML) -> Path:
         path = tmp_path / "wl.yaml"
@@ -811,7 +765,7 @@ class TestLoadWatchlistTierFilter:
     def test_load_watchlist_curated_only_for_steam(
         self, tmp_path: Path
     ) -> None:
-        """steam_market is in _CURATED_ONLY_SOURCES → tier=curated only."""
+        """steam_market polls curated tier only."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
@@ -829,8 +783,7 @@ class TestLoadWatchlistTierFilter:
     def test_load_watchlist_curated_only_for_dmarket(
         self, tmp_path: Path
     ) -> None:
-        """dmarket is in _CURATED_ONLY_SOURCES → tier=curated only.
-        Pins the same rate-limit-math constraint as Steam (ADR 024)."""
+        """dmarket polls curated tier only."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
@@ -843,8 +796,7 @@ class TestLoadWatchlistTierFilter:
     def test_load_watchlist_curated_plus_featured_for_skinport(
         self, tmp_path: Path
     ) -> None:
-        """skinport is the bulk-fetch source — polls both tiers
-        (filter is in Python after a single HTTP call)."""
+        """skinport polls curated and featured tiers."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
@@ -862,29 +814,13 @@ class TestLoadWatchlistTierFilter:
     def test_load_watchlist_omits_substrate(
         self, tmp_path: Path
     ) -> None:
-        """Orphan items — present in items table but not in YAML —
-        are silently excluded from the active watchlist. Pins the
-        invariant from the Step 7.2 Gate 1 discovery: Phase 1's
-        items-table read was polling 70 items when YAML only had 42.
-
-        We don't touch the actual items table in this unit test;
-        the YAML-driven loader doesn't query items at all, so an
-        orphan in the table can never leak in. Pinning that no
-        SQL query is needed to verify "no orphans" is itself the
-        guarantee.
-        """
+        """Items absent from YAML stay out of the active watchlist."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
-        # If _load_watchlist ever started reading items table again,
-        # an orphan WOULD leak in. The YAML-only path guarantees it
-        # can't. The strongest check is the equality test in the
-        # other tests above — any orphan in items doesn't reach the
-        # output.
         names = _load_watchlist(
             None, source_name="skinport", watchlist_path=path
         )
-        # All names came from the YAML, none from items table.
         assert all(
             n in {
                 "AK-47 | Deep1 (Field-Tested)",
@@ -899,14 +835,10 @@ class TestLoadWatchlistTierFilter:
     def test_load_watchlist_respects_limit_kwarg(
         self, tmp_path: Path
     ) -> None:
-        """The limit kwarg still works — alphabetical slice of the
-        post-filter set. Pins the existing limit behavior survives the
-        YAML-driven refactor."""
+        """The limit kwarg slices the post-filter alphabetical list."""
         from collectors.scheduler import _load_watchlist
 
         path = self._write_yaml(tmp_path)
-        # Skinport gets deep+broad = 5 items alphabetically:
-        # AK-47 | Deep1, AK-47 | Deep2, AWP | Deep3, Glock-18 | Broad1, MP9 | Broad2
         names = _load_watchlist(
             None,
             source_name="skinport",
@@ -920,40 +852,17 @@ class TestLoadWatchlistTierFilter:
 
 
 class TestPricempirePathBypassesLoadWatchlist:
-    """Step 7.1.5 invariant: Pricempire's collect_snapshot reads the
-    items table directly (_load_item_index in collectors/pricempire.py),
-    NOT _load_watchlist. This preserves the orphan-data-stays-warm
-    invariant from ADR 024: items dropped from YAML continue to have
-    their Pricempire metadata refreshed (so historical drift /
-    analytics queries don't see a discontinuity at the moment the
-    item dropped).
-
-    Test pins this against a future refactor that might accidentally
-    route Pricempire through the new tier filter.
-    """
+    """Pricempire reads the item table directly, not watchlist.yaml."""
 
     def test_pricempire_collector_does_not_import_load_watchlist(
         self,
     ) -> None:
         """The Pricempire collector module must NOT import or call
-        _load_watchlist. If a future refactor adds the import, this
-        test fails and the developer is forced to consider whether
-        Pricempire's behavior should change (the answer should be
-        "no, orphans stay warm").
-
-        NOTE: this is a SYNTACTIC grep check, not a semantic one — a
-        future refactor that dynamically constructs the function
-        name (``getattr(scheduler, '_' + 'load_watchlist')``) would
-        bypass this guard. The load-bearing invariant guard is
-        ``test_pricempire_uses_load_item_index`` below, which pins
-        the signature of the items-table reader. Treat this test
-        as a defense-in-depth tripwire, not the canonical check.
-        """
+        _load_watchlist."""
         import inspect
 
         from collectors import pricempire
 
-        # Source-level check: the import statement isn't present.
         source = inspect.getsource(pricempire)
         assert "_load_watchlist" not in source, (
             "collectors/pricempire.py references _load_watchlist; "
@@ -963,10 +872,7 @@ class TestPricempirePathBypassesLoadWatchlist:
         )
 
     def test_pricempire_uses_load_item_index(self) -> None:
-        """Belt-and-braces: confirm Pricempire's actual item-loading
-        helper is the items-table reader, NOT a YAML reader."""
-        # _load_item_index is the items-table reader; signature
-        # takes a Session and returns the {canonical: item_id} map.
+        """Pricempire keeps the item-table reader contract."""
         import inspect
 
         from collectors.pricempire import _load_item_index

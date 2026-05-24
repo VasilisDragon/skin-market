@@ -69,9 +69,7 @@ docker compose up -d
 docker compose ps
 # All services should be Up; api should be (healthy) after ~10s.
 
-# Smoke-check the read API from the host (Phase 6.6 port mapping is
-# 127.0.0.1:8001:8000 — host port 8001 because 8000 was held by another
-# container on this deployment).
+# Smoke-check the read API from the host.
 TOKEN=$(grep ^SKIN_MARKET_API_TOKEN= .env | cut -d= -f2)
 curl -sS http://localhost:8001/health                  # 200, no token needed
 curl -sS -H "Authorization: Bearer $TOKEN" \
@@ -103,15 +101,15 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
 | `collectors/` | One module per upstream (Steam, Skinport, DMarket) + `scheduler.py` (APScheduler-driven, DB-aware enabled flag, retry-after honoring). Each collector returns `PriceObservation`, `DECLINED`, or `None`; the scheduler counts outcomes per cycle. |
 | `analytics/` | Hourly compute jobs (moving averages, cross-source views + spreads, divergence/volume anomalies, item unavailability streaks) + nightly narrative LLM job. |
 | `api/` | FastAPI read-only service. `auth.py` (bearer middleware), `schemas.py` (Pydantic v2 with `MoneyStr`), `routes/` (items, history, insights, charts, deals). |
-| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `deepseek_client.py` (tool-use loop), `tools.py` (7 HTTP wrappers + size-discipline summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
+| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `deepseek_client.py` (tool-use loop), `tools.py` (HTTP wrappers + bounded payload summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
 | `db/` | SQLAlchemy models + Alembic migrations + connection plumbing. |
-| `scripts/` | One-off operator tools — `seed_watchlist.py`, `watchlist_edit.py`. |
+| `scripts/` | One-off maintenance tools: `seed_watchlist.py`, `watchlist_edit.py`. |
 | `data/` | `watchlist.yaml` — the canonical 48-item list, plus source definitions. Edited via `scripts/watchlist_edit.py` so comments + ordering are preserved. |
 | `docs/adr/` | Architecture Decision Records, chronological. Read these before changing anything load-bearing. |
 | `docs/operations.md` | Runbooks: bring-up, image-rebuild discipline, token rotation, common failure modes. |
 | `docs/sources-and-semantics.md` | The denomination invariant — Steam wallet credit vs real-money USD, why we never average across sources, why three sources beat two. |
 | `tests/` | pytest. Default run skips destructive tests (those drop tables); `pytest -m destructive` opts in. 251+ tests at v1 close. |
-| `bot_skill/` | **Archived** (now at `docs/archive/bot_skill_hermes_attempt/`). Phase 7b Hermes-shaped attempt; superseded by `bot/`. |
+| `bot_skill/` | Archived experimental bot runtime, superseded by `bot/`. |
 
 ## Where to read more
 
@@ -121,7 +119,7 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
    - 009 — Scheduler design (overlap policy, conditional writes, SIGTERM)
    - 013 — Rate-limit policy (DB-driven scheduler, Retry-After honoring, declined vs unavailable split, observation_log for streaks)
    - 014 — Read API design (money-as-string, denomination tagging, auth multi-token, `/health` bypass)
-   - 015 — Bot skill design (rules; the Hermes runtime was retired by ADR 016 but the rendering rules carried forward)
+   - 015 — Bot skill design
    - 016 — Bot runtime (tool-use loop, size discipline, defensive failure modes)
    - 026 — DeepSeek inference hard cutover and usage accounting
 2. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.

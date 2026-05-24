@@ -30,11 +30,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "data" / "watchlist.yaml"
 
 # Bump this if seed_watchlist.py's expectations of the YAML schema change
-# incompatibly. The YAML file declares its own ``schema_version`` we check.
-# Phase 2b (ADR 024) bumped to 2 — every item gained a ``tier:`` field.
-# Phase 2c bumped to 3 — vocabulary renamed deep→curated, broad→featured
-# (substrate is computed at read time, not a YAML value). The tier is
-# YAML-side only; it is NOT denormalized into the items table.
+# incompatibly. The tier is YAML-side only and is not denormalized into
+# the items table.
 _SUPPORTED_SCHEMA_VERSION = 3
 
 # Valid values for the per-item ``tier:`` field. Anything else is a
@@ -131,10 +128,7 @@ def load_watchlist(path: Path) -> dict[str, Any]:
                 f"{tier!r}. Expected one of {sorted(_VALID_TIERS)}."
             )
 
-        # Phase 2b Step 6: optional dmarket_alias field. Must be a
-        # list of non-empty strings when present. Featured-tier items
-        # with this field log a WARN (dead config — DMarket isn't
-        # polled for featured-tier) but don't error.
+        # Optional DMarket aliases apply only to curated-tier items.
         aliases = item.get("dmarket_alias")
         if aliases is not None:
             if not isinstance(aliases, list):

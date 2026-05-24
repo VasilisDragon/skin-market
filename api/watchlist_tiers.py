@@ -1,5 +1,4 @@
-"""Tier-aware response helper for the read API (Phase 2b Step 8;
-renamed deep/broad/orphan → curated/featured/substrate at Phase 2c).
+"""Tier-aware response helper for the read API.
 
 Tier lives in ``data/watchlist.yaml`` per ADR 024 — the ``items`` table
 deliberately doesn't carry a tier column, so any code that needs to
@@ -11,9 +10,8 @@ Reading semantics
 - Lazy load on first call; cache in module globals.
 - ``reload()`` re-reads the YAML; tests use this to inject synthetic
   featured-tier items without editing the real watchlist.
-- Operator restart of the ``api`` service picks up YAML edits — same
-  workflow as the collector. The cache deliberately does NOT
-  auto-invalidate on disk change.
+- Restarting the ``api`` service picks up YAML edits. The cache
+  deliberately does NOT auto-invalidate on disk change.
 
 Substrate handling (ADR 024)
 
@@ -26,17 +24,10 @@ string ``"substrate"`` for these so routes can shape responses
 similarly to featured-tier (Pricempire-only data, no curated cross-
 source view).
 
-(Pre-Phase-2c, this state was called "orphan." The rename reflects
-post-Path-A semantics where the items table is bulk-populated to
-~5,000 catalog rows and the YAML's tracked-list is the editorial
-overlay — "substrate" describes the catalog floor, not a remnant.)
-
 This module assumes the caller has already verified the item exists in
 the ``items`` table — passing an unknown ``market_hash_name`` raises
 ``ValueError``. The 404-vs-substrate split happens at the route layer,
-which already needs to query items for its existence check anyway
-(Option B from the Step 8 design proposal: route handlers query items
-table first, then consult ``get_tier`` for tier branching).
+which already needs to query items for its existence check anyway.
 """
 
 from __future__ import annotations
@@ -81,8 +72,7 @@ def _load_from_yaml(path: Path) -> dict[str, Tier]:
     data = load_watchlist(path)
     out: dict[str, Tier] = {}
     for item in data["items"]:
-        # ``load_watchlist`` already validated tier ∈ {curated, featured}
-        # and market_hash_name presence.
+        # ``load_watchlist`` already validated tier and name presence.
         out[item["market_hash_name"]] = item["tier"]
     return out
 
@@ -122,10 +112,10 @@ def get_tier(market_hash_name: str) -> Tier:
 def reload(path: Path | None = None) -> None:
     """Reset the cache and re-read the YAML on the next ``get_tier`` call.
 
-    Production callers don't need this — operator restart of the
-    ``api`` service is the documented refresh mechanism. Tests use
-    this to inject a synthetic YAML where one real item is reclassified
-    as featured (or to swap to a fixture path).
+    Production callers don't need this; restarting the ``api`` service
+    is the documented refresh mechanism. Tests use this to inject a
+    synthetic YAML where one real item is reclassified as featured (or
+    to swap to a fixture path).
 
     If ``path`` is provided, future loads will read that path instead
     of the default watchlist location. Pass ``None`` to keep the

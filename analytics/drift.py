@@ -1,4 +1,4 @@
-"""Pattern-aware drift detector (Phase 2b, ADR 022).
+"""Pattern-aware drift detector.
 
 Compares each curated-tier item's direct-collector price against the
 corresponding Pricempire sub-provider price. Emits a `drift_verdict`
@@ -12,10 +12,7 @@ marketplace pairings mix taxonomies):
     (skinport, pricempire_skinport)
     (dmarket,  pricempire_dmarket)
 
-Two pairs per curated-tier item → 84 comparisons per cycle at the
-post-Step-7 42-item curated composition. (Pre-Phase-2b: 96 with 48
-items, all flagged tier: deep by migration 0009's default — at Phase
-2c the tier vocabulary renamed deep→curated, broad→featured.)
+Two pairs per curated-tier item are evaluated per cycle.
 
 Verdict kinds (seven; ``insights.value`` is set only on the first two):
 
@@ -35,8 +32,7 @@ Freshness contract: 30-minute stale threshold on both sides matches
 the detector's 30-minute cadence (one full Pricempire cycle + at
 least 0.5 curated cycles between detector runs). Both sides keyed
 off their respective observation_log table (the pre-dedup write
-ensures the freshness reading is honest — Phase 1 / ADR 017 / ADR 023
-lesson, one level up).
+ensures freshness is independent from price-row deduplication).
 
 Idempotency: append. Each cycle writes one row per (item, pair); the
 read pattern is ``DISTINCT ON (item_id, source_a_id, source_b_id)
@@ -57,8 +53,8 @@ pairs whose latest prices come from the ``prices`` table — i.e. both
 sides are direct collectors. ``drift_verdict`` always pairs a direct
 collector with a Pricempire sub-provider. The meta_signature shapes
 never collide; both insight types coexist in the insights table
-without interaction. Step 6 owns the bot's render-time precedence
-(drift_verdict wins for any pair involving a Pricempire source).
+without interaction. Bot rendering gives drift verdicts precedence for
+any pair involving a Pricempire source.
 """
 
 from __future__ import annotations
@@ -91,11 +87,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ──────────────────────────────────────────────────────────────────────
 
-# 10% baseline drift threshold. Phase 2a validation showed pattern-
-# agnostic items at ~0% drift in steady state; 10% catches real
-# divergence events while staying clear of inter-source noise. Tunable
-# via this constant + redeploy. Step 10's live-cycle validation may
-# surface evidence to bump this; the value is not load-bearing-by-default.
+# 10% catches material divergence while staying clear of normal
+# inter-source noise for pattern-agnostic items.
 BASELINE_DRIFT_THRESHOLD: Decimal = Decimal("0.10")
 
 # Stale thresholds. Curated at 30 min matches the curated polling
@@ -126,8 +119,7 @@ _MEANINGFUL_PAIRS: tuple[tuple[str, str], ...] = (
     ("dmarket", "pricempire_dmarket"),
 )
 
-# Verdict kinds. Module-level constants so callers (the API endpoint
-# in Step 8, the bot tool in Step 9) can import them without typos.
+# Verdict kinds imported by the API and bot layers.
 VERDICT_DRIFT_ALERT = "drift_alert"
 VERDICT_NO_DRIFT = "no_drift"
 VERDICT_PATTERN_SKIP = "pattern_skip"
@@ -188,10 +180,8 @@ def decide_verdict(
     Precedence order (the first match wins):
 
     1. ``classification.classification == "phase_based"`` → pattern_skip.
-       The skip is structural, not freshness-dependent — phase_based
-       wins even when one or both sides are stale. Step 6's bot
-       integration must mirror this precedence (no drift number, no
-       stale framing — just "drift is structurally meaningless").
+       The skip is structural, not freshness-dependent. Bot rendering
+       mirrors this precedence with no drift number and no stale framing.
 
     2. Missing data: ``curated_price`` or ``pricempire_price`` is
        None, OR ``pricempire_price == 0`` (would div-by-zero in
@@ -380,9 +370,8 @@ def compute_and_store(
     Reads the curated-tier set from watchlist.yaml (per ADR 024 — tier
     lives in YAML, not the items table). Loads the classifier once
     at cycle start. Both YAML files are treated as IMMUTABLE for the
-    duration of the cycle — re-reads per-item would invite races
-    against an operator git pull mid-cycle and would also burn
-    needless I/O.
+    duration of the cycle. Per-item re-reads would invite inconsistent
+    inputs and needless I/O.
 
     For each curated-tier item × each meaningful pair, queries the
     latest curated + Pricempire observations + their freshness

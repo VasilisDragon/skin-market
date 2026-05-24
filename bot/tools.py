@@ -1,30 +1,4 @@
-"""Skin-market API tool wrappers — Phase 7c.
-
-Seven Python functions that wrap HTTP calls against the local read
-API (``http://api:8000`` from inside compose, ``http://localhost:8001``
-from the host). The Discord bot's LLM router decides which to call;
-``bot.deepseek_client`` executes the call and feeds the result back.
-
-The function bodies + typed exception hierarchy + three-state composer
-for ``query_current_price`` are carried forward from the Phase 7b
-Hermes attempt (now archived at
-``docs/archive/bot_skill_hermes_attempt/``). What changed in 7c:
-
-- The ``@tool`` decorator and ``TOOLS`` list are gone. Tools are
-  declared as OpenAI-compatible JSON-schema dicts in
-  ``TOOL_DEFINITIONS`` and a parallel ``TOOL_FUNCTIONS`` dict maps
-  ``name → callable`` for the executor to dispatch by name.
-- Tool function bodies stay synchronous; the bot wraps each call in
-  ``asyncio.to_thread`` so a slow API call doesn't block the
-  discord.py event loop.
-
-Phase 7c-fix added tool-result size discipline (ADR 016 §11) — the
-``_summarize_*`` helpers cap what gets fed to the LLM so it doesn't
-spend wall-clock time rendering unbounded structured data.
-
-ADR 016 documents the broader runtime design and the open-source
-tool-calling defensive posture.
-"""
+"""HTTP tool wrappers used by the Discord bot's LLM router."""
 
 from __future__ import annotations
 
@@ -40,10 +14,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# Inside docker-compose the bot reaches the api over the internal
-# network at its service name + container port. The host's
-# 127.0.0.1:8001 mapping (Phase 6.6) is only relevant when running
-# the bot outside compose for testing.
+# Inside compose the bot reaches the API by service name and container
+# port. Host port mappings are only for local development.
 DEFAULT_API_BASE_URL = "http://api:8000"
 
 EXPECTED_SOURCES: tuple[str, ...] = ("skinport", "dmarket", "steam_market")
@@ -57,25 +29,12 @@ _DENOMINATION_BY_SOURCE: dict[str, str] = {
 STALE_HOURS: int = 4
 ANOMALY_FRESHNESS_HOURS: int = 2
 
-# Phase 7c-fix — tool-result size discipline. Open-source LLMs spend
-# real wall-clock time rendering structured data; a 48-item list
-# took the bot past its old local-model timeout in live testing. Cap
-# what the LLM sees per tool. ADR 016 §"Tool result size discipline"
-# documents the constraint as load-bearing.
-#
-# Above these row counts, tool functions return a summarized shape
-# (aggregate stats + a few representative rows) instead of the raw
-# list. Below the threshold, the raw shape passes through unchanged.
+# Keep tool payloads bounded before they are passed back into the LLM.
 HISTORY_DOWNSAMPLE_THRESHOLD: int = 30
 ANOMALIES_TOP_N_THRESHOLD: int = 10
 WATCHLIST_SAMPLE_SIZE: int = 5
 
-# Phase 2b Step 9 — tier-aware response shaping. Pre-composed copy
-# the LLM renders verbatim when an item is featured-tier or
-# substrate; avoids relying on the open-source model to invent the
-# right framing on its own (ADR 016's defensive-handling rationale).
-# (Tier vocabulary renamed deep/broad/orphan → curated/featured/
-# substrate at Phase 2c, ADR 024.)
+# Pre-composed tier notes keep user-facing framing deterministic.
 _TIER_NOTE_FEATURED: str = (
     "This item is on the featured watchlist — we track it but with "
     "less detail than our priority (curated) items. Detailed drift "
@@ -84,20 +43,7 @@ _TIER_NOTE_FEATURED: str = (
 
 
 def _tier_note_substrate(active_wear_display_name: str | None) -> str:
-    """Compose the substrate tier_note. When an actively-tracked
-    sibling wear exists, the note points the user to it.
-
-    Substrate covers two semantic subtypes that share the same
-    rendering:
-    - Previously-curated wears that got dropped from the YAML at a
-      re-seed (Phase 2b Step 7.1 dropped 28 from the prior 48-item
-      curated set; 25 of those were re_added to featured at Phase 2c,
-      3 remain substrate).
-    - Never-curated catalog items present in the items table from a
-      Phase 2c bulk-seed (when Path A is live).
-    The envelope copy stays generic; the bot doesn't distinguish the
-    two subtypes today. Phase 3+ on-demand fetch will, when needed.
-    """
+    """Compose the note for items outside the active watchlist."""
     if active_wear_display_name is None:
         return (
             "This item isn't on our actively-tracked watchlist. "
@@ -113,10 +59,7 @@ def _tier_note_substrate(active_wear_display_name: str | None) -> str:
     )
 
 
-# Mapping from drift verdict → user-facing framing string + whether
-# the bot should render a drift number. See Step 9 design proposal §1
-# for the precedence table and analytics/drift.py for verdict
-# semantics.
+# Mapping from drift verdict to deterministic user-facing framing.
 _DRIFT_FRAMING_TEMPLATES: dict[str, dict] = {
     "drift_alert": {
         "show_number": True,
@@ -183,13 +126,6 @@ class Attachment:
     filename: str
 
 
-# ---------------------------------------------------------------------
-# Typed exceptions — the bot catches these in the tool-execution loop
-# and feeds str(exc) back to the LLM as the tool_result so the model
-# can render a graceful user-facing reply.
-# ---------------------------------------------------------------------
-
-
 class SkinMarketBotError(Exception):
     """Base class."""
 
@@ -209,11 +145,6 @@ class ItemNotInWatchlistError(SkinMarketBotError):
 
 class ApiUnexpectedError(SkinMarketBotError):
     """5xx or other unexpected HTTP status from the api."""
-
-
-# ---------------------------------------------------------------------
-# HTTP plumbing
-# ---------------------------------------------------------------------
 
 
 def _client(timeout_read: float = 30.0) -> httpx.Client:
@@ -266,25 +197,6 @@ def _get_json(
     return resp.json()
 
 
-# ---------------------------------------------------------------------
-# Items cache + sibling-wear matcher (Phase 2b Step 9; Phase 2c
-# rename: orphan→substrate, deep→curated)
-#
-# The bot needs to know "which wear of skin X is the currently-active
-# (curated-tier) one" when a user lands on a substrate slug — both
-# for the active_wear_hint surfaced through query_current_price /
-# query_drift / evaluate_deal, and for the system-prompt wear-
-# disambiguation rule.
-#
-# The items list grows under Path A (Phase 2c bulk-seed → ~5,000
-# items), but only changes at deploy time (data/watchlist.yaml is
-# operator-edited and seed_catalog.py is operator-invoked). One
-# module-level cache for the lifetime of the bot process is
-# sufficient; ``_refresh_items_cache`` allows tests to inject a
-# fixture without reaching the API.
-# ---------------------------------------------------------------------
-
-
 _items_cache: list[dict] | None = None
 
 
@@ -315,10 +227,8 @@ def _find_active_wear(substrate_slug: str) -> dict | None:
     Souvenir flags, different wear, ``tier == "curated"``). Returns
     ``{"slug": …, "display_name": …}`` or None.
 
-    Match uses the structured fields on /items rows (added in Phase
-    2b Step 9: weapon_name, skin_name, is_stattrak, is_souvenir);
-    parsing display_name strings would be brittle on StatTrak™ /
-    Souvenir / star-prefixed knives and gloves."""
+    Structured item fields avoid brittle parsing of display names for
+    StatTrak, Souvenir, knives, and gloves."""
     cache = _get_items_cache()
     target = next(
         (row for row in cache if row.get("slug") == substrate_slug),
@@ -350,17 +260,6 @@ def _find_active_wear(substrate_slug: str) -> dict | None:
     return None
 
 
-# ---------------------------------------------------------------------
-# Drift summary helper (Phase 2b Step 9)
-#
-# Translates a /items/{slug}/drift response's pair list into the
-# ``drift_summary`` block consumed by both query_current_price (where
-# it appears alongside per_source + anomaly_flag) and query_drift
-# (where it's the primary payload). Centralizes the framing-string
-# composition so the two tool surfaces stay in sync.
-# ---------------------------------------------------------------------
-
-
 def _format_drift_pct(drift_str: str | None) -> str | None:
     """Convert a signed-ratio string like "-0.1234" into "-12.3%".
     None passes through. Quantizing to one decimal place keeps the
@@ -383,8 +282,7 @@ def _shape_drift_pair(raw_pair: dict) -> dict:
 
     Adds a pre-formatted ``drift_pct``, a pre-composed ``framing``
     string the LLM renders verbatim, and a ``stale_side`` hint for
-    the stale_* verdicts (so the LLM doesn't have to parse the
-    verdict string)."""
+    the stale_* verdicts."""
     verdict = raw_pair.get("verdict", "")
     drift_pct = _format_drift_pct(raw_pair.get("drift"))
     template_info = _DRIFT_FRAMING_TEMPLATES.get(verdict, {})
@@ -437,18 +335,9 @@ def _is_pricempire_pair(meta: dict) -> bool:
     return sa.startswith("pricempire_") or sb.startswith("pricempire_")
 
 
-# ---------------------------------------------------------------------
-# Tool function bodies
-# ---------------------------------------------------------------------
-
-
 def list_watchlist() -> dict:
     """Return a **summarized** view of the watchlist for LLM
-    consumption: ``{count, by_category, sample}``. The raw 48-item
-    list with full per-item fields blows past Qwen3 27b's
-    practical rendering latency (>120s in live testing); the
-    summarization is part of the bot's load-bearing size-discipline
-    contract (ADR 016 §"Tool result size discipline").
+    consumption: ``{count, by_category, sample}``.
 
     Categories are inferred client-side via ``_category(display_name)``
     — a heuristic over CS2 weapon names. Mis-categorized items go
@@ -462,8 +351,6 @@ def list_watchlist() -> dict:
 def query_current_price(slug: str) -> dict:
     """Return per-source prices + freshness + (for curated-tier items)
     drift_summary + anomaly_flag.
-
-    Phase 2b Step 9 adds three optional response keys:
 
     - ``drift_summary``: per-pair drift verdict from
       ``/items/{slug}/drift``. Present only for curated-tier items
@@ -486,22 +373,13 @@ def query_current_price(slug: str) -> dict:
         tier = price_data.get("tier", "curated")
         drift_data: dict | None = None
         if tier == "curated":
-            # Only curated-tier items get drift detection (analytics/drift.py
-            # filters on tier=curated before evaluating). Skipping the
-            # /drift call for non-curated tiers avoids one HTTP
-            # round-trip
-            # per query and keeps the response shape consistent.
+            # Analytics computes drift only for curated items.
             drift_data = _get_json(c, f"/items/{slug}/drift")
 
     fresh_by_source: dict[str, dict] = {
         s["source"]: s for s in price_data["sources"]
     }
     divergence_rows: list[dict] = []
-
-    # item_unavailability_streak was removed in Phase 2c (2026-05-18);
-    # see TODO.md. Sources without a recent observation fall through
-    # to the "never_observed" rendering below — the streak-based
-    # "unavailable for N cycles" branch no longer exists.
 
     now = datetime.now(UTC)
     for insight in insights_data["insights"]:
@@ -511,12 +389,7 @@ def query_current_price(slug: str) -> dict:
             age_h = (now - computed_at).total_seconds() / 3600
             if age_h > ANOMALY_FRESHNESS_HOURS:
                 continue
-            # Coexistence rule (Step 9 design proposal §1):
-            # cross_source_divergence rows involving a Pricempire
-            # sub-provider are suppressed here in favor of the
-            # drift_summary rendering. Today this is empty by
-            # construction (cross_source_divergence is curated-only);
-            # the filter is defense-in-depth.
+            # Pricempire pairs render through drift_summary instead.
             if _is_pricempire_pair(meta):
                 continue
             divergence_rows.append(insight)
@@ -559,11 +432,6 @@ def query_current_price(slug: str) -> dict:
                     entry["price_flat_minutes"] = gap_minutes
             per_source.append(entry)
         else:
-            # Three-state availability collapsed to two in Phase 2c
-            # (2026-05-18) with the item_unavailability_streak removal:
-            # the bot used to surface a streak-counted "unavailable"
-            # state here. Sources without observations now render as
-            # never_observed uniformly.
             per_source.append(
                 {
                     "source": source_name,
@@ -620,7 +488,7 @@ def query_current_price(slug: str) -> dict:
 
 def query_drift(slug: str) -> dict:
     """Return the latest drift verdict per Pricempire pair for one
-    item. Phase 2b Step 9.
+    item.
 
     Wraps ``/items/{slug}/drift``. Shape:
 
@@ -1462,10 +1330,6 @@ def mark_portfolio_monitor_delivery(
             )
         return resp.json()
 
-
-# ---------------------------------------------------------------------
-# Size-discipline summarizers (Phase 7c-fix)
-# ---------------------------------------------------------------------
 
 # Heuristic CS2 weapon → category mapping. Order matters:
 #

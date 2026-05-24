@@ -1,17 +1,8 @@
-# Footgun: POSTGRES_PASSWORD is only consumed by the postgres image on the
-# FIRST initialization of the data volume. If you rotate the password later,
-# either ALTER USER inside the running container, or destroy + recreate the
-# volume with `docker compose down -v` (DESTRUCTIVE — wipes all data).
-# A stale-password container will fail healthchecks and refuse connections
-# until you do one or the other. See docs/operations.md §"Postgres password
-# rotation footgun" for the full recovery recipe.
+# POSTGRES_PASSWORD is consumed only when the postgres data volume is
+# initialized. For password rotation, update the role in Postgres or recreate
+# the volume intentionally with `docker compose down -v`.
 #
-# Phase 8b polish: every service has consistent restart + log rotation
-# settings. Log driver caps stdout to 50MB × 5 files per service so a
-# long-running collector doesn't fill disk over weeks of operation.
-
-# Shared log-rotation config — every service inherits via YAML anchor so a
-# future tweak is a one-place change. 50MB × 5 = 250MB max per service.
+# Shared log-rotation config. 50MB x 5 files = 250MB max per service.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -51,10 +42,8 @@ services:
       # repo root via compose's variable interpolation.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Phase 2a — the Pricempire bulk-snapshot collector needs the
-      # Developer-tier bearer token. Read at the start of each cycle;
-      # collectors.pricempire.collect_snapshot fails fast (logs ERROR,
-      # returns without HTTP call) when this is empty.
+      # Pricempire bulk snapshots require an API key. The collector logs
+      # and exits the cycle without an HTTP call when this is empty.
       PRICEMPIRE_API_KEY: ${PRICEMPIRE_API_KEY:-}
     depends_on:
       postgres:
@@ -80,30 +69,18 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Single static bearer for the read API. Set in .env (Phase 6.6,
-      # ADR 014 §10). Required at startup — auth fails closed if unset.
+      # Required at startup; auth fails closed if unset.
       SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
-      # Phase 7b multi-token (ADR 014 §10): comma-separated list of
-      # accepted tokens, unioned with the singular alias above.
-      # Operator typically leaves this empty in single-consumer
-      # deployments; populate during a graceful rotation cutover.
+      # Optional comma-separated token set for graceful rotations.
       SKIN_MARKET_API_TOKENS: ${SKIN_MARKET_API_TOKENS:-}
-      # Phase A exact-asset baseline: the API performs the deterministic
-      # public-inventory lookup through Pricempire, then combines the
-      # exact asset attributes with local market-name rows.
+      # Used for deterministic public-inventory and inspect lookups.
       PRICEMPIRE_API_KEY: ${PRICEMPIRE_API_KEY:-}
       PRICE_ALERT_MAX_ACTIVE_PER_USER: ${PRICE_ALERT_MAX_ACTIVE_PER_USER:-25}
       PRICE_ALERT_MAX_DELIVERY_ATTEMPTS: ${PRICE_ALERT_MAX_DELIVERY_ATTEMPTS:-5}
       PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER: ${PORTFOLIO_SNAPSHOT_MAX_DAILY_PER_USER:-10}
       SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER: ${SIGNAL_SUBSCRIPTION_MAX_ACTIVE_PER_USER:-1}
       PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER: ${PORTFOLIO_MONITOR_MAX_ACTIVE_PER_USER:-1}
-    # Host-local port mapping (NEVER 0.0.0.0) so Hermes — which runs
-    # as a host process at ~/.hermes-discord/, not as a compose
-    # service — can reach the api with the bearer token. Host port
-    # 8001 chosen because 8000 is held by another container on this
-    # host (open-terminal). The container's internal port stays 8000;
-    # only the host-facing mapping shifts. ADR 014 §3 anticipated the
-    # host-mapping requirement; §10 documents the deployment.
+    # Host-local only; never expose the read API on all interfaces.
     ports:
       - "127.0.0.1:8001:8000"
     depends_on:
@@ -123,19 +100,14 @@ services:
     logging: *default-logging
 
   bot:
-    # Same image as collector / analytics / api — only the
-    # entrypoint differs. Phase 7c (ADR 016, superseded by the
-    # DeepSeek hard cutover): Discord bot routes tool-calling
-    # through DeepSeek and logs LLM usage to Postgres.
+    # Same image as collector / analytics / api; only the entrypoint differs.
     build:
       context: .
       dockerfile: Dockerfile
     container_name: skinmarket-bot
     command: ["python", "-m", "bot.main"]
     environment:
-      # Bot reads the api over the compose internal network (the
-      # Phase 6.6 host port mapping is irrelevant in-compose). The
-      # token must be in the api's accepted set (Phase 7b §10).
+      # Bot reads the API over the compose internal network.
       SKIN_MARKET_API_BASE_URL: http://api:8000
       SKIN_MARKET_API_TOKEN: ${SKIN_MARKET_API_TOKEN}
       # Usage accounting writes one llm_usage_log row per DeepSeek
@@ -181,11 +153,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Phase 2b Step 5 feature flag (ADR 022). Defaults to "" (falsy)
-      # so a stale .env doesn't accidentally turn the drift detector
-      # on before the Step 7 re-seed gate. Set to "true" in .env to
-      # enable; analytics/scheduler.py's run_drift_cycle no-ops when
-      # this is empty or any non-truthy value.
+      # Empty or non-truthy disables drift detection.
       DRIFT_DETECTION_ENABLED: ${DRIFT_DETECTION_ENABLED:-}
       # Narrative job uses the same DeepSeek model as the bot by
       # default and logs one llm_usage_log row per request.
