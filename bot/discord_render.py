@@ -95,11 +95,11 @@ def attachment_to_file(attachment: Attachment):
 # Canned messages — collected here so they're easy to change.
 DENIED_MESSAGE: str = (
     "I'm not authorized to chat with you. If you think this is a "
-    "mistake, ask the operator to add your Discord user ID to "
+    "mistake, ask for your Discord user ID to be added to "
     "`DISCORD_ALLOWED_USER_IDS`."
 )
 
 EMPTY_ALLOWLIST_MESSAGE: str = (
-    "I'm not configured for any users yet — the operator needs to "
-    "populate `DISCORD_ALLOWED_USER_IDS` before I can respond."
+    "I'm not configured for any users yet. Populate "
+    "`DISCORD_ALLOWED_USER_IDS` before I can respond."
 )

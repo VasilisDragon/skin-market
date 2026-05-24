@@ -1,8 +1,7 @@
-"""Featured-tier seeder for the three-tier watchlist (Phase 2b
-foundation; renamed deep→curated / broad→featured at Phase 2c, ADR 024).
+"""Featured-tier seeder for the three-tier watchlist.
 
 Reads per-item Pricempire metadata (rank), filters out current
-curated-tier items and operator-maintained exclusions, then writes the
+curated-tier items and configured exclusions, then writes the
 top-N-by-rank set into ``data/watchlist.yaml`` as featured-tier entries.
 
 Usage:
@@ -11,9 +10,9 @@ Usage:
     uv run python -m scripts.seed_featured_tier --target-size 200
     uv run python -m scripts.seed_featured_tier --watchlist /path/to/yaml
 
-Operator workflow:
+Workflow:
     1. Run the script. Summary report prints to stdout BEFORE the YAML
-       is written, so the operator sees what's about to change.
+       is written, so the planned change is visible.
     2. Review with ``git diff data/watchlist.yaml``.
     3. Commit if happy; ``git checkout -- data/watchlist.yaml`` otherwise.
     4. Deploy triggers ``scripts/seed_watchlist.py`` which inserts the
@@ -22,14 +21,14 @@ Operator workflow:
 Idempotent: re-running against the same metadata + exclusions produces
 no diff in ``data/watchlist.yaml``.
 
-Curated tier is never touched. Operators curate it by hand via
+Curated tier is never touched. Maintain it by hand via
 ``scripts/watchlist_edit.py`` and direct YAML edits. The featured tier
 is the popularity-driven coverage layer; curated is editorial.
 
 Curated-to-featured flow: items dropped from the curated tier (e.g.
-Step 7's re-seed) that still rank in the top-N will get promoted to
-featured tier by this seeder. That's expected — drop from curated is
-editorial, promotion to featured is popularity. The summary report's
+after a curated-list refresh) that still rank in the top-N will get
+promoted to featured tier by this seeder. That's expected: drop from
+curated is editorial, promotion to featured is popularity. The summary report's
 "Re-added" section makes the promotion visible. Use
 ``featured_tier_exclusions:`` in the YAML to veto specific items.
 
@@ -40,8 +39,8 @@ The first time this seeder runs against a watchlist YAML that was
 hand-edited or produced by a previous tool, every existing flow-style
 item line will get reformatted to ruamel's canonical style. That's a
 one-shot diff on first run; subsequent runs against the seeder-owned
-output are byte-clean. To keep Step 7's diff-review meaningful, run
-the seeder once on the current YAML in a separate normalize-only
+output are byte-clean. To keep content diffs reviewable, run the
+seeder once on the current YAML in a separate normalize-only
 commit before doing any content-changing run. The semantic invariant
 ("curated-tier item content is preserved") holds across the reflow.
 """
@@ -75,7 +74,7 @@ DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "data" / "watchlist.yaml"
 DEFAULT_TARGET_SIZE = 500
 
 # How many representative names to print per category in the summary
-# report. Operators can't review 500 line items meaningfully; the
+# report. Large watchlist diffs are reviewed in git; the
 # samples make the report scannable while leaving the full set for the
 # git diff.
 _SAMPLE_SIZE_IN_REPORT = 5
@@ -131,11 +130,8 @@ class DiffReport:
     - ``added``: items in the new featured tier that were NOT in the
       items table previously. Genuinely new to the watchlist.
     - ``re_added``: items in the new featured tier that DO exist in
-      ``items`` but aren't currently in the YAML. The Step-7
-      curated-tier-drop-flowing-into-featured case (or any operator-removed
-      item that became popular enough to qualify again). Surfaced
-      separately so the operator can verify the promotion is
-      expected.
+      ``items`` but aren't currently in the YAML. This includes curated
+      items that were intentionally dropped and later qualify by rank.
     - ``dropped``: items currently in featured tier no longer in the new
       composition (rank fell out of top-N or got added to exclusions).
     - ``kept``: items in both current and new featured tier. Used for
@@ -344,7 +340,7 @@ def diff_against_current(
     # better than the cutoff rank of the new featured tier. Approximation:
     # the cutoff is new_featured[-1].rank. If an excluded item's rank is
     # ≤ that, lifting the exclusion would put it in (modulo
-    # tie-breaking, which we accept as fuzz for this operator signal).
+    # tie-breaking, which is acceptable for a visibility report).
     if new_featured:
         cutoff_rank = new_featured[-1].rank
         metadata_by_name = {r.market_hash_name: r.rank for r in metadata_rows}
@@ -493,13 +489,11 @@ def print_summary(
     total_composition: int,
     file: TextIO | None = None,
 ) -> None:
-    """Render the operator-visibility report to ``file`` (default
-    stdout). Runs BEFORE any YAML mutation so a failed write still
-    leaves the report intact in the operator's terminal scrollback.
+    """Render the review report to ``file`` (default stdout).
 
     Format is deliberately plain text: no tables, no color, no
     Unicode beyond what market_hash_names already carry. Greppable
-    from the operator's terminal history.
+    from terminal history.
     """
     out = file if file is not None else sys.stdout
 
@@ -574,7 +568,7 @@ def run(
 
     ``file`` is the report's output stream — defaults to stdout; tests
     inject a StringIO. The seeder always prints before writing, so
-    even when ``dry_run=False`` the operator sees the plan first.
+    even when ``dry_run=False`` the plan is visible first.
     """
     out = file if file is not None else sys.stdout
 

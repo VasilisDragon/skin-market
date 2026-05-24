@@ -181,8 +181,8 @@ def _get_json(
 
     if resp.status_code == 401:
         raise ApiAuthError(
-            "API rejected the bearer token (401). The operator "
-            "needs to verify SKIN_MARKET_API_TOKEN."
+            "API rejected the bearer token (401). Verify "
+            "SKIN_MARKET_API_TOKEN."
         )
     if resp.status_code == 404:
         raise ItemNotInWatchlistError(

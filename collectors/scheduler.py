@@ -254,7 +254,7 @@ def _load_watchlist(
         ]
     names.sort()  # alphabetical, matches prior items-table ORDER BY
     if limit is not None and len(names) > limit:
-        # TODO(watchlist-rotation): naive slice always picks the first
+        # Rotation backlog: naive slice always picks the first
         # `limit` items, starving the rest if watchlist grows past 50.
         # ADR 009 §7 has the design context for round-robin rotation.
         names = names[:limit]

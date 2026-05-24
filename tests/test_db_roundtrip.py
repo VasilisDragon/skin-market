@@ -1,6 +1,6 @@
 """Integration test: write a price row and read it back through the ORM.
 
-Requires a running Postgres with the Phase 1 schema applied. Skipped
+Requires a running Postgres with the current schema applied. Skipped
 automatically if the DB is unreachable (e.g. on CI without a postgres
 service), so this file is safe to keep in the default test session.
 """
@@ -99,10 +99,7 @@ def test_stattrak_market_hash_name_roundtrip() -> None:
     write/read roundtrip — that's the key invariant for the Steam UPSERT.
 
     Uses a synthetic insert/delete pattern to avoid coupling the test to
-    watchlist composition. Phase 2b Step 7.1 dropped the
-    "StatTrak™ AK-47 | Redline (Field-Tested)" item from the watchlist;
-    the prior test variant relied on that item being present (with a
-    skip fallback that hid the loss of coverage on fresh deploys).
+    watchlist composition.
     """
     engine = get_engine()
     synthetic_name = "StatTrak™ __Roundtrip_Sentinel__ | Test (Factory New)"

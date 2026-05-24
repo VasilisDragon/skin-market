@@ -175,7 +175,7 @@ class TestLiveWatchlistLoads:
 
     def test_default_yaml_loads(self) -> None:
         watchlist_tiers.reload(watchlist_tiers.DEFAULT_WATCHLIST_PATH)
-        # First item we know is in the watchlist (post-Step-7.1).
+        # First item we know is in the watchlist.
         tier = watchlist_tiers.get_tier(
             "AK-47 | Redline (Field-Tested)"
         )

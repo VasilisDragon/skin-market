@@ -97,11 +97,7 @@ class TestParsePatternYaml:
             parse_pattern_yaml(path)
 
     def test_rejects_missing_schema_version(self, tmp_path: Path) -> None:
-        """Step 4 refinement: a YAML without the schema_version key
-        must fail fast with a clear message. Someone copy-pasting
-        from the file's docstring six months from now might forget
-        to include the field; the loader protects them with an
-        explicit error."""
+        """A YAML without schema_version fails fast with a clear message."""
         path = _write_yaml(
             tmp_path,
             "items:\n  - { market_hash_name: \"X (FN)\", classification: phase_based }\n",
@@ -124,10 +120,7 @@ items:
             parse_pattern_yaml(path)
 
     def test_rejects_unknown_classification(self, tmp_path: Path) -> None:
-        """Step 4 refinement: assert the error message contains at
-        least three known category names, so an operator typo gets a
-        useful hint and a future refactor doesn't strip the list
-        without anyone noticing."""
+        """Unknown classifications report the accepted category names."""
         path = _write_yaml(
             tmp_path,
             """\
@@ -140,8 +133,6 @@ items:
             parse_pattern_yaml(path)
         msg = str(exc_info.value)
         assert "foobar" in msg
-        # The known-category list must surface in the message —
-        # operator-debugging UX depends on it.
         assert "phase_based" in msg
         assert "pattern_seed" in msg
         assert "pattern_agnostic" in msg
@@ -278,25 +269,17 @@ class TestBuildClassifier:
     def test_warns_once_on_phase_based_with_multiplier(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Step 4 refinement (test 12): assert THREE things — WARN
-        logged once AND the multiplier is dropped to 1.0 in BOTH
-        threshold_multiplier_for() AND get().threshold_multiplier.
-        Without the explicit drop assertions, a future refactor that
-        preserves the multiplier on the entry while still logging
-        the WARN would pass the test silently — defeating the whole
-        point of the WARN-once contract.
-        """
-        raw = [_raw("Phase Item (FN)", "phase_based", multiplier=2.5)]
+        """phase_based entries ignore configured multipliers."""
+        raw = [_raw("Pattern Item (FN)", "phase_based", multiplier=2.5)]
         with caplog.at_level(
             logging.WARNING, logger="analytics.pattern_classifier"
         ):
             cls = build_classifier(
                 raw,
-                items_set={"Phase Item (FN)"},
-                curated_set={"Phase Item (FN)"},
+                items_set={"Pattern Item (FN)"},
+                curated_set={"Pattern Item (FN)"},
             )
 
-        # 1. WARN logged once.
         warns = [
             r for r in caplog.records if r.levelno == logging.WARNING
         ]
@@ -306,13 +289,9 @@ class TestBuildClassifier:
         assert "phase_based" in warns[0].getMessage().lower()
         assert "dead config" in warns[0].getMessage().lower()
 
-        # 2. threshold_multiplier_for returns 1.0 (the dropped value).
-        assert cls.threshold_multiplier_for("Phase Item (FN)") == 1.0
+        assert cls.threshold_multiplier_for("Pattern Item (FN)") == 1.0
 
-        # 3. The underlying entry's multiplier is also 1.0 — pins the
-        # invariant against a refactor that decouples the public
-        # method from the stored entry.
-        assert cls.get("Phase Item (FN)").threshold_multiplier == 1.0
+        assert cls.get("Pattern Item (FN)").threshold_multiplier == 1.0
 
     def test_no_warn_on_phase_based_without_multiplier(
         self, caplog: pytest.LogCaptureFixture
@@ -320,14 +299,14 @@ class TestBuildClassifier:
         """The WARN fires ONLY when a multiplier is explicitly set
         on a phase_based item. A phase_based item without a
         multiplier is clean config and must not log."""
-        raw = [_raw("Phase Clean (FN)", "phase_based", multiplier=None)]
+        raw = [_raw("Pattern Clean (FN)", "phase_based", multiplier=None)]
         with caplog.at_level(
             logging.WARNING, logger="analytics.pattern_classifier"
         ):
             build_classifier(
                 raw,
-                items_set={"Phase Clean (FN)"},
-                curated_set={"Phase Clean (FN)"},
+                items_set={"Pattern Clean (FN)"},
+                curated_set={"Pattern Clean (FN)"},
             )
         warns = [
             r for r in caplog.records if r.levelno == logging.WARNING

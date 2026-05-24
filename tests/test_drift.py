@@ -97,7 +97,7 @@ def _entry(
 
 class TestDecideVerdictKindDispatch:
     def test_phase_based_emits_pattern_skip(self) -> None:
-        """Phase 1 of the precedence order: phase_based wins over
+        """First precedence rule: phase_based wins over
         everything, regardless of freshness or data presence."""
         result = decide_verdict(
             curated_price=Decimal("28.00"),
@@ -197,8 +197,7 @@ class TestDecideVerdictKindDispatch:
         assert result.drift == Decimal("0.1000")
 
     def test_threshold_boundary_negative_strict(self) -> None:
-        """Step 5 refinement: symmetric boundary on the negative side.
-        drift = -threshold exactly → no_drift."""
+        """drift = -threshold exactly emits no_drift."""
         # curated 90 / pricempire 100 → drift = -0.1000 exactly
         result = decide_verdict(
             curated_price=Decimal("90.00"),
@@ -258,9 +257,7 @@ class TestDecideVerdictStaleness:
     def test_stale_with_phase_based_still_returns_pattern_skip(
         self,
     ) -> None:
-        """Precedence: phase_based wins over stale_*. Step 6's bot
-        renderer needs to mirror this (no drift number, no stale
-        framing — just 'drift is structurally meaningless')."""
+        """phase_based wins over stale_*."""
         result = decide_verdict(
             curated_price=Decimal("108.00"),
             curated_last_polled_at=_fresh(99),
@@ -324,9 +321,7 @@ class TestDecideVerdictMissingData:
 
 class TestDecideVerdictTypes:
     def test_drift_is_decimal_not_float(self) -> None:
-        """Step 5 pin: drift = 0.15 must be stored as Decimal('0.15'),
-        not 0.15 the float. 'any float(price) is a bug' extends to
-        ratios derived from money."""
+        """drift ratios derived from money stay Decimal, not float."""
         result = decide_verdict(
             curated_price=Decimal("115.00"),
             curated_last_polled_at=_fresh(5),
@@ -862,9 +857,7 @@ class TestModuleConstants:
         )
 
     def test_baseline_threshold_is_decimal_not_float(self) -> None:
-        """Step 5 pin: drift-comparison threshold lives as Decimal
-        end-to-end. Future tunes to this constant should preserve the
-        Decimal type."""
+        """The drift-comparison threshold stays Decimal end-to-end."""
         assert isinstance(BASELINE_DRIFT_THRESHOLD, Decimal)
         assert Decimal("0.10") == BASELINE_DRIFT_THRESHOLD
 
@@ -900,7 +893,7 @@ class TestModuleConstants:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# YAML → curated_set construction regression pin (Phase 2c rename)
+# YAML to curated_set construction regression pin
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -908,26 +901,8 @@ class TestYamlToCuratedSetIntegration:
     """Pin the load-bearing string-literal in the drift detector's
     YAML-driven curated_set construction.
 
-    Regression context: at the Phase 2c rename (deep/broad/orphan →
-    curated/featured/substrate, ADR 024), a partial replace_all
-    renamed the Python variable ``deep_set`` → ``curated_set`` in
-    ``analytics/drift.py:compute_and_store`` but momentarily left
-    the string-literal comparison as ``it.get("tier") == "deep"``.
-    Against a schema_version: 3 YAML (every item flagged ``tier:
-    curated``), the comparison never matched → ``curated_set`` was
-    empty → zero ``drift_verdict`` rows produced per cycle.
-
-    The 469 tests passing under the broken state did NOT catch this
-    because every drift test passes ``curated_set`` directly as a
-    parameter, bypassing the YAML-loading path. Only the production
-    end-to-end path exercised the broken comparison; a post-restart
-    canary against the validation doc §4 invariants would have
-    caught it.
-
-    This test fires on the unit level — no DB, no analytics service
-    restart needed. It verifies the construction matches what
-    ``compute_and_store`` does internally when ``curated_set`` is
-    not passed in.
+    This verifies the construction used when ``compute_and_store`` must
+    derive ``curated_set`` from YAML instead of receiving it directly.
     """
 
     def test_curated_set_built_from_v3_yaml_uses_curated_literal(
@@ -936,8 +911,7 @@ class TestYamlToCuratedSetIntegration:
         """Compose a schema_version: 3 YAML with mixed-tier items;
         build the curated_set the way ``compute_and_store`` does;
         assert it picks up the ``tier: curated`` rows and ONLY those.
-        A regression that switches the literal back to ``"deep"``
-        would produce an empty set and fail this assertion loudly."""
+        A wrong literal would produce an empty set."""
         yaml_path = tmp_path / "watchlist.yaml"
         yaml_path.write_text(
             "schema_version: 3\n"
@@ -973,8 +947,7 @@ class TestYamlToCuratedSetIntegration:
             f"curated_set was {curated_set}; expected the two "
             "tier: curated items. An empty set indicates the "
             "string-literal comparison in compute_and_store has "
-            "regressed away from 'curated' (likely back to the "
-            "pre-Phase-2c 'deep' value)."
+            "regressed away from 'curated'."
         )
 
 

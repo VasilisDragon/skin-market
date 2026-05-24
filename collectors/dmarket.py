@@ -39,7 +39,7 @@ Failure modes — same taxonomy as Steam / Skinport (ADR 006):
 
 - Empty ``objects`` array: no current listings. INFO log, skip. NOT a
   parse failure; this is real "no listings" signal that correlates with
-  rarity (ADR 010's Phase 5 distinction applies to DMarket too).
+  rarity.
 - 429 / 5xx / timeout: full-jitter backoff, retry up to 5 times.
 - 4xx non-429: WARNING log, no retry.
 - Malformed body / missing fields: WARNING log, skip.
@@ -47,14 +47,13 @@ Failure modes — same taxonomy as Steam / Skinport (ADR 006):
 The price-vs-suggestedPrice trap is the only DMarket-specific gotcha;
 ADR 012 §3 carries the details and a test guards the behavior.
 
-Title-matching policy: Phase 2b Step 6 (ADR 012 §7) replaced the
-"take objects[0], check title" behavior with "iterate objects[] in
-price-ascending order, accept first NFC-normalized-title match
-against {canonical name} ∪ aliases." Aliases come from
+Title-matching policy: iterate ``objects[]`` in price-ascending order
+and accept the first NFC-normalized title match against the canonical
+name or configured aliases. Aliases come from
 ``data/watchlist.yaml``'s optional ``dmarket_alias`` field and are
 threaded into the collector via the ``alias_map`` constructor kwarg.
-Operator workflow for adding an alias: edit watchlist.yaml, restart
-the COLLECTOR service (not analytics — alias map is collector-owned).
+Restart the collector service after editing aliases; the alias map is
+collector-owned.
 """
 
 from __future__ import annotations
@@ -126,8 +125,8 @@ def parse_dmarket_price(cents_str: str | int | None) -> Decimal | None:
 class DMarketCollector(Collector):
     """Collector for the DMarket public market endpoint.
 
-    Title-match policy (ADR 012 §7, Phase 2b Step 6): rather than
-    take ``objects[0]`` blindly, the collector iterates the price-
+    Title-match policy: rather than take ``objects[0]`` blindly, the
+    collector iterates the price-
     ascending ``objects[]`` array and accepts the first entry whose
     NFC-normalized title is in the accept set ``{canonical_name} ∪
     aliases``. Aliases come from ``data/watchlist.yaml``'s optional
@@ -141,14 +140,13 @@ class DMarketCollector(Collector):
     and held for the collector's lifetime. The COLLECTOR service must
     be restarted (``docker compose restart collector``) for YAML edits
     to ``dmarket_alias`` entries to take effect. NOT the analytics
-    service — analytics has its own classifier-load discipline (Step 5);
-    the alias map is collector-owned.
+    service; the alias map is collector-owned.
     """
 
     source_name = "dmarket"
     # DMarket is permissive but has no documented rate limit; mirror
     # Steam's pacing posture (conservative-but-not-paranoid) with a
-    # slightly shorter delay since DMarket has no Wallet-cookie footgun.
+    # slightly shorter delay since DMarket has no wallet-cookie dependency.
     inter_request_delay: float = 3.0
     base_delay: float = 3.0
     max_retries: int = 5
@@ -296,23 +294,10 @@ class DMarketCollector(Collector):
             )
             return None
 
-        # Phase 2b Step 6 (ADR 012 §7): iterate objects[] in DMarket's
-        # default price-ascending order. Accept the first entry whose
-        # NFC-normalized title is in the accept set (canonical name ∪
-        # aliases from data/watchlist.yaml's dmarket_alias field).
-        #
-        # Pre-Phase-2b behavior was to take objects[0] only and check
-        # its title — which failed for 8 watchlist items where DMarket's
-        # loose `title=` matcher returned cheaper-variant listings (e.g.
-        # Oxide Blaze for "Desert Eagle | Blaze (FN)", or the Souvenir
-        # variant for "MP9 | Hot Rod (FN)") at index 0 while the true
-        # canonical sat later in the response. The iteration finds the
-        # canonical when present; for items DMarket genuinely doesn't
-        # carry (3 of the 8), iteration exhausts and the collector
-        # returns None — same outcome as the old code, but reached
-        # honestly. ADR 012 §7 documents the deploy-time effect
-        # (5 items will start producing prices post-deploy; 3 remain
-        # "no data" because DMarket truly doesn't list them).
+        # DMarket's loose title matcher can return cheaper variants
+        # before the canonical item, so scan the price-ordered response
+        # for the first accepted title. For items DMarket genuinely doesn't
+        # carry, iteration exhausts and the collector returns None.
         canonical = normalize_name(market_hash_name)
         accept_set: frozenset[str] = (
             frozenset({canonical})

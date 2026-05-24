@@ -9,8 +9,8 @@ Two insight types:
   ``docs/sources-and-semantics.md`` for why.
 - ``cross_source_spread``: a per-pair, time-series number capturing
   ``(price_a - price_b) / price_b`` for each pair of enabled sources.
-  Phase 5 anomaly detection compares the spread against its rolling
-  baseline to flag divergence events (Doppler-style variant shifts on
+  Anomaly detection compares the spread against its rolling baseline
+  to flag divergence events (Doppler-style variant shifts on
   one source, wallet-credit liquidity changes on Steam, etc.).
 
 Sources iterated dynamically from ``sources WHERE enabled``.

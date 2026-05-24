@@ -1,4 +1,4 @@
-"""Pattern-sensitivity classifier loader (Phase 2b, ADR 021).
+"""Pattern-sensitivity classifier loader.
 
 Reads ``data/pattern_sensitivity.yaml`` and exposes a queryable
 in-memory view: "what classification applies to this market_hash_name?"
@@ -116,8 +116,8 @@ class ClassificationEntry:
     2.0 = doubled, etc.); for phase_based items the value is always
     1.0 because the drift detector skips them entirely.
 
-    ``note`` is operator-facing rationale carried through from the
-    YAML. Never read by code; useful for a future "explain this
+    ``note`` is explanatory rationale carried through from the YAML.
+    Never read by code; useful for a future "explain this
     verdict" path."""
 
     classification: str
@@ -214,8 +214,7 @@ def parse_pattern_yaml(path: Path) -> list[_RawEntry]:
     - Missing ``market_hash_name`` on any item → ``ValueError``.
     - Missing ``classification`` on any item → ``ValueError``.
     - ``classification`` value not in the seven known categories →
-      ``ValueError`` whose message lists at least three known values
-      so an operator typo gets a useful hint.
+      ``ValueError`` whose message lists known values for diagnosis.
     - ``classification: pattern_agnostic`` explicitly set →
       ``ValueError`` ("implicit default; remove entry").
     - ``drift_threshold_multiplier`` not a positive number →
@@ -287,8 +286,6 @@ def parse_pattern_yaml(path: Path) -> list[_RawEntry]:
                 f"classification or it isn't a string"
             )
         if cls not in _KNOWN_CATEGORIES:
-            # Sorted+joined explicitly so the message lists every
-            # known category — protects operator debugging UX.
             known_list = ", ".join(sorted(_KNOWN_CATEGORIES))
             raise ValueError(
                 f"{path}: items[{idx}] ({name!r}) has unknown "
@@ -360,11 +357,10 @@ def build_classifier(
     Pure function. Tests inject synthetic sets to skip DB and
     watchlist setup entirely.
 
-    Named fail-fast modes (Step 4 brief):
+    Named fail-fast modes:
 
     1. UNKNOWN ITEM — ``market_hash_name`` not in ``items_set``.
-       ``ValueError`` with "not in items table" wording so the
-       operator can locate the typo.
+       ``ValueError`` with "not in items table" wording for diagnosis.
     2. NON-CURATED-TIER ITEM — ``market_hash_name`` in ``items_set``
        but NOT in ``curated_set`` (i.e. flagged ``tier: featured``
        in watchlist.yaml, or substrate — absent from YAML). The

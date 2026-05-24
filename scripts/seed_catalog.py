@@ -1,7 +1,7 @@
 """Seed long-tail catalog items from Pricempire ``/v4/paid/items/metas``.
 
-Path A bulk seed: insert the top ranked Pricempire catalog names into
-``items`` so they become substrate-tier items (present in DB, absent from
+Bulk seed: insert the top ranked Pricempire catalog names into ``items`` so
+they become substrate-tier items (present in DB, absent from
 ``data/watchlist.yaml``). Curated and featured tiers remain YAML-owned; this
 script does not edit the watchlist.
 

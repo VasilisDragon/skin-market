@@ -83,8 +83,7 @@ def get_history(
         # Existence check up front — we need market_hash_name for the
         # tier lookup regardless of whether the time-series is empty.
         # Cheaper than running the time-series query and then
-        # double-checking on the empty path, and uniform with the
-        # other routes (Step 8: routes query items first).
+        # double-checking on the empty path.
         item_row = session.execute(
             text(
                 "SELECT market_hash_name FROM items WHERE slug = :slug"

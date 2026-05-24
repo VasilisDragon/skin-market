@@ -11,7 +11,7 @@ The library is ~80MB on disk and adds ~600ms to interpreter startup;
 deferring keeps the API process's cold-start fast for the common case
 (no one asked for a chart on this request).
 
-## Visual style (Phase 8a)
+## Visual style
 
 The chart uses a dark dashboard treatment so Discord users get
 something that reads like a financial chart, not a default matplotlib
@@ -46,11 +46,8 @@ CHART_DEFAULT_SOURCE = "skinport"
 CHART_MAX_DAYS = 90
 
 # ---------------------------------------------------------------------
-# Dark-dashboard theme (Phase 8a). Colors are from the tokyo-night
-# palette, chosen for legibility on a dark background and to feel
-# coherent across sources. If you tune any of these, update the test
-# fixture render saved alongside the commit so the visual reference
-# matches.
+# Dark-dashboard theme. Colors are from the tokyo-night palette, chosen
+# for legibility on a dark background and to feel coherent across sources.
 # ---------------------------------------------------------------------
 
 CHART_BG = "#1a1b26"        # off-black, slightly cool

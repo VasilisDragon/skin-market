@@ -40,7 +40,7 @@ Failure modes and our response:
 Cookies: Steam will eventually 429-block anonymous polling regardless of
 backoff. The plan when that happens is to read a ``steamLoginSecure``
 cookie from ``STEAM_SESSION_COOKIE`` env and add it in ``make_client``.
-Not implemented in Phase 2 — see ADR 006 for the trigger condition.
+See ADR 006 for the trigger condition.
 """
 
 from __future__ import annotations

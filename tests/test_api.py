@@ -9,7 +9,7 @@ Skip pattern matches ``test_db_roundtrip.py``: DATABASE_URL must be
 set and reachable. The ``_preserve_source_enabled_flags`` autouse
 fixture (same pattern as ``test_watchlist_edit.py``) snapshots and
 restores ``sources.enabled`` so a test that toggles a source does not
-mutate the operator's flag state.
+leave source flags changed after the test.
 """
 
 from __future__ import annotations
@@ -56,10 +56,7 @@ _db_required = pytest.mark.skipif(
 _SENTINEL_NAME = "__APITest__ | Sentinel (Field-Tested)"
 _SENTINEL_SLUG = "apitest-sentinel-field-tested"
 
-# Phase 6.6: every authenticated test runs with a known token set in
-# the environment via the autouse fixture. Authenticated clients carry
-# the matching Authorization header; tests that exercise the auth
-# itself construct their own clients with no/wrong header.
+# Every authenticated test runs with a known token set in the environment.
 _TEST_TOKEN = "test-token-deadbeefcafebabe1234567890"
 
 
@@ -293,10 +290,8 @@ class TestAuth:
     @_db_required
     def test_health_bypasses_auth(self) -> None:
         """``/health`` must respond without any Authorization header —
-        Docker healthchecks have no credentials and an operator
-        running ``curl http://localhost:8000/health`` against a
-        misconfigured auth state must still see the API's actual
-        status. ADR 014 §10.
+        Docker healthchecks have no credentials, and health diagnostics
+        must remain available when API auth is misconfigured.
 
         Marked ``@_db_required`` because the /health route reports
         DB reachability (see TestHealth), so it issues a SELECT 1
@@ -339,9 +334,8 @@ class TestAuth:
         self, monkeypatch
     ) -> None:
         """SKIN_MARKET_API_TOKENS (plural) is comma-separated; any
-        token in the set authenticates. v1 single-consumer uses the
-        singular alias; Phase 8+ multi-consumer uses this knob.
-        ADR 014 §10.
+        token in the set authenticates. The singular token remains a
+        compatibility alias.
 
         Marked ``@_db_required`` because the test asserts a 200 on
         ``/items``, which lists from the DB; without a reachable
@@ -375,7 +369,7 @@ class TestAuth:
     def test_empty_token_set_fails_closed(self, monkeypatch) -> None:
         """Both env vars empty/unset → 500 (fail closed). Silently
         treating "no tokens configured" as "auth disabled" would be a
-        footgun — surface the misconfiguration."""
+        security risk, so surface the misconfiguration."""
         monkeypatch.delenv("SKIN_MARKET_API_TOKEN", raising=False)
         monkeypatch.setenv("SKIN_MARKET_API_TOKENS", "   ,  , ")
         c = TestClient(app)
@@ -387,8 +381,7 @@ class TestAuth:
     @_db_required
     def test_plural_and_singular_unioned(self, monkeypatch) -> None:
         """If both env vars are set, the accepted set is their union —
-        useful when an operator phases in a new client without
-        disrupting the existing one.
+        useful during token rotation or while adding another client.
 
         Marked ``@_db_required`` for the same reason as
         ``test_multiple_tokens_all_authenticate``: asserts on a
@@ -429,9 +422,8 @@ class TestItems:
     def test_list_items_carries_structured_fields(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """Phase 2b Step 9: weapon_name, skin_name, is_stattrak,
-        is_souvenir surface on the list endpoint so the bot can
-        match orphan slugs to their active deep-tier sibling wear
+        """Structured item fields surface on the list endpoint so the
+        bot can match substrate slugs to their active curated sibling
         without parsing display_name."""
         resp = client.get("/items")
         assert resp.status_code == 200
@@ -442,7 +434,7 @@ class TestItems:
         assert row["skin_name"] == "Sentinel"
         assert row["is_stattrak"] is False
         assert row["is_souvenir"] is False
-        assert "tier" in row  # Step 8 field still present
+        assert "tier" in row
 
     def test_get_item_happy(
         self, client: TestClient, sentinel_item
@@ -607,10 +599,8 @@ class TestPrice:
     def test_polled_fresh_but_price_flat(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """ADR 017 / Phase 1 fix: the two timestamps diverge when the
-        collector polls cleanly but the dedup gate (ADR 009 §3)
-        suppresses the write. Skinport in steady state shows this for
-        ~45/48 items per cycle.
+        """The two timestamps diverge when the collector polls cleanly
+        but price-row deduplication suppresses the write.
 
         Expected: last_polled_at is fresh (minutes ago),
         last_changed_at is multi-hour-old. Confirms the two fields are
@@ -949,11 +939,7 @@ class TestChart:
     def test_chart_single_observation_in_window(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """Phase 8a edge case: a window with exactly one observation
-        must still render (not crash on min(prices) over a 1-element
-        list or similar). The fill_between under the curve uses
-        ``min(prices)`` which is well-defined for length-1 lists,
-        but the test pins the contract."""
+        """A window with exactly one observation must still render."""
         now = datetime.now(UTC)
         engine = get_engine()
         with Session(engine) as session:
@@ -977,8 +963,7 @@ class TestChart:
     def test_chart_days_equal_one(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """Phase 8a: days=1 takes the HourLocator branch of
-        _apply_chart_style. Edge of the date-locator decision tree."""
+        """days=1 takes the HourLocator branch of _apply_chart_style."""
         resp = client.get(
             f"/items/{_SENTINEL_SLUG}/chart?source=skinport&days=1"
         )
@@ -988,10 +973,7 @@ class TestChart:
     def test_chart_long_display_name_does_not_overflow(
         self, client: TestClient
     ) -> None:
-        """Phase 8a: items with very long display names get truncated
-        in the title so the canvas doesn't overflow. Use the
-        underlying helper directly so we don't have to insert a
-        synthetic item via the fixture path."""
+        """Long display names get truncated so the chart title fits."""
         import matplotlib
 
         from api.routes.charts import _apply_chart_style
@@ -1022,7 +1004,7 @@ class TestChart:
     def test_chart_y_axis_currency_formatter_usd(
         self, client: TestClient
     ) -> None:
-        """Phase 8a contract: USD denomination produces ``$X.XX``
+        """USD denomination produces ``$X.XX``
         y-tick labels; wallet_credit produces ``X.XX SC``. Verified
         via the formatter, not pixel inspection."""
         import matplotlib
@@ -1291,14 +1273,10 @@ class TestDealsEvaluate:
     def test_polled_fresh_but_price_flat_is_comparable(
         self, client: TestClient, sentinel_item
     ) -> None:
-        """The Phase 2a fix in a sentence: an (item, source) pair with
-        fresh observation_log but multi-hour-stale prices.timestamp
-        must NOT be demoted to reason='stale' — it should still anchor
-        the verdict.
+        """Fresh observation_log rows keep flat prices comparable.
 
         Mirrors ``test_polled_fresh_but_price_flat`` for the
-        ``/items/{slug}/price`` endpoint. Phase 1 fixed that path;
-        Phase 2a applies the same pattern to ``/deals/evaluate``.
+        ``/items/{slug}/price`` endpoint.
 
         Live empirical analogue: Desert Eagle Blaze FN at $450
         previously returned ``no_comparable_data`` because Skinport's

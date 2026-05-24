@@ -1,11 +1,9 @@
-"""Bot tests — Phase 7c.
+"""Bot tests.
 
 Three test modules in one file:
 
-1. ``TestTools*`` — ported from the Phase 7b ``test_bot_skill.py``
-   suite. The wrapper functions in ``bot.tools`` are the same code
-   (re-pointed at ``http://api:8000`` for the in-compose path).
-   pytest-httpx mocks all HTTP; no network.
+1. ``TestTools*`` — HTTP wrappers in ``bot.tools``. pytest-httpx mocks
+   all HTTP; no network.
 2. ``TestDeepSeekClient*`` — the tool-use loop in
    ``bot.deepseek_client``. The chat client is mocked so we don't
    need a live DeepSeek API call. Each test
@@ -87,7 +85,7 @@ def _bot_env(monkeypatch):
 def _reset_items_cache():
     """Clear the items cache before AND after each test so a test
     that populates it (e.g. substrate-tier wear-disambiguation cases)
-    doesn't leak into the next test. Phase 2b Step 9."""
+    doesn't leak into the next test."""
     _refresh_items_cache(None)
     yield
     _refresh_items_cache(None)
@@ -105,7 +103,7 @@ def _drift_payload(slug: str = "x", pairs: list[dict] | None = None) -> dict:
 
 
 # =====================================================================
-# Section 1: bot.tools — HTTP wrappers (ported from 7b test_bot_skill)
+# Section 1: bot.tools HTTP wrappers
 # =====================================================================
 
 
@@ -782,10 +780,7 @@ class TestToolsAuthAndConnectivity:
 class TestQueryCurrentPriceComposer:
     """The two-state composer is the only non-trivial tool. Re-test the
     categorization, the anomaly flag, and the never_observed fallback
-    so a refactor can't quietly break the bot's rendering. (The
-    three-state composer's "unavailable" state collapsed to
-    never_observed in Phase 2c with the item_unavailability_streak
-    removal.)"""
+    so a refactor can't quietly break the bot's rendering."""
 
     @staticmethod
     def _price(sources: list[dict], tier: str = "curated") -> dict:
@@ -811,12 +806,7 @@ class TestQueryCurrentPriceComposer:
         )
 
     def test_fresh_and_never_observed(self, httpx_mock) -> None:
-        """Sources with no observation collapse to never_observed.
-        Phase 2c collapsed the previous three-state model
-        (fresh / unavailable-with-streak / never_observed) to two
-        states with the removal of item_unavailability_streak — sources
-        the collector has never polled (or hasn't polled in a while)
-        all land in never_observed uniformly."""
+        """Sources with no observation collapse to never_observed."""
         now = datetime.now(UTC)
         httpx_mock.add_response(
             url=f"{_BASE}/items/x/price",
@@ -895,10 +885,10 @@ class TestQueryCurrentPriceComposer:
     def test_polled_fresh_but_price_flat_is_fresh_not_stale(
         self, httpx_mock
     ) -> None:
-        """The Phase 1 fix in a sentence: an item polled cleanly 2
-        minutes ago but whose price hasn't moved in 16h is FRESH, not
-        stale. The 16h gap surfaces as ``price_flat_minutes`` — an
-        informational hint, not a 🟡 warning.
+        """A fresh poll with a flat price is fresh, not stale.
+
+        The gap surfaces as ``price_flat_minutes``: an informational
+        hint, not a freshness warning.
         """
         now = datetime.now(UTC)
         httpx_mock.add_response(
@@ -1084,14 +1074,14 @@ class TestQueryPriceHistory:
 
 
 # =====================================================================
-# Section 1c: Phase 2b Step 9 — query_drift + tier-aware shaping
+# Section 1c: query_drift and tier-aware shaping
 # =====================================================================
 
 
 def _items_fixture_for_orphan_test() -> list[dict]:
     """A tiny items-cache fixture that includes two USP-S Neo-Noir
-    wear variants — Field-Tested as deep (the active wear post-Step
-    7.1) and Factory New as orphan (the dropped wear). Used to test
+    wear variants: Field-Tested as curated and Factory New as substrate.
+    Used to test
     sibling-wear resolution without hitting the API."""
     return [
         {
@@ -1330,15 +1320,14 @@ class TestQueryDrift:
         assert result["tier"] == "featured"
         assert result["pairs"] == []
         assert "featured watchlist" in result["tier_note"]
-        # No active_wear_hint for broad tier — broad isn't a wear-tier
+        # No active_wear_hint for featured tier — it is not a wear-tier
         # swap case.
         assert "active_wear_hint" not in result
 
     def test_substrate_tier_with_active_wear_hint(
         self, httpx_mock
     ) -> None:
-        """Two real Step 7.1 wear swaps: USP-S Neo-Noir FN (orphan)
-        should resolve to FT (deep) as the active sibling."""
+        """USP-S Neo-Noir FN resolves to FT as the active sibling."""
         _refresh_items_cache(_items_fixture_for_orphan_test())
         httpx_mock.add_response(
             url=f"{_BASE}/items/usp-s-neo-noir-factory-new/drift",
@@ -1361,9 +1350,7 @@ class TestQueryDrift:
         assert "Field-Tested" in result["tier_note"]
 
     def test_substrate_tier_dragon_lore_swap(self, httpx_mock) -> None:
-        """AWP Dragon Lore FT (orphan) → FN (deep) is the other Step
-        7.1 wear swap; pin it explicitly so a future YAML edit can't
-        silently break the hint."""
+        """AWP Dragon Lore FT resolves to FN as the active sibling."""
         _refresh_items_cache(_items_fixture_for_orphan_test())
         httpx_mock.add_response(
             url=f"{_BASE}/items/awp-dragon-lore-field-tested/drift",
@@ -1668,7 +1655,7 @@ class TestFindActiveWearMatching:
         assert _find_active_wear("not-in-cache-slug") is None
 
 
-class TestSystemPromptPhase2bStep9:
+class TestSystemPromptDriftRendering:
     """Pin the system-prompt additions so a future edit can't quietly
     drop the wear-disambiguation or coexistence rules the LLM relies
     on."""
@@ -1737,8 +1724,7 @@ class TestSystemPromptPhase2bStep9:
 
 
 # =====================================================================
-# Section 1b: Phase 7c-fix — tool-result size discipline
-# (ADR 016 §"Tool result size discipline")
+# Section 1b: tool-result size discipline
 # =====================================================================
 
 
@@ -2923,8 +2909,7 @@ class TestDeepSeekClientDefensive:
                 ),
                 _make_msg(
                     content=(
-                        "I don't track that item yet — ask the "
-                        "operator to add it."
+                        "I don't track that item yet. Ask for it to be added."
                     )
                 ),
             ]

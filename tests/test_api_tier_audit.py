@@ -1,16 +1,12 @@
-"""Tier audit (Phase 2b Step 8): pin broad-tier degradation across
-existing endpoints so a future broad-tier population doesn't surprise
-the bot.
+"""Tier audit: pin featured-tier degradation across existing endpoints.
 
-Broad tier is empty in production today (Step 7.1 set every item's
-tier to ``deep`` and broad-tier population is a deferred phase). These
-tests classify a synthetic sentinel item as ``broad`` via the
+These tests classify a synthetic sentinel item as ``featured`` via the
 ``watchlist_tiers.reload()`` hook and assert each endpoint returns
 the documented degraded shape — 200 with a tier-shaped empty
-response, NOT a 500 or an indistinguishable-from-deep-with-no-data
+response, NOT a 500 or an indistinguishable-from-curated-with-no-data
 result.
 
-For deep-tier behavior, the existing test_api.py + test_api_drift.py
+For curated-tier behavior, the existing test_api.py + test_api_drift.py
 suites already pin the happy path.
 """
 
@@ -186,11 +182,7 @@ class TestBroadTierPrice:
     def test_featured_tier_price_returns_empty_sources(
         self, client: TestClient, featured_tier_sentinel
     ) -> None:
-        """Pin: broad-tier items get 200 with empty sources[] and
-        tier=broad. The bot's Step 9 rendering distinguishes "broad
-        tier — curated data not collected for this tier" from
-        "unknown item" (404) and from "deep tier but no data yet"
-        (200, deep, empty)."""
+        """Featured items get 200 with empty direct-source rows."""
         resp = client.get(f"/items/{_SENTINEL_SLUG}/price")
         assert resp.status_code == 200
         body = resp.json()

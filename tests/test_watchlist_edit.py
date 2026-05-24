@@ -101,9 +101,7 @@ def tmp_watchlist(tmp_path: Path) -> Path:
 def _preserve_source_enabled_flags():
     """Snapshot ``sources.enabled`` before each test and restore on
     teardown. ``seed_watchlist``'s UPSERT clobbers ``enabled`` from the
-    test fixture YAML — which flips operator-managed flags (e.g.
-    skinport disabled during rate-limit recovery, ADR 013) as a test
-    side effect. Restoring keeps the live DB faithful regardless.
+    test fixture YAML. Restoring keeps the live DB faithful regardless.
     """
     if not _db_reachable():
         yield
@@ -158,10 +156,7 @@ def _cleanup_test_item():
 
 
 class TestSchemaV3Loader:
-    """Phase 2b: scripts.seed_watchlist.load_watchlist enforces
-    schema_version == 3 and a ``tier:`` field on every item. Test the
-    contract directly so a future YAML drift fails loudly.
-    """
+    """load_watchlist enforces schema_version == 3 and per-item tier."""
 
     def _write(self, tmp_path: Path, body: str) -> Path:
         path = tmp_path / "watchlist.yaml"
@@ -204,8 +199,7 @@ class TestSchemaV3Loader:
         assert data["items"][0]["tier"] == "featured"
 
     def test_rejects_schema_v1(self, tmp_path: Path) -> None:
-        """A pre-Phase-2b YAML must fail fast so a stale deploy can't
-        silently load with no tier semantics."""
+        """Older YAML schemas fail fast instead of loading without tier."""
         from scripts.seed_watchlist import load_watchlist
 
         path = self._write(
@@ -256,7 +250,7 @@ class TestSchemaV3Loader:
         with pytest.raises(ValueError, match="invalid tier"):
             load_watchlist(path)
 
-    # ── Phase 2b Step 6 (ADR 012 §7) dmarket_alias validation ──
+    # dmarket_alias validation.
 
     def test_dmarket_alias_list_accepted(self, tmp_path: Path) -> None:
         """Optional dmarket_alias field as a list of non-empty

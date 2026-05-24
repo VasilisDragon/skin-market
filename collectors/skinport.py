@@ -313,8 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     collector = SkinportCollector()
     engine = get_engine()
 
-    # Pull the watchlist from the DB so the collector matches whatever
-    # state the seed left. Phase 4's scheduler will pass an explicit list.
+    # Pull the watchlist from the DB for one-off CLI runs.
     with Session(engine) as session:
         watchlist = [
             row[0]

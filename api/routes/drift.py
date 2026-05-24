@@ -1,5 +1,5 @@
 """``GET /items/{slug}/drift`` — most-recent drift verdict per pair
-for one item (Phase 2b Step 8).
+for one item.
 
 The drift detector (analytics/drift.py, ADR 022) writes
 ``insight_type='drift_verdict'`` rows to the ``insights`` table on a
@@ -24,9 +24,7 @@ Status-code contract
 - 200 with ``tier="curated"``, ``pairs=[]`` when the detector hasn't
   produced rows yet (fresh deploy, classifier-disabled period).
 - 200 with ``tier="curated"``, ``pairs=[…1 entry…]`` for items where
-  only one pair has produced a row — realistic for items added at
-  Step 7.1 with sparse Pricempire data while a side fills in
-  (USP-S Neo-Noir FT, AWP Dragon Lore FN are the canonical examples).
+  only one pair has produced a row while one side is still warming up.
 - 200 with ``tier="curated"``, ``pairs=[…2 entries…]`` for steady-
   state curated-tier items.
 - 200 with ``tier="featured"`` or ``tier="substrate"``, ``pairs=[]``
@@ -72,8 +70,7 @@ def get_drift(slug: str) -> DriftResponse:
 
         # DISTINCT ON (source_a_id, source_b_id) ORDER BY ... computed_at DESC
         # → latest row per pair. The source_a_id / source_b_id keys are
-        # written by analytics/drift.py::_build_meta_info — verified
-        # against drift.py:578-581 at Step 8 design time.
+        # written by analytics/drift.py::_build_meta_info.
         rows = session.execute(
             text(
                 """

@@ -151,7 +151,7 @@ class VerdictResult:
     threshold_used: Decimal  # effective threshold = baseline * multiplier
     classification: str  # mirrored from ClassificationEntry
     threshold_multiplier: float  # mirrored from ClassificationEntry
-    note: str | None  # operator-facing rationale (optional)
+    note: str | None  # optional rationale from classifier YAML
     curated_price: Decimal | None
     pricempire_price: Decimal | None
     curated_age_min: float | None  # minutes; None if no observation_log row

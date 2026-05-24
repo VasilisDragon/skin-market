@@ -1,19 +1,16 @@
-"""One-time capture: hit live DMarket for the 8 Phase 2b alias-map
-test fixtures and write the responses to ``tests/fixtures/dmarket/``.
+"""Capture live DMarket alias-map fixtures.
 
-Per Phase 2b Step 6: 8 items consistently fail DMarket's title-equality
-guard (PROJECT_OVERVIEW.md §8 gotcha #5; ADR 012 §5). The alias-map fix
-needs real DMarket response captures as test fixtures so the regression
-guard proves the fix against actual response shape, not synthetic.
+Writes live responses to ``tests/fixtures/dmarket/`` so DMarket title
+matching tests exercise real response shapes rather than synthetic bodies.
 
 Usage:
     uv run python -m scripts.capture_dmarket_fixtures
 
 For each item, prints a summary listing the unique titles found in
 ``objects[]``, with a ``✓`` next to any title that matches the
-canonical name (NFC-normalized). The operator reads these summaries
-to decide what ``dmarket_alias`` values (if any) to add to
-``data/watchlist.yaml``. If all 8 items have the canonical name
+canonical name (NFC-normalized). Use these summaries to decide what
+``dmarket_alias`` values, if any, to add to ``data/watchlist.yaml``.
+If all items have the canonical name
 somewhere in ``objects[]``, no aliases are needed — the
 iterate-objects[] fix alone resolves the problem; the alias field
 stays empty / absent for those items.
@@ -28,8 +25,8 @@ Pauses and resumes; does not exit halfway with partial fixtures.
 Re-running the script is safe (idempotent skip on already-captured
 items).
 
-Re-capture is operator-triggered (e.g. if DMarket's response shape
-shifts and a test breaks). Not part of the normal test cycle.
+Re-capture manually if DMarket's response shape shifts and a fixture
+test breaks. This is not part of the normal test cycle.
 
 Point-in-time evidence, not eternal truth: the captured fixtures
 reflect DMarket's response shape AND its catalog composition at
@@ -118,8 +115,7 @@ def _fetch_one(client: httpx.Client, name: str) -> dict[str, Any]:
 
 def _summarize_titles(body: dict[str, Any]) -> list[str]:
     """Unique titles from ``body['objects']`` preserving order. The
-    operator reads this list to decide what aliases (if any) to
-    add to data/watchlist.yaml for the item."""
+    output informs optional ``dmarket_alias`` entries."""
     objects = body.get("objects") or []
     seen: set[str] = set()
     ordered: list[str] = []

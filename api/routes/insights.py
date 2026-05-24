@@ -6,8 +6,7 @@ Three routes:
   (insight_type, sub-key). Excludes ``daily_narrative`` (which is
   global, ADR 014 §5).
 - ``GET /insights/narrative/latest`` — the latest daily narrative.
-  Item-agnostic; Phase 7a addition for the bot's "what happened
-  today" tool.
+  Item-agnostic; used by the bot's "what happened today" tool.
 - ``GET /insights/anomalies/recent`` — currently-firing cross-source
   divergences + volume anomalies, joined with item metadata so the
   bot can render "what's interesting today" without a second

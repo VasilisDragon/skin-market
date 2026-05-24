@@ -19,7 +19,7 @@ base layer provides:
 Resilience strategy (full rationale: docs/adr/006-collector-resilience.md):
 
 - The collector itself only inserts backoff *between retries* of a failing
-  call. Cycle-level pacing is the scheduler's job (Phase 4).
+  call. Cycle-level pacing is the scheduler's job.
 - On 429 / 5xx / network error: full-jitter exponential backoff, max 5
   attempts, then give up and return None.
 - On 4xx other than 429: don't retry, return None.

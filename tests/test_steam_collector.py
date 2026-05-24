@@ -259,11 +259,8 @@ class TestSteamCollectorHTTP:
         must propagate through the default ``collect_cycle`` generator
         AND abort the cycle before any subsequent item is requested.
 
-        Originally caught a fire-drill where the running collector
-        container appeared to ignore RateLimited — turned out to be a
-        stale Docker image (operator workflow lesson, documented in ADR
-        013 §6), but this test now guards the propagation behavior so
-        any actual regression here surfaces in pytest.
+        Guards against regressions where RateLimited is swallowed and
+        later items in the same cycle are still requested.
         """
         # Patch base.time.sleep so the inter_request_delay (5s) doesn't
         # actually pause the test. If the bug were real and item 2 were
@@ -377,7 +374,7 @@ class TestSteamOutlierFilter:
             "returned as a PriceObservation that persist_observation "
             "would later write."
         )
-        # Log carries the structured detail operators grep for.
+        # Log carries structured detail for diagnostics.
         outlier_logs = [
             r.getMessage()
             for r in caplog.records

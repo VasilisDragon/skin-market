@@ -80,7 +80,7 @@ def _offers(
     """Build a minimal DMarket-shaped offers array sorted ascending by price.
 
     ``title`` mirrors what DMarket returns; the collector's post-fetch
-    title-match check (Phase 6.5) requires it to equal the requested
+    title-match check requires it to equal the requested
     market_hash_name. Tests that request item ``"X"`` get the default;
     others override.
     """
@@ -253,7 +253,7 @@ class TestDMarketCollectorHTTP:
         """DMarket's `title=` query is a substring/prefix match, not exact —
         asking for `Desert Eagle | Blaze (Factory New)` can return a
         `Desert Eagle | Oxide Blaze (Factory New)` listing (~480× cheaper,
-        different skin entirely). Phase 6.5: post-fetch, enforce exact
+        different skin entirely). Enforce exact
         NFC-normalized title equality and drop non-matches before they
         pollute prices + cross_source_spread + cross_source_divergence."""
         httpx_mock.add_response(
@@ -381,9 +381,7 @@ class TestDMarketCollectorHTTP:
         assert "%E2%98%85" in str(request.url)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Phase 2b Step 6 — ADR 012 §7 iterate-objects[] + alias map
-# ──────────────────────────────────────────────────────────────────────
+# DMarket iterate-objects[] title matching and alias map.
 
 
 def _mixed_offers(
@@ -402,13 +400,8 @@ def _mixed_offers(
     ]
 
 
-class TestPhase2bIterateObjectsLogic:
-    """Phase 2b Step 6 (ADR 012 §7) — replaces the old objects[0]-
-    only title check with iterate-objects[] + accept-set matching.
-    Pure-logic tests using synthetic responses; no real DMarket
-    fixtures. Real-fixture tests live in
-    ``TestPhase2bRealDMarketFixtures`` below.
-    """
+class TestDMarketObjectSelection:
+    """Synthetic-response coverage for title matching."""
 
     _CANONICAL = "AK-47 | Test Item (Field-Tested)"
 
@@ -416,9 +409,7 @@ class TestPhase2bIterateObjectsLogic:
         self, httpx_mock
     ) -> None:
         """objects[0] is a wrong variant; canonical sits at index 1.
-        Pre-Phase-2b the collector would have rejected the whole
-        response; post-Phase-2b it picks the canonical and returns
-        its price."""
+        The collector must pick the canonical row."""
         httpx_mock.add_response(
             json={
                 "objects": _mixed_offers(
@@ -582,13 +573,7 @@ class TestPhase2bIterateObjectsLogic:
         assert obs.price == Decimal("2.00")
 
     def test_empty_objects_array_returns_none(self, httpx_mock) -> None:
-        """Step 6 refinement: DMarket sometimes returns objects: []
-        ("no listings for this item"). The iterate-objects[] logic
-        naturally handles this — the for-loop is a no-op on [] — but
-        we pin it explicitly. The pre-Phase-2b code's objects[0]
-        access on an empty list would have raised IndexError; the
-        new code returns None cleanly.
-        """
+        """Empty objects[] means no current listings."""
         httpx_mock.add_response(
             json={"objects": [], "total": {}}
         )
@@ -636,7 +621,7 @@ _FIXTURES_STILL_NO_DATA = [
 ]
 
 
-class TestPhase2bRealDMarketFixtures:
+class TestDMarketRealFixtures:
     """Real-fixture regression tests. Each captured response is a
     snapshot of DMarket's actual reply to ``title=<canonical>`` for
     the 8 previously-failing watchlist items. Proves the fix works
@@ -677,9 +662,7 @@ class TestPhase2bRealDMarketFixtures:
         self, name: str, slug: str, httpx_mock
     ) -> None:
         """Items where DMarket genuinely doesn't have the canonical
-        listed (3 of the 8 originally-failing items) should still
-        return None post-fix — same outcome as the pre-Phase-2b
-        behavior, but reached after inspecting the full response."""
+        listed should still return None after inspecting the full response."""
         fixture_path = _FIXTURE_DIR / f"{slug}.json"
         if not fixture_path.exists():
             pytest.skip(

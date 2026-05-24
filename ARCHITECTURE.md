@@ -14,7 +14,7 @@ Postgres.
 
 - State the expected behavior before debugging a symptom.
 - Keep secrets in environment variables only. Never commit `.env`, backups, API
-  keys, Discord tokens, database passwords, or private operator data.
+  keys, Discord tokens, database passwords, or private personal data.
 - Add ADRs for non-obvious architecture choices: schema shape, external service
   integration, API contracts, model/provider selection, and pricing methodology.
 - Use familiar, debuggable libraries: `httpx`, `psycopg`, `sqlalchemy`,

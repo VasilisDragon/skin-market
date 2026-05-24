@@ -7,14 +7,12 @@ other collector tests use.
 What these cover:
 
 - compute_featured_tier: top-N selection, curated precedence, exclusion
-  handling, the "exclusions don't shrink output" invariant (per Step 1
-  clarification).
+  handling, and the "exclusions don't shrink output" invariant.
 - detect_flags: StatTrak™ / Souvenir prefix detection.
 - diff_against_current: added vs re_added split (in-items-but-not-YAML),
   dropped, kept, rank changes (top-N by |Δ|), exclusion hits.
 - print_summary: each section appears with counts; dry-run preserves
-  the YAML byte-for-byte (per the Step 3 clarification — byte-equality,
-  not mtime).
+  the YAML byte-for-byte.
 - YAML write path: curated tier never touched, comments preserved,
   StatTrak/Souvenir flags set when appropriate.
 - Idempotency: second run produces zero diff.
@@ -329,8 +327,7 @@ class TestDiffAgainstCurrent:
 
     def test_marks_re_added_when_in_items_but_not_yaml(self) -> None:
         """Item in new_featured, not in YAML, but already in items table
-        → re_added (the Step-7 curated-tier-drop-flowing-into-featured
-        case).
+        → re_added.
         """
         new = [_candidate("AK-47 | Redline (FT)", 50)]
         report = diff_against_current(
@@ -497,12 +494,7 @@ class TestYamlPartition:
     def test_load_exclusions_handles_explicit_empty_list(
         self, tmp_path: Path
     ) -> None:
-        """Phase 2b Step 7.1 ships data/watchlist.yaml with an explicit
-        ``featured_tier_exclusions: []`` block (rather than omitting the
-        key). Pin that the loader handles the explicit-empty-list case
-        as cleanly as the absent-key case — same outcome (empty set,
-        no raise). Future YAML edits that subtly break this go
-        undetected without this test.
+        """An explicit empty exclusions list is equivalent to an absent key.
         """
         from scripts.watchlist_edit import _make_yaml
 
@@ -592,9 +584,7 @@ class TestCli:
     def test_returns_nonzero_on_negative_target_size(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``--target-size 0`` is a legitimate operator request
-        ("zero featured-tier items wanted" — used for Step 7.0's
-        normalize-only commit). Only NEGATIVE values are rejected."""
+        """``--target-size 0`` is valid; only negative values are rejected."""
         path = tmp_path / "wl.yaml"
         path.write_text(_MIN_YAML)
         rc = seed_main(
@@ -613,11 +603,10 @@ class TestCli:
 class TestComputeFeaturedTierWithNullItemId:
     """Defensive coverage for the nullable-item_id invariant.
 
-    Not currently exercised by Path A's bulk-seed (which uses its own
-    dataclass in scripts/seed_catalog.py), but pins the contract
-    against future refactors that might re-introduce an HTTP-fed
-    MetadataRow path or share MetadataRow across modules. The downstream
-    pipeline (compute_featured_tier, diff_against_current) must continue
+    Pins the contract against future refactors that might re-introduce
+    an HTTP-fed MetadataRow path or share MetadataRow across modules.
+    The downstream pipeline (compute_featured_tier, diff_against_current)
+    must continue
     to never read item_id after construction; a regression that
     started doing so would surface here.
     """
@@ -767,10 +756,7 @@ class TestRunEndToEnd:
     def test_dry_run_preserves_yaml_byte_for_byte(
         self, tmp_path: Path, sentinel_items
     ) -> None:
-        """Test 22 (per Step 3 clarification): replace mtime check
-        with byte-equality. Read YAML bytes pre-run, read post-run,
-        assert equal — deterministic regardless of filesystem
-        timestamp resolution."""
+        """Dry-run preserves YAML bytes exactly."""
         path = tmp_path / "wl.yaml"
         path.write_text(_MIN_YAML)
         before = path.read_bytes()

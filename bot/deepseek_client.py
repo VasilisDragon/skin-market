@@ -194,7 +194,7 @@ def _check_deepseek_budget(discord_user_id: str | None) -> None:
         if global_spend >= global_limit:
             raise DeepSeekBudgetExceeded(
                 "The bot's 24-hour DeepSeek budget is exhausted. "
-                "The operator can raise DEEPSEEK_DAILY_COST_LIMIT_USD "
+                "Raise DEEPSEEK_DAILY_COST_LIMIT_USD "
                 "or wait for spend to fall out of the rolling window."
             )
 
@@ -206,7 +206,7 @@ def _check_deepseek_budget(discord_user_id: str | None) -> None:
         if user_spend >= user_limit:
             raise DeepSeekBudgetExceeded(
                 "Your 24-hour DeepSeek budget is exhausted. Try again later "
-                "or ask the operator to raise DEEPSEEK_DAILY_USER_COST_LIMIT_USD."
+                "or ask for DEEPSEEK_DAILY_USER_COST_LIMIT_USD to be raised."
             )
 
 
@@ -276,8 +276,7 @@ async def _execute_tool(
     except Exception:
         logger.exception("Tool %s raised an unexpected exception", name)
         return (
-            f"Tool {name} hit an unexpected internal error. The "
-            f"operator should check the bot logs.",
+            f"Tool {name} hit an unexpected internal error. Check the bot logs.",
             None,
         )
 
@@ -342,7 +341,7 @@ async def handle_user_message(
             return BotReply(
                 text=(
                     "I couldn't reach my DeepSeek LLM router right "
-                    "now. The operator should check DEEPSEEK_API_KEY, "
+                    "now. Check DEEPSEEK_API_KEY, "
                     "network reachability, and usage logging. "
                     f"({type(exc).__name__})"
                 ),

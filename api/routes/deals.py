@@ -137,8 +137,7 @@ def evaluate_deal(req: DealEvaluateRequest) -> DealEvaluateResponse:
         # informational with reason='stale' — same source name, same
         # denomination match, but excluded from the verdict math.
         # Freshness is driven by last_polled_at (observation_log), NOT
-        # by last_changed_at (prices.timestamp). Phase 1 / ADR 017
-        # establishes why.
+        # by last_changed_at (prices.timestamp).
         if row["last_polled_at"] < freshness_floor:
             informational.append(
                 InformationalSource(

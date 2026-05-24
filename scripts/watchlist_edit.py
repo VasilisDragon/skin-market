@@ -116,11 +116,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         fields["is_stattrak"] = True
     if args.is_souvenir:
         fields["is_souvenir"] = True
-    # Schema v3 (Phase 2c, ADR 024) requires a `tier:` field on every
-    # item. cmd_add is the manual operator-add path; new manual items
-    # default to curated tier. The featured tier is populated
-    # separately by scripts/seed_featured_tier.py — featured items
-    # shouldn't go through cmd_add.
+    # Manual additions default to curated tier. The featured tier is
+    # populated separately by scripts/seed_featured_tier.py.
     fields["tier"] = "curated"
 
     data["items"].append(_flow_entry(fields))

@@ -1,9 +1,9 @@
 """Deterministic helpers for public-inventory asset market baselines.
 
-Phase A deliberately keeps the LLM out of the data path. The API parses
-the Steam inventory URL, fetches the public inventory snapshot from
-Pricempire, locates the exact asset id, and computes a market-name USD
-baseline from local market data. The bot only renders the structured result.
+The API parses the Steam inventory URL, fetches the public inventory
+snapshot from Pricempire, locates the exact asset id, and computes a
+market-name USD baseline from local market data. The bot only renders
+the structured result.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ PREMIUM_SIGNAL_AVAILABILITY: dict[str, dict[str, Any]] = {
         "source": None,
         "explanation": (
             "Exact float is known, but no integrated per-float comparable-sales "
-            "source or operator-confirmed sales corpus is available."
+            "source or confirmed sales corpus is available."
         ),
     },
     "applied_stickers": {
@@ -1188,7 +1188,7 @@ def _evidence_summary(market_hash_name: str, flags: list[dict[str, Any]]) -> str
         f"The market baseline for {item_name} is a generic market-name range. "
         f"Premium drivers detected: {driver_text}. The system cannot currently "
         "price those drivers; a real appraisal requires an approved data source "
-        "and an operator-confirmed sales corpus."
+        "and a confirmed sales corpus."
     )
 
 

@@ -44,10 +44,7 @@ Denomination = Literal["usd", "wallet_credit"]
 # the item exists in the items table but is no longer in the active
 # YAML watchlist (ADR 024) — Pricempire-only observation continues
 # via the bulk snapshot collector; historical curated data may exist
-# from a prior tier membership. The Phase 2c rename (deep/broad/
-# orphan → curated/featured/substrate) reflects post-Path-A semantics
-# where the items table is bulk-populated and the YAML's tracked-list
-# is the editorial overlay.
+# from a prior tier membership.
 Tier = Literal["curated", "featured", "substrate"]
 AlertDirection = Literal["at_or_below", "at_or_above"]
 AlertMode = Literal["price_threshold", "percent_move"]
@@ -67,7 +64,7 @@ class Item(BaseModel):
     list endpoint (not just ``ItemDetail``) so the bot can match a
     substrate slug to its sibling curated-tier wear without parsing
     ``display_name`` strings (which would be brittle on StatTrak™ /
-    Souvenir / star-prefixed knives + gloves). Phase 2b Step 9.
+    Souvenir / star-prefixed knives + gloves).
     """
 
     slug: str
@@ -660,9 +657,9 @@ class ComparableSource(BaseModel):
     Two timestamps follow the ADR 017 split. ``last_polled_at`` is the
     freshness signal (from ``observation_log``) the verdict gate uses;
     ``last_changed_at`` is the timestamp of the actual price row
-    (``prices.timestamp``) and is informational only — Phase 1 taught
-    us that a flat-market hour leaves ``prices.timestamp`` stale even
-    while the collector is polling cleanly.
+    (``prices.timestamp``) and is informational only. Flat markets can
+    leave ``prices.timestamp`` old even while the collector is polling
+    cleanly.
     """
 
     source: str
@@ -849,10 +846,9 @@ class SignalDigestResponse(BaseModel):
     signals: list[SignalDigestRow]
 
 
-# Drift detector output surfaces via /items/{slug}/drift (Phase 2b
-# Step 8). Verdict kinds mirror analytics/drift.py's module-level
-# VERDICT_* constants; ``Classification`` mirrors the labels in
-# analytics/pattern_classifier.py.
+# Drift detector output surfaces via /items/{slug}/drift. Verdict kinds
+# mirror analytics/drift.py's module-level VERDICT_* constants;
+# ``Classification`` mirrors the labels in analytics/pattern_classifier.py.
 DriftVerdict = Literal[
     "drift_alert",
     "no_drift",
@@ -904,8 +900,8 @@ class DriftResponse(BaseModel):
     - 200 with ``tier="curated"``, ``pairs=[]`` when the drift detector
       hasn't produced a row yet (fresh deploy / pre-cycle).
     - 200 with ``tier="curated"``, ``pairs=[…1 or 2…]`` for items the
-      detector has evaluated. One-pair shape is the realistic middle
-      state for items added in Step 7.1 with sparse data for ~24h.
+      detector has evaluated. One-pair shape is valid while one source
+      pair is still warming up.
     - 200 with ``tier="featured"``, ``pairs=[]`` for featured-tier
       items — the detector skips them by construction (curated-only).
     - 200 with ``tier="substrate"``, ``pairs=[]`` for items in the

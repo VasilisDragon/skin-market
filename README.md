@@ -101,7 +101,7 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
 | `collectors/` | One module per upstream (Steam, Skinport, DMarket) + `scheduler.py` (APScheduler-driven, DB-aware enabled flag, retry-after honoring). Each collector returns `PriceObservation`, `DECLINED`, or `None`; the scheduler counts outcomes per cycle. |
 | `analytics/` | Hourly compute jobs (moving averages, cross-source views + spreads, divergence/volume anomalies, item unavailability streaks) + nightly narrative LLM job. |
 | `api/` | FastAPI read-only service. `auth.py` (bearer middleware), `schemas.py` (Pydantic v2 with `MoneyStr`), `routes/` (items, history, insights, charts, deals). |
-| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `deepseek_client.py` (tool-use loop), `tools.py` (HTTP wrappers + bounded payload summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (operator install). |
+| `bot/` | Discord bot. `main.py` (discord.py entrypoint), `deepseek_client.py` (tool-use loop), `tools.py` (HTTP wrappers + bounded payload summarizers), `system_prompt.py`, `discord_render.py` (allowlist + attachments), `README.md` (install workflow). |
 | `db/` | SQLAlchemy models + Alembic migrations + connection plumbing. |
 | `scripts/` | One-off maintenance tools: `seed_watchlist.py`, `watchlist_edit.py`. |
 | `data/` | `watchlist.yaml` — the canonical 48-item list, plus source definitions. Edited via `scripts/watchlist_edit.py` so comments + ordering are preserved. |

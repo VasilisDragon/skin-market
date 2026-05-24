@@ -10,7 +10,7 @@ Two insight types:
   scoped to flow-style sources. The query filters by
   ``s.denomination = 'wallet_credit'`` only as a convenient proxy for
   "is this a Steam-style source" — once we add another flow-style
-  source, the SQL needs a more direct flag (TODO in code).
+  source, the SQL needs a more direct flag.
 
 - ``cross_source_divergence`` — when the current ``cross_source_spread``
   for a (item, source_a, source_b) pair has moved by more than N

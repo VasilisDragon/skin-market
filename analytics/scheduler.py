@@ -100,8 +100,8 @@ def run_drift_cycle() -> None:
     each side under normal operation.
 
     Feature flag:
-    Gated behind the ``DRIFT_DETECTION_ENABLED`` env var. Defaults to
-    false at every analytics service restart.
+    Controlled by the ``DRIFT_DETECTION_ENABLED`` env var. Defaults
+    to false at every analytics service restart.
 
     Accepted truthy values (case-insensitive): "true", "1", "yes",
     "on". Anything else (unset, empty, "false", "0", etc.) means

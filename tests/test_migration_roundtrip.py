@@ -24,9 +24,8 @@ from sqlalchemy.exc import OperationalError
 from db.connection import get_engine
 
 _DOMAIN_TABLES = ("items", "sources", "prices", "insights")
-# Phase 2a / 2b additions, in order of introduction. Checked separately
-# from _DOMAIN_TABLES so a failure surfaces "Pricempire schema missing"
-# distinctly from "v1 schema missing."
+# Checked separately from _DOMAIN_TABLES so Pricempire schema failures
+# surface distinctly from core schema failures.
 _PRICEMPIRE_TABLES = (
     "pricempire_observations",      # migration 0005
     "pricempire_item_metadata",     # migration 0007
@@ -116,7 +115,7 @@ def test_migration_roundtrip_then_seed() -> None:
         ).scalar()
         assert policy_exists, "compression policy job not registered"
 
-    # 4b. Phase 2a/2b additions: confirm the Pricempire tables exist.
+    # 4b. Confirm the Pricempire tables exist.
     #     pricempire_observations and pricempire_item_metadata are
     #     hypertables; pricempire_observation_log is a regular table.
     with engine.connect() as conn:
