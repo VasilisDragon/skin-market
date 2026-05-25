@@ -125,6 +125,19 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
 2. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.
 3. **`docs/sources-and-semantics.md`** — why averaging is a category error in this domain.
 
+## Acceptable use
+
+This is a **single-operator** tool. It runs against a watchlist that one person curates and that one person reads. It is not designed for multi-tenant deployment.
+
+Collectors interact with upstream price sources as follows:
+
+- **DMarket** and **Pricempire** — documented public APIs with operator-provided keys.
+- **Steam Market** and **Skinport** — public endpoints fronted by a single named `User-Agent`. Cadences are conservative (15–60 minute intervals per source, per [ADR 013 — Rate-limit policy](docs/adr/013-rate-limit-policy.md)). The scheduler honors `Retry-After`, backs off on transient failures, and records `DECLINED` outcomes so the cycle does not retry-storm.
+
+If a source returns a rate-limit response or changes its terms, the responsibility for honoring that lies with the operator running this stack, not the codebase. Running this stack against an upstream where the operator does not have a relationship (or implicit permission via documented public endpoints) is outside the supported scope of this project.
+
+The Discord-facing bot is gated by `DISCORD_ALLOWED_USER_IDS` and refuses any user not on that list, so the operator-facing surface stays a single-operator surface even if the bot is invited to a shared server.
+
 ## Tests
 
 ```bash
