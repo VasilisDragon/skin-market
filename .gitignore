@@ -41,13 +41,10 @@ Thumbs.db
 data/cache/
 data/exports/
 
-# Session-scratch directory (Phase 2c, ADR 024 repo-hygiene rule).
-# Holds ephemeral working files: session-handoff prompts for fresh
-# Claude Code sessions, design proposals pending advisor review,
-# anything that isn't a permanent architectural record. Architectural
-# memory lives in docs/adr/, docs/*.md, ADR catalogs in
-# PROJECT_OVERVIEW.md, TODO.md, README.md — those stay committed.
-# notes/ does not.
+# Operator scratch directory. Holds ephemeral working notes, draft
+# proposals, and anything that isn't a permanent architectural record.
+# Architectural memory lives in docs/adr/, docs/*.md, and the ADR
+# catalog in PROJECT_OVERVIEW.md.
 notes/
 
 # never commit env backups or variants

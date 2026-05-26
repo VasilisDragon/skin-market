@@ -1,4 +1,4 @@
-# ARCHITECTURE.md - skin-market
+# skin-market architecture
 
 ## Project Summary
 
