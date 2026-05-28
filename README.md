@@ -113,7 +113,9 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
 
 ## Where to read more
 
-1. **`docs/adr/`** — chronological tour. The headline decisions:
+1. **`ARCHITECTURE.md`** — system summary, component boundaries, and engineering rules.
+2. **`PROJECT_SPEC.md`** — product spec; read alongside `ARCHITECTURE.md`.
+3. **`docs/adr/`** — chronological tour. The headline decisions:
    - 002 — TimescaleDB over vanilla Postgres
    - 006 — Collector resilience (retry/backoff strategy)
    - 009 — Scheduler design (overlap policy, conditional writes, SIGTERM)
@@ -122,8 +124,8 @@ The `stop_grace_period` is 5 min on the collector + analytics services (matches 
    - 015 — Bot skill design
    - 016 — Bot runtime (tool-use loop, size discipline, defensive failure modes)
    - 026 — DeepSeek inference hard cutover and usage accounting
-2. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.
-3. **`docs/sources-and-semantics.md`** — why averaging is a category error in this domain.
+4. **`docs/operations.md`** — what to type when something is broken. Image-rebuild discipline is the most common foot-trap.
+5. **`docs/sources-and-semantics.md`** — why averaging is a category error in this domain.
 
 ## Acceptable use
 
@@ -148,4 +150,6 @@ uv run ruff check .    # linter
 
 ## License
 
-Proprietary. Not licensed for redistribution.
+Source-visible portfolio artifact. All rights reserved. Not licensed
+for redistribution, modification, or production/commercial use. See
+[LICENSE](LICENSE) for full terms.
